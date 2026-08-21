@@ -16,6 +16,23 @@ pnpm db:migrate              # apply migrations + generate the Prisma client
 pnpm dev                     # http://localhost:3000
 ```
 
+### Local database (no signup required)
+
+This project uses Prisma’s built-in local Postgres for development. It runs on
+your machine — no account, no cloud, nothing to pay for.
+
+```bash
+pnpm exec prisma dev start app   # start it (after a reboot, run this first)
+pnpm exec prisma dev ls          # check whether it is running
+pnpm exec prisma dev stop app    # stop it
+```
+
+The server is named `app` and keeps its ports, so `DATABASE_URL` in `.env` stays
+valid across restarts. If `pnpm dev` cannot reach the database, the server is
+simply stopped — run `prisma dev start app`.
+
+Swap `DATABASE_URL` for a Neon or Supabase string when you are ready to deploy.
+
 **Verification gates** — all three must pass before anything is DONE:
 
 ```bash
