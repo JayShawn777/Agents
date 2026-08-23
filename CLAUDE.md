@@ -1,44 +1,42 @@
 @AGENTS.md
 
-# Project Constitution
+# app
 
-## Stack
-- Next.js (App Router) + TypeScript strict — frontend AND backend (API routes / server actions)
-- Tailwind CSS + shadcn/ui for all UI. Prefer shadcn components over hand-rolled ones.
-- Postgres + Prisma. Schema lives in prisma/schema.prisma.
-- Vitest for unit/integration. Playwright for e2e.
-- pnpm ONLY. Never use npm or yarn commands.
-- Deploys to Vercel. Database on Neon/Supabase. Secrets only in .env (gitignored).
+Stack, workflow, conventions, and the Never list are inherited from
+`~/.claude/CLAUDE.md`. Only project-specific facts belong here.
 
-## Commands
-- Dev: `pnpm dev`         Build: `pnpm build`
-- Unit tests: `pnpm test`  E2E: `pnpm test:e2e`
-- Lint: `pnpm lint`        Typecheck: `pnpm typecheck`
-- Migrate: `pnpm db:migrate`  DB GUI: `pnpm db:studio`
+## What this is
 
-## Workflow (MANDATORY)
-1. Any non-trivial task: plan mode first. Delegate to product-spec agent,
-   then architect agent. STOP for my approval after the architecture plan.
-2. After approval: frontend-engineer and backend-engineer may run as
-   parallel subagents against the fixed API contract.
-3. Then: qa-tester → code-reviewer → security-reviewer → docs-writer.
-4. DONE means: `pnpm typecheck`, `pnpm lint`, and all tests pass.
-5. Conventional commits. Never commit secrets. Never force-push.
+A Next.js application. No features have been built yet — `app/page.tsx` is still
+the starter page. The first real work starts with `new feature: <description>`.
 
-## Conventions
-- TypeScript strict; no `any` without a justifying comment.
-- Validate ALL external input with zod at the API boundary.
-- Server components by default; "use client" only when interactivity requires it.
-- Data access goes through Prisma in server code only — never expose the DB to the client.
-- Every API route/server action handles errors and returns a typed error shape.
-- Match existing file/folder patterns before inventing new ones.
+## Databases
 
-## Knowledge base
-- Specs: docs/specs/  ADRs: docs/adr/  Research: docs/research/  Ops: docs/runbook.md
-- Read the relevant doc before starting. Unfamiliar library → researcher agent first.
+- **Local (development):** `prisma dev`, server named `app`. `DATABASE_URL` in
+  `.env` points at it. If the app cannot reach the database, it is simply
+  stopped — run `pnpm exec prisma dev start app`.
+- **Cloud (deployment):** Neon. The connection string lives in `.env.neon`,
+  which is gitignored and deliberately separate so day-to-day work can never
+  run against production.
+- Apply migrations to Neon with `pnpm db:migrate:prod`. `scripts/prisma-prod.mjs`
+  refuses `migrate dev` against the cloud — that command can drop the database.
 
-## Never
-- Never add a new major dependency without asking me.
-- Never edit applied migration files.
-- Never delete or weaken a test to make the suite pass.
-- Never put secrets in code or in NEXT_PUBLIC_ variables.
+## Project-specific quirks
+
+- `postinstall` runs `prisma generate`. Do NOT remove it and do NOT override the
+  build command in Vercel — the generated client is gitignored, so the build must
+  recreate it, and Vercel's Install and Build fields are easy to confuse.
+- `prebuild` clears `.next`. A stale `.next` makes Turbopack die on Windows with
+  exit 3221225477.
+- `typecheck` runs `next typegen` first; the route types are gitignored.
+
+## Deployment
+
+Pushing to `main` deploys to Vercel automatically. Migrations do not run on
+deploy — apply them with `pnpm db:migrate:prod`.
+
+## Available reference skills
+
+`.claude/skills/prisma-*` are vendored Prisma 7 references (symlinked from
+`.agents/skills/`). Prisma 7 has breaking changes from earlier versions — consult
+them rather than relying on memory.
