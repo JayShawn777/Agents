@@ -75,6 +75,20 @@ Schema lives in `prisma/schema.prisma`. The datasource URL is read from
 
 ---
 
+### Cloud database (Neon) — deployment only
+
+The Neon connection string lives in `.env.neon`, which is gitignored and separate
+from `.env` on purpose: day-to-day work must never run against production.
+
+```bash
+pnpm db:status:prod    # check migration state on Neon
+pnpm db:migrate:prod   # apply existing migrations to Neon (migrate deploy)
+```
+
+`scripts/prisma-prod.mjs` refuses `migrate dev` against the cloud — that command
+can drop and recreate the database. Create migrations locally with `pnpm
+db:migrate`, then apply them with `pnpm db:migrate:prod`.
+
 ## 3. Environment variables
 
 Copy `.env.example` → `.env`. `.env` is gitignored and must never be committed.
