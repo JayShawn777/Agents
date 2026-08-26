@@ -11,10 +11,17 @@ returning to this repo in a year can reconstruct not just *what* was built but
 | `specs/` | What we are building and how we will know it works | product-spec agent | `<feature-slug>.md` |
 | `adr/` | Why we chose one technical approach over another | architect agent | `NNNN-<decision-slug>.md` |
 | `research/` | What we learned about an external library or API | researcher agent | `<topic-slug>.md` |
+| `plans/` | How a milestone gets built — schema, API contract, file order | architect agent | `<milestone-slug>.md` |
 | `runbook.md` | How to run, migrate, and deploy the thing | docs-writer agent | single file |
 
-Each folder has a `TEMPLATE.md`. Copy it — do not invent a new shape. Consistent
-structure is what makes these greppable and skimmable later.
+`specs/`, `adr/`, and `research/` each have a `TEMPLATE.md`. Copy it — do not
+invent a new shape. Consistent structure is what makes these greppable and
+skimmable later.
+
+The distinction between `adr/` and `plans/` matters: an ADR records *why* one
+approach beat the alternatives and is immutable once accepted; a plan records
+*how* a milestone gets built and is expected to go stale the moment the code
+lands. Do not put a decision in a plan — it will be lost when the plan is.
 
 ## The rules
 
@@ -50,6 +57,15 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 
 ### ADRs
 - [ADR-0001](adr/0001-record-architecture-decisions.md) — Record architecture decisions (Accepted)
+- [ADR-0002](adr/0002-passwordless-auth-with-authjs-and-database-sessions.md) — Passwordless email sign-in with Auth.js v5 and database sessions (Proposed)
+- [ADR-0003](adr/0003-private-vercel-blob-with-client-direct-upload.md) — Private Vercel Blob store with client-direct upload behind a storage port (Proposed)
+- [ADR-0004](adr/0004-client-side-heic-conversion-with-lazy-loaded-heic-to.md) — Convert HEIC to JPEG in the browser, with a lazily loaded `heic-to` (Proposed)
+- [ADR-0005](adr/0005-extracted-problem-model-and-structured-output-contract.md) — Extracted problems are a zod-validated structured output storing LaTeX (Proposed)
+- [ADR-0006](adr/0006-route-handlers-for-mutations-not-server-actions.md) — All mutations are route handlers; server actions are used only for Auth.js (Proposed)
+- [ADR-0007](adr/0007-deletion-order-append-only-consent-and-store-enumerating-reconciliation.md) — Blob-first deletion, append-only consent, and a store-enumerating reconciler (Proposed)
+
+### Plans
+- [m0-m1-implementation.md](plans/m0-m1-implementation.md) — Schema, API contract, component tree, build order, and the storage spike
 
 ### Research
 - [anthropic-api.md](research/anthropic-api.md) — Claude API: vision, PDF, structured output, streaming, caching, pricing
