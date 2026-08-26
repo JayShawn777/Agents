@@ -12,6 +12,11 @@ export default defineConfig({
     exclude: ["tests/e2e/**", "node_modules/**"],
   },
   resolve: {
-    alias: { "@": resolve(import.meta.dirname, ".") },
+    alias: {
+      "@": resolve(import.meta.dirname, "."),
+      // `server-only` throws when imported outside Next's RSC compilation
+      // step (see tests/unit/mocks/server-only.ts for why this exists).
+      "server-only": resolve(import.meta.dirname, "./tests/unit/mocks/server-only.ts"),
+    },
   },
 });

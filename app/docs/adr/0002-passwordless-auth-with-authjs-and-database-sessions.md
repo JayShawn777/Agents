@@ -185,6 +185,31 @@ do **not** cast to `any`.
   parent will lose.
 - **Rejected because:** the spec's non-goals rule it out explicitly.
 
+## Revision note (2026-08-26, second) — the adapter dependency is unusable here
+
+`@auth/prisma-adapter` was approved and installed, and has been **removed**. It
+cannot work against this project's Prisma configuration, and — the part that
+matters — it fails silently rather than loudly.
+
+`PrismaAdapter()` types its argument as `PrismaClient` imported from
+`@prisma/client`. This schema uses the Prisma 7 `prisma-client` generator with a
+custom `output` of `../lib/generated/prisma`, so `node_modules/.prisma/client`
+is never populated and `@prisma/client`'s own type re-export cannot resolve.
+Under this repo's `skipLibCheck: true` that does not raise `TS2307`; it erases
+the parameter to an unchecked type. Confirmed empirically: `PrismaAdapter(42)`
+produces **zero** type errors from `pnpm typecheck`.
+
+A green typecheck therefore proved nothing about the adapter boundary. This ADR
+previously said the dependency "may not typecheck", with a hand-written adapter
+as the contingency. That was optimistic in the wrong direction: it does
+typecheck, and tells you nothing. `lib/auth/prisma-adapter.ts` implements the
+`Adapter` interface by hand against the generated client, with no `any`, for the
+email-provider and database-session flow only.
+
+Follow-up worth its own decision: `skipLibCheck: true` is a Next.js default and
+is usually correct, but here it concealed a completely unchecked boundary in the
+authentication layer. Whether to keep it is not settled by this ADR.
+
 ## Consequences
 
 ### Positive
