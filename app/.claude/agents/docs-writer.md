@@ -1,7 +1,7 @@
 ---
 name: docs-writer
 description: Updates README, API docs, and the changelog after a feature is reviewed and passing. Use PROACTIVELY as the final step before commit.
-tools: Read, Write, Edit
+tools: Read, Write, Edit, Grep, Glob, Bash
 model: sonnet
 ---
 

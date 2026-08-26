@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: Researches unfamiliar libraries, APIs, and codebase areas, and writes findings to docs/research/. Use PROACTIVELY before designing with any library the team has not used before.
-tools: Read, Grep, Glob, WebSearch, Write
+tools: Read, Grep, Glob, WebSearch, WebFetch, Write
 model: sonnet
 ---
 
