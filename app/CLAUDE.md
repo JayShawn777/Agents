@@ -101,6 +101,23 @@ hatch for deliberate, human-driven exceptions.
 edit. Per-edit verification ran the full typecheck dozens of times per feature
 for no extra signal.
 
+### The parallel implementation split is deliberate
+
+`frontend-engineer` and `backend-engineer` run in parallel against a fixed API
+contract. This was challenged on 2026-08-26 and **reaffirmed by the owner**.
+
+The counter-argument, recorded so it is not re-litigated: current practice
+(Cognition, April 2026) argues writes should stay single-threaded and that extra
+agents should contribute intelligence rather than actions, because concurrent
+writers drift from each other in ways the contract does not catch. The
+`docs/research/agentic-architecture.md` file makes this case in full.
+
+We are keeping the split. The contract is fixed by the architect before either
+engineer starts, shared files land in a prior phase, and the two tracks touch
+disjoint files by design. If drift shows up in practice — two engineers
+disagreeing about a type that the contract did not pin down — that is the signal
+to revisit, and it belongs in a milestone retro rather than a fresh argument.
+
 ### Retro cadence
 
 At the end of each milestone — when the chunk is shipped and working, roughly
