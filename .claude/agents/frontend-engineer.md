@@ -4,7 +4,7 @@ description: Implements pages, components, state, and styling strictly per an ap
 tools: Read, Write, Edit, Bash
 model: sonnet
 effort: high
-maxTurns: 50
+maxTurns: 90
 memory: project
 color: blue
 ---
