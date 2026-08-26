@@ -1,0 +1,3 @@
+- [COPPA ConsentMethod enum research override](coppa-consent-method-enum.md) — research doc superseded plan's TOLL_FREE_CALL/VIDEO_CALL labels
+- [CONSENT_METHODS single source of truth](consent-methods-single-source.md) — port.ts now derives from generated Prisma enum, not a duplicate array
+- [zod v4 accepts Prisma enum objects directly](zod-v4-prisma-enum-pattern.md) — use z.enum(PrismaEnumObject), never z.nativeEnum or a hand-copied array
