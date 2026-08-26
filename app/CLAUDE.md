@@ -15,9 +15,14 @@ adapts to that student over time.
 No features have been built yet — `app/page.tsx` is still the starter page.
 Planning and research live in `docs/`; start at [docs/README.md](docs/README.md).
 
-Because the app tutors minors, anything touching student data carries
-COPPA/FERPA consent and retention obligations. Treat uploaded schoolwork as
-sensitive personal data about a child, not as an ordinary file.
+Because the app tutors minors, anything touching student data carries **COPPA**
+consent and retention obligations. Treat uploaded schoolwork as sensitive
+personal data about a child, not as an ordinary file.
+
+FERPA does **not** apply to the current direct-to-consumer design and will not
+until a school contracts with us and exercises direct control over the records.
+Overstating it obscures the obligations that are real — see
+[docs/research/coppa-childrens-privacy.md](docs/research/coppa-childrens-privacy.md).
 
 ## Databases
 

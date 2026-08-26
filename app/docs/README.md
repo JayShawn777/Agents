@@ -71,3 +71,4 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [anthropic-api.md](research/anthropic-api.md) — Claude API: vision, PDF, structured output, streaming, caching, pricing
 - [file-upload-storage.md](research/file-upload-storage.md) — Where uploaded schoolwork lives; why client-direct upload is mandatory
 - [elevenlabs-tts.md](research/elevenlabs-tts.md) — Narration, character-level timing data, and consent-gated voice cloning
+- [coppa-childrens-privacy.md](research/coppa-childrens-privacy.md) — **Verifiable parental consent, retention, and BIPA.** Read before touching the consent flow
