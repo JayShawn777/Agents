@@ -117,9 +117,11 @@ every one to two weeks — run a retro before starting the next one:
 Only act on repeated patterns. A one-off mistake is not evidence, and rewriting
 an agent's instructions after every stumble makes them worse, not better.
 
-Agents do not learn between runs — every run starts blank. These files ARE the
-memory, which is why they are version-controlled and why the retro is a real
-step rather than a good intention.
+Agents carry a `memory: project` store between runs, so they are no longer
+strictly blank each time. That memory is theirs and is narrow; the documents in
+`docs/` remain the shared, reviewable record, which is why they are
+version-controlled and why the retro is a real step rather than a good
+intention.
 
 Each agent carries an explicit `model:` field. Deciding roles (architect,
 product-spec) and verifying roles (code-reviewer, security-reviewer) run on

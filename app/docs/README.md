@@ -84,3 +84,5 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [elevenlabs-tts.md](research/elevenlabs-tts.md) — Narration, character-level timing data, and consent-gated voice cloning
 - [coppa-childrens-privacy.md](research/coppa-childrens-privacy.md) — **Verifiable parental consent, retention, and BIPA.** Read before touching the consent flow. Its subsection lettering is inferred, not read — confirm against eCFR before relying on it
 - [tutoring-product-patterns.md](research/tutoring-product-patterns.md) — What the category does, which patterns to adopt, and which to deliberately reject
+- [agentic-architecture.md](research/agentic-architecture.md) — How our own agent pipeline should be built; loop design, verification, and what not to adopt
+- [claude-code-harness.md](research/claude-code-harness.md) — Hooks, subagent frontmatter, and which native features we were not using

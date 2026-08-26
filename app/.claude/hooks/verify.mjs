@@ -50,7 +50,14 @@ const run = (label, cmd) => {
   }
 };
 
-const failures = [run("pnpm lint", "pnpm lint"), run("pnpm typecheck", "pnpm typecheck")].filter(Boolean);
+// Tests run here, not only inside qa-tester. An agent that writes, runs and
+// grades its own tests is the canonical reward-hacking surface; a deterministic
+// gate outside that agent is the cheapest counterweight.
+const failures = [
+  run("pnpm lint", "pnpm lint"),
+  run("pnpm typecheck", "pnpm typecheck"),
+  run("pnpm test", "pnpm test"),
+].filter(Boolean);
 
 if (failures.length > 0) {
   console.error(
