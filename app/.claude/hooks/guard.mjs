@@ -43,7 +43,25 @@ if (["Edit", "Write", "NotebookEdit", "MultiEdit"].includes(tool)) {
   }
 }
 
+// Bash can write files too — a redirect, `tee`, `sed -i`, or a python/node
+// heredoc all reach the same paths the Edit/Write branch above guards. Without
+// this the rules above are advisory again, just one tool over.
 if (tool === "Bash") {
+  const WRITES = /(>>?|\btee\b|\bsed\s+-i|\btruncate\b|\bopen\(|writeFileSync|writeText|\bdd\b)/;
+  const touchesEnv = /(^|[\s'"`\/])\.env(?!\.example)\b/.test(cmd);
+  if (touchesEnv && WRITES.test(cmd)) {
+    deny(
+      "This command looks like it writes to `.env`, which is the human's file " +
+      "and holds real secrets.\nAdd the variable to `.env.example` with a " +
+      "placeholder and ask them to fill it in.\n" +
+      "(If this is deliberate setup the human asked for, re-run with " +
+      "CLAUDE_SKIP_GUARD=1 and say so out loud.)"
+    );
+  }
+  if (/prisma\/migrations\//.test(cmd) && WRITES.test(cmd)) {
+    deny("That command writes into prisma/migrations/. Applied migrations are immutable — write a new one.");
+  }
+
   if (/git\s+push[^\n|;&]*(--force\b|(^|\s)-f(\s|$))/.test(cmd) && !/--force-with-lease/.test(cmd)) {
     deny("Never force-push. If history genuinely must change, ask the human first.");
   }

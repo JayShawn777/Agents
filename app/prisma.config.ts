@@ -10,6 +10,10 @@ export default defineConfig({
   },
   datasource: {
     url: process.env["DATABASE_URL"],
-    shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"],
+    // `.env.example` ships SHADOW_DATABASE_URL="" and Prisma rejects an empty
+    // string with P1013, so coerce empty to undefined. The local `prisma dev`
+    // server carries its own shadow database inside the connection string and
+    // needs nothing here; Neon needs a real value.
+    shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"] || undefined,
   },
 });
