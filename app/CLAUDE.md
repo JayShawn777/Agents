@@ -69,6 +69,17 @@ written somewhere git never sees. Project copies shadow the user-level ones, so
 this project now pins its own; improvements to the shared `~/.claude` set no
 longer flow in automatically, and that is the accepted trade.
 
+### Staging while agents are running
+
+Never `git add` a directory while a background agent is writing into it. Stage
+explicit file paths instead.
+
+A broad `git add app/docs` in commit `0cb4c99` swept up an architect agent's
+in-flight ADR work and committed it under an unrelated message about product
+research. Nothing was lost, but the history now attributes ADR-0008 and three
+ADR revisions to a commit that claims to be about something else — and a commit
+message that lies is worse than no commit message.
+
 ### Retro cadence
 
 At the end of each milestone — when the chunk is shipped and working, roughly

@@ -2,8 +2,33 @@
 
 - **Status:** Proposed
 - **Date:** 2026-08-26
+- **Revised:** 2026-08-26 (see "Revision note")
 - **Deciders:** Jaysh (pending)
 - **Spec:** docs/specs/m0-accounts-and-profiles.md, docs/specs/m1-upload-and-extract.md
+
+## Revision note — 2026-08-26
+
+The M0 spec was revised on the same date (36 → 52 acceptance criteria). **The
+route-handlers-not-server-actions decision is unchanged**, and the revision
+strengthens it: the new criteria add four more adversarial "direct POST" cases
+with named statuses.
+
+What changed here:
+
+1. **AC renumbering.** Old → new for every criterion cited below: 10→27, 11→28,
+   12→29, 14→31, 15→32, 25→34, 26→35, 30→36. M1's numbers are unchanged.
+2. **The 403 category grew, and the ordering of checks is now load-bearing.**
+   The old ADR named exactly one 403 case (an upload token for a profile that
+   had not consented). The revised spec adds AC 11: a direct POST supplying a
+   display name, grade level, subjects or avatar for a profile that is not
+   `ACTIVE` must return **403**, not 400 — *even if the body is also invalid*.
+   That forces an explicit ordering rule, added to the Decision below.
+3. **A new status class is needed: 409 for flow-order violations.** The consent
+   flow is now a state machine with a mandatory prior step (AC 15: no consent
+   without a direct-notice record). "You skipped a step you can still go back
+   and do" is neither an authorization failure nor a malformed body.
+4. **One genuine ambiguity in the spec is resolved here** rather than left for
+   two engineers to resolve differently — see "Resolving AC 18 against AC 20".
 
 ## Context
 
@@ -16,16 +41,19 @@ property is that every read of student data is scoped to the owning account.
 The acceptance criteria push hard in one direction. They are written in HTTP
 terms and they are written as *attacks*, not as form submissions:
 
-- M0 AC 10 — "a **direct POST** to the profile-creation endpoint carrying a
-  grade level that is not in the allowed set → the response is **HTTP 400** with
-  the project's typed error shape".
-- M0 AC 11 — zero, nine, or an unknown subject → **HTTP 400**.
-- M0 AC 12 — an avatar identifier outside the preset set → **HTTP 400**.
-- M0 AC 14 — after deletion, "a direct request for that profile returns
+- M0 AC 11 — a **direct POST** supplying profile fields for a profile that is
+  not `ACTIVE` → **HTTP 403** with the typed error shape, and nothing persisted.
+- M0 AC 27 — a **direct POST** carrying a grade level outside the allowed set →
+  **HTTP 400** with the project's typed error shape.
+- M0 AC 28 — zero, nine, or an unknown subject → **HTTP 400**.
+- M0 AC 29 — an avatar identifier outside the preset set → **HTTP 400**.
+- M0 AC 31 — after deletion, "a direct request for that profile returns
   **HTTP 404**".
-- M0 AC 15 — account A requesting, editing or deleting account B's profile →
+- M0 AC 32 — account A requesting, editing or deleting account B's profile →
   **HTTP 404**, and B's row unchanged.
-- M0 AC 25 / 26 / 30, M1 AC 11 / 12 — **401**, **403**, **403**.
+- M0 AC 34 / 35 / 36 — **401**, **403**, **403**.
+- M0 AC 15 and AC 20 — a direct POST to the consent endpoint out of order, or
+  without method evidence → the typed error shape, and no consent record.
 - M1 AC 17 — the hourly cap → **HTTP 429** with the typed error shape.
 - M1 AC 33 — cross-account read of an upload or extracted problem → **HTTP 404**.
 
@@ -34,7 +62,7 @@ POST to the current page URL that returns 200 with a serialised result; a
 failure is a value, not a status. Asserting "HTTP 400 with the typed error
 shape" against a server action means asserting the shape of an RSC action
 payload, which is an internal wire format we do not control and should not
-couple tests to. Fifteen acceptance criteria would become approximations.
+couple tests to. **Nineteen** acceptance criteria would become approximations.
 
 There is one unavoidable exception: Auth.js's `signIn()` and `signOut()`
 helpers set and clear cookies from server code and are designed to be invoked
@@ -64,15 +92,80 @@ Consequences of that choice, made concrete:
   `requireStudentProfile(id)` → `db.studentProfile.findFirst({ where: { id,
   userId: session.user.id } })`. A profile belonging to another account is
   indistinguishable from a nonexistent one, which is exactly the **404** that
-  AC 15 and M1 AC 33 demand. `403` is reserved for cases where the caller
-  legitimately owns the resource but the operation is barred — an upload token
-  for a `CONSENT_REQUIRED` profile (AC 30) — because collapsing that to 404
-  would hide from the parent that their own profile exists.
+  AC 32 and M1 AC 33 demand.
+
+### The check order, which is part of the contract
+
+`withAuth()` runs these in a fixed order and **stops at the first failure**:
+
+| # | Check | Failure | Why it is here and not later |
+|---|---|---|---|
+| 1 | Session present | **401** | AC 34 |
+| 2 | Same-origin `Origin`/`Sec-Fetch-Site` on non-GET | **403** | CSRF; ADR-0006 owns it so it cannot be forgotten per-route |
+| 3 | Resource resolves under `userId` | **404** | AC 32, M1 AC 33. Existence is never leaked |
+| 4 | **Consent-state gate** (`status === 'ACTIVE'` where required) | **403** | AC 11, AC 36. **Before** body parsing, so an invalid body against a non-consented profile is still a 403, not a 400 |
+| 5 | Flow-order precondition (e.g. a `DirectNotice` exists) | **409** | AC 15 |
+| 6 | zod parse of the body | **400** + `fieldErrors` | AC 27, 28, 29, 20 |
+| 7 | Rate limit | **429** | M1 AC 17 |
+
+Step 4 sitting above step 6 is deliberate and is the kind of thing two engineers
+would otherwise resolve differently. AC 11 says a direct POST of profile fields
+against a non-`ACTIVE` profile returns 403 and **none of those values is
+persisted to any table** — a 400 would tell an attacker that the field shape was
+the problem and that the profile is otherwise writable.
+
+### The status vocabulary, fixed
+
+- **401** — no session.
+- **403** — the caller owns the resource but the operation is barred by state
+  and nothing in this request could make it legal: profile fields before
+  `ACTIVE` (AC 11), an upload token for a `NOTICE_PENDING`, `CONSENT_PENDING` or
+  `CONSENT_WITHDRAWN` profile (AC 36). Collapsing these to 404 would hide from a
+  parent that their own profile exists.
+- **404** — the resource does not exist *for this caller*. Always used for
+  cross-account access.
+- **409** — the resource is at the wrong step of a flow and the fix is to
+  perform another step: consent before a direct notice exists (AC 15),
+  withdrawing consent from a profile that is already `CONSENT_WITHDRAWN`,
+  confirming a consent that is already verified, closing an account that is
+  already closing.
+- **400** — the body failed zod.
+- **429** — rate limited.
+
+### Resolving AC 18 against AC 20
+
+AC 18 says a consent submission whose corroborating step has not completed
+leaves `verifiedAt` null and the profile `CONSENT_PENDING` — a **success**.
+AC 20 says a direct POST to the consent endpoint carrying a name, a relationship
+and an affirmation of parenthood "but no completed method evidence" returns the
+**typed error shape**. Read naively, the same request is both.
+
+They are reconciled by what the endpoint requires in its body. The consent
+submit endpoint requires the **id and version of the `DirectNotice` that was
+actually served** (which AC 17 requires on the record anyway) and the
+**configured method identifier**. Therefore:
+
+- `{ consentingAdultName, relationship, affirmed: true }` and nothing else →
+  fails zod on the missing notice binding → **400**, no row written,
+  `verifiedAt` necessarily null, profile not `ACTIVE`. **AC 20 satisfied.**
+- A complete, well-formed submission → **202**, a row with `verifiedAt: null`,
+  profile `CONSENT_PENDING`. **AC 18 satisfied.**
+
+The general principle: **an affirmation is never sufficient input to any
+endpoint.** There is no route anywhere in this application that turns a
+self-assertion into an `ACTIVE` profile. Activation happens only in the
+method-callback route, from evidence the provider produced (ADR-0008).
+
 - Forms are client components calling `apiFetch<T>()` from `lib/api/client.ts`,
   the single place that understands `ApiError`, followed by `router.refresh()`
   to re-render the server components that own the data.
 - Page-level reads stay in server components through the DAL. No route handler
   exists to serve data a server component already has.
+- **One route is deliberately public and unauthenticated:**
+  `POST /api/consent/verify`, whose credential is the single-use consent
+  challenge token, because the parent may open the confirmation message on a
+  device with no session. It is rate limited and it is the only handler
+  `withAuth()` runs in `public` mode.
 
 ## Alternatives considered
 
@@ -82,15 +175,15 @@ Consequences of that choice, made concrete:
   form.
 - **Cons:** Two error conventions, two validation call sites and two
   authorization helpers, in the codebase where a single missed `userId` scope is
-  a children's-data breach. Fifteen acceptance criteria stop being literally
+  a children's-data breach. Nineteen acceptance criteria stop being literally
   testable. The "programmatic" boundary is fuzzy — profile creation is a form
-  *and* the thing AC 10 attacks with a direct POST.
+  *and* the thing AC 27 attacks with a direct POST.
 - **Rejected because:** uniformity of the authorization boundary is worth more
   here than progressive enhancement, and the specs were written against HTTP.
 
 ### Server actions everywhere, with ACs reinterpreted
 - **Pros:** Least code, fully idiomatic, no fetch layer.
-- **Cons:** Requires rewriting fifteen acceptance criteria to say "returns a
+- **Cons:** Requires rewriting nineteen acceptance criteria to say "returns a
   typed failure result" instead of "HTTP 400/403/404/429" — a scope negotiation
   with the owner, after approval, to make the implementation convenient. Server
   actions are also public untrusted endpoints (Next's own guidance) with a
@@ -124,21 +217,28 @@ Consequences of that choice, made concrete:
   `lib/auth/dal.ts` and grepping for handlers that bypass it.
 - Every acceptance criterion that names a status code is asserted literally, in
   Vitest, by calling the exported handler directly — no browser, no RSC payload.
+- The consent-state gate lives at step 4 of one wrapper, so "can this profile be
+  written to yet?" is answered in one place rather than at the top of nine
+  handlers.
 - The backend track can be built and fully tested before any UI exists, which is
   what makes the parallel frontend/backend split real rather than nominal.
-- Route handlers are the natural home for the cron jobs and the
-  `handleUpload()` callback, which cannot be server actions anyway.
+- Route handlers are the natural home for the cron jobs, the `handleUpload()`
+  callback, and the consent method callbacks, none of which can be server
+  actions anyway.
 
 ### Negative / accepted trade-offs
 - **No progressive enhancement.** Every form requires JavaScript. Acceptable:
   the upload flow requires JavaScript unconditionally (client-direct upload,
   magic-byte sniffing, wasm conversion), so a no-JS path would work for half the
-  product and fail at its core.
+  product and fail at its core. Note the consent flow is now one of the forms
+  that requires JavaScript, which is worth a second look if a parent completing
+  consent on a locked-down device ever becomes a real support case.
 - More boilerplate per mutation: a route file, a zod schema, a DTO type and a
   client call, versus one action function.
 - Manual revalidation — `router.refresh()` after a successful mutation instead
   of `revalidatePath()` inside an action.
 - One documented inconsistency: sign-in and sign-out are server actions.
+- One documented public route: `POST /api/consent/verify`.
 - CSRF is not free the way it is with server actions. Mitigated by
   `SameSite=Lax` session cookies plus a same-origin `Origin` header check inside
   `withAuth()` for all non-GET methods. That check is part of the wrapper, not
@@ -150,6 +250,11 @@ Consequences of that choice, made concrete:
       it exists before M0 is called done.
 - [ ] One Vitest helper that asserts any error response conforms to `ApiError`,
       applied to every handler, so the shape cannot drift.
+- [ ] One Vitest test per consent-gated handler asserting the **order** in the
+      table above: an invalid body against a non-`ACTIVE` profile must be 403,
+      not 400. Ordering bugs are invisible in a happy-path suite.
+- [ ] The public consent-verify route needs its own rate limit; it is the only
+      unauthenticated mutation in the app.
 
 ## Revisit when
 
