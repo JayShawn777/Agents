@@ -2,12 +2,34 @@
 
 - **Status:** Proposed
 - **Date:** 2026-08-26
+- **Revised:** 2026-08-26 (references only — see "Revision note")
 - **Deciders:** Jaysh (pending)
 - **Spec:** docs/specs/m0-accounts-and-profiles.md, docs/specs/m1-upload-and-extract.md
 
+## Revision note — 2026-08-26
+
+The M0 spec was revised on the same date (36 → 52 acceptance criteria). **The
+decision in this ADR is unchanged.** Nothing about the consent-flow reordering
+touches the storage transport, the port, the pathname scheme or the signed-URL
+design. Two references are corrected:
+
+1. **AC renumbering.** The storage-plumbing block moved from AC 25–36 to
+   **AC 34–43**. Old → new: 25→34, 26→35, 27→37, 28→38, 29→39, 30→36, 31→40,
+   32→41, 33→42, 34→43. Old AC 35 (profile deletion removes objects) is now
+   AC 46 and old AC 36 (account deletion) is now AC 47/48; both belong to
+   ADR-0007, not here.
+2. **The upload-token gate widens from one refused status to three.** The gate
+   was and remains "issue a token only for a profile whose status is `ACTIVE`",
+   which is why the decision below did not have to change. But the spec now
+   enumerates `NOTICE_PENDING`, `CONSENT_PENDING` and `CONSENT_WITHDRAWN` as
+   the states that must be refused with 403 (AC 36). Implementations must test
+   `status === 'ACTIVE'` **positively**; a negative test against a list of
+   refused statuses would silently start issuing tokens the day a fourth state
+   is added.
+
 ## Context
 
-M0 AC 25–36 require a private object store, a server-side authorization
+M0 AC 34–43 require a private object store, a server-side authorization
 boundary that mints upload credentials, database records that hold a
 **pathname** rather than a URL, signed read URLs with a ≤5-minute expiry, and a
 reconciliation job that enumerates the *store* to find objects with no database
@@ -63,7 +85,8 @@ export interface StoragePort {
 3. `POST /api/blob/upload` reads the body **once** into a variable. If
    `body.type === 'blob.generate-client-token'` it runs our own checks *before*
    delegating: session (401), profile ownership scoped by `userId` (403),
-   profile status `ACTIVE` (403), hourly cap (429). Only then does it call
+   **profile status is exactly `ACTIVE`** (403 for any other status — AC 36),
+   hourly cap (429). Only then does it call
    `handleUpload({ body, request, onBeforeGenerateToken, onUploadCompleted })`.
    `onBeforeGenerateToken` zod-validates `clientPayload`, re-asserts that the
    proposed pathname matches `^students/<authorizedProfileId>/uploads/[a-z0-9-]+\.[a-z0-9]+$`,
@@ -71,7 +94,7 @@ export interface StoragePort {
    'image/png', 'image/webp', 'application/pdf'], maximumSizeInBytes:
    20 * 1024 * 1024, addRandomSuffix: true, tokenPayload }`. These constraints
    are enforced by the provider, so a tampered client cannot exceed them
-   (AC 27/28).
+   (AC 37/38).
 4. Bytes go browser → `*.blob.vercel-storage.com`. No function is involved.
 5. **The client then calls `POST /api/uploads/confirm`** with the final
    pathname. The server calls `head(pathname)` and records the provider's
@@ -83,7 +106,7 @@ export interface StoragePort {
    (M1 AC 14). `Upload.pathname` is `@unique`, so double delivery yields exactly
    one row (M1 AC 15).
 
-**Pathnames, not URLs**, are stored (AC 29), namespaced by student profile id,
+**Pathnames, not URLs**, are stored (AC 39), namespaced by student profile id,
 which makes profile deletion a prefix operation and makes cross-account access a
 detectable pathname mismatch rather than a trusted identifier.
 
@@ -118,7 +141,7 @@ provider swap changes one file plus a dependency, not the design.
   public blobs, analogise them to "share via link", and warn that search engines
   index them. A leaked or logged URL is permanent unrestricted access.
 - **Rejected because:** security-by-obscurity is not an acceptable control for a
-  photograph of a nine-year-old's homework, and M0 AC 31 requires an
+  photograph of a nine-year-old's homework, and M0 AC 40 requires an
   unauthenticated fetch to fail.
 
 ### Supabase Storage private buckets
@@ -129,7 +152,9 @@ provider swap changes one file plus a dependency, not the design.
   because RLS policies key off Supabase Auth's `auth.uid()` and we do not use
   Supabase Auth; we would enforce authorization in application code exactly as
   with Vercel Blob, minus a vendor. Free-plan projects pause after a week of
-  inactivity, so it is Pro from day one.
+  inactivity, so it is Pro from day one. It would also be a fifth named third
+  party in the §312.4 direct notice (AC 13) and a fifth row in the vendor
+  capability assessment (AC 52).
 - **Rejected because:** more vendor, more cost, and no privacy advantage that
   actually transfers. **Retained as the designated fallback** if the spike
   fails.
@@ -158,11 +183,14 @@ provider swap changes one file plus a dependency, not the design.
 ### Positive
 - File bytes never enter our functions or our logs (M1 AC 2, AC 31).
 - Size and content-type limits are enforced by the provider, not the client
-  (AC 27/28).
+  (AC 37/38).
 - One vendor. `VERCEL_OIDC_TOKEN` covers server-side reads, so no static storage
   secret is needed for reads; only client-token minting needs
   `BLOB_READ_WRITE_TOKEN`.
 - Storing pathnames keeps a provider migration to a re-upload plus one file.
+- Because no token is ever minted for a non-`ACTIVE` profile, no object can
+  exist under a profile that has not completed consent — which is what makes the
+  pre-consent purge (AC 22) a database-only operation in the normal case.
 
 ### Negative / accepted trade-offs
 - Three moving parts (token route, direct upload, confirm route) instead of one,
@@ -180,13 +208,15 @@ provider swap changes one file plus a dependency, not the design.
 ### Follow-up required
 - [ ] Owner approval for `@vercel/blob@^2.8`.
 - [ ] Run the spike (plan §9) and write `docs/research/vercel-blob-verified.md`
-      with the real type signatures before any of AC 25–36 is implemented.
+      with the real type signatures before any of AC 34–43 is implemented.
 - [ ] Add `BLOB_READ_WRITE_TOKEN` and `CRON_SECRET` to `.env.example` and the
       runbook.
 - [ ] Confirm whether Private Blob is available on the Hobby plan specifically,
       and whether a signed-URL `get` counts as a simple or advanced operation.
 - [ ] Re-check the 4.5 MB function body cap (documented "last updated
       2026-07-01") before launch.
+- [ ] Complete the §312.8 vendor capability assessment for Vercel in
+      `docs/security-program.md` (AC 52) before any child's file is stored.
 
 ## Revisit when
 

@@ -2,8 +2,44 @@
 
 - **Status:** Proposed
 - **Date:** 2026-08-26
+- **Revised:** 2026-08-26 (see "Revision note")
 - **Deciders:** Jaysh (pending)
 - **Spec:** docs/specs/m0-accounts-and-profiles.md
+
+## Revision note — 2026-08-26
+
+The M0 spec was revised on the same date (36 → 52 acceptance criteria). **The
+decision in this ADR is unchanged** — the sign-in mechanism was not what the
+spec revision touched. Four references are corrected because they now point at
+the wrong thing:
+
+1. **AC renumbering.** The old AC 36 (account deletion, soft-delete, sign-in
+   refusal) is now **AC 47**, and it is specifically **account *closure***.
+   Every "AC 36" below now reads AC 47.
+2. **Sign-in refusal applies to account closure only.** The revised spec splits
+   deletion three ways (ADR-0007 §4). A parent's §312.6 request to delete a
+   child's data does **not** close the account, does **not** set
+   `closureRequestedAt`, and must **not** refuse the adult's sign-in. The
+   `signIn` callback's refusal condition is `User.closureRequestedAt`, and
+   nothing else.
+3. **The endpoint is `/api/account/closure`, not `/api/account/deletion`.**
+   Renamed deliberately; see ADR-0007 §4(c).
+4. **The last follow-up item is answered and removed.** It asked for legal
+   review of whether an in-app attestation plus an adult-attested consent meets
+   COPPA's verifiable-parental-consent bar. The research answered it: **it does
+   not.** Verifiable parental consent is now its own decision in **ADR-0008**,
+   and it does not supersede this one. The 18+ attestation in AC 6 survives
+   untouched, because it was never claimed to be consent — it is an age gate for
+   the *account holder* and the spec now says so explicitly.
+
+One thing this ADR now owns that it did not before: `lib/email/` sends **three**
+distinct message types, and they must not be confused. The sign-in magic link
+(AC 3), the §312.4 direct notice email (AC 14), and — if `EMAIL_PLUS` is the
+configured consent method — the confirmatory consent message (ADR-0008 §5). The
+spec's non-goals state plainly that the sign-in link is **not** the confirmatory
+step of an email-plus consent method. They use different tokens, different
+tables, different TTLs and different landing pages. Nothing in the consent flow
+may reuse `VerificationToken`.
 
 ## Context
 
@@ -22,7 +58,8 @@ The acceptance criteria constrain the mechanism tightly:
   not work afterwards.
 - AC 6 — an 18+ attestation is required and **no `User` row is written**
   without it.
-- AC 36 — a soft-deleted account must be **refused sign-in** for 30 days.
+- AC 47 — an account in the closure recovery window must be **refused sign-in**
+  for 30 days.
 
 AC 5 is the sharpest constraint: a stateless JWT session cannot be invalidated
 server-side, so sign-out would only clear a cookie that still verifies. AC 5
@@ -64,10 +101,13 @@ a single passwordless email provider, and the Prisma adapter**, wired as:
   `AdultAttestation` row (email, timestamp, IP, user agent, 15-minute expiry),
   and the `signIn` callback refuses any redemption with no live attestation for
   that address — defence in depth against a replayed link.
-- **AC 36** is enforced in the `signIn` callback: if
-  `user.deletionRequestedAt` is set and the grace period has not elapsed,
-  return `false`. The account-deletion route also deletes every `Session` row
-  for that user so existing cookies die immediately.
+  **This is an account-holder age gate and carries no COPPA weight.** It is not
+  consent and must never be presented as consent; see ADR-0008.
+- **AC 47** is enforced in the `signIn` callback: if
+  `user.closureRequestedAt` is set and the recovery window has not elapsed,
+  return `false`. The account-closure route also deletes every `Session` row
+  for that user so existing cookies die immediately. No other deletion path
+  affects sign-in.
 - **`lib/auth/dal.ts`** is the only place session state is read. It exports
   React-`cache`d `verifySession()`, `requireUser()` and
   `requireStudentProfile(studentProfileId)`; the last one resolves a profile
@@ -94,7 +134,7 @@ do **not** cast to `any`.
 ### Hand-rolled magic link + opaque database sessions (zero auth dependency)
 - **Pros:** No new major dependency to approve. ~150 lines, fully auditable, no
   version coupling to Prisma 7. Every AC — single-use token, 15-minute expiry,
-  server-side revocation, soft-delete refusal, attestation gate — is expressed
+  server-side revocation, closure refusal, attestation gate — is expressed
   directly rather than through a hook. No unused `Account`/`Authenticator`
   tables. No JWT, no password hashing, no OAuth: the crypto surface is a
   32-byte random token and a SHA-256 hash.
@@ -110,10 +150,10 @@ do **not** cast to `any`.
 - **Pros:** No `Session` table, no database round trip per request, works
   without an adapter for the session half.
 - **Cons:** Sign-out cannot invalidate anything server-side — the old cookie
-  keeps verifying until its `exp`. Soft-delete refusal (AC 36) is likewise
+  keeps verifying until its `exp`. Closure refusal (AC 47) is likewise
   unenforceable against an already-issued token without a denylist, which is a
   session table by another name.
-- **Rejected because:** it fails AC 5 and AC 36 outright.
+- **Rejected because:** it fails AC 5 and AC 47 outright.
 
 ### Better Auth (magic-link plugin, Prisma adapter)
 - **Pros:** TypeScript-native, database sessions by default with real
@@ -131,10 +171,11 @@ do **not** cast to `any`.
 ### Clerk / WorkOS / Auth0 (hosted identity)
 - **Pros:** Nothing to build. Verified email, MFA, device management included.
 - **Cons:** A third-party processor holding the account owner's identity for a
-  product handling minors' data — a new sub-processor, a new DPA, and a new
-  disclosure in the consent text of AC 18. Per-MAU pricing. User records live
-  outside our Postgres, so `StudentProfile.userId` becomes a foreign identifier
-  and the account-purge path (AC 36) has to span two systems.
+  product handling minors' data — a new sub-processor, a new DPA, a new name in
+  the §312.4 direct notice (AC 13) and a new row in the vendor capability
+  assessment (AC 52). Per-MAU pricing. User records live outside our Postgres,
+  so `StudentProfile.userId` becomes a foreign identifier and the account-purge
+  path (AC 47) has to span two systems.
 - **Rejected because:** the compliance and deletion story gets worse, not
   better, for a feature we can satisfy with a table.
 
@@ -147,9 +188,9 @@ do **not** cast to `any`.
 ## Consequences
 
 ### Positive
-- AC 5 and AC 36 are satisfied by deleting rows, which is trivially testable.
-- Sessions, users, and consent records all live in one Postgres database, so
-  the AC 36 purge is one transaction plus a blob sweep.
+- AC 5 and AC 47 are satisfied by deleting rows, which is trivially testable.
+- Sessions, users, consent records and notice records all live in one Postgres
+  database, so the AC 47 purge is one transaction plus a blob sweep.
 - No password, no OAuth, no MFA surface in M0.
 - Email deliverability is the only external dependency in the auth path, and it
   is behind one function we can stub in tests.
@@ -166,6 +207,11 @@ do **not** cast to `any`.
   remembered account state. This is mildly repetitive and defensible.
 - Sign-in and sign-out are server actions while everything else is a route
   handler — one deliberate inconsistency, documented in ADR-0006.
+- Email deliverability now sits on the critical path of a **compliance**
+  artifact, not only of sign-in: AC 14 requires the direct notice to be emailed,
+  and `EMAIL_PLUS` would make the confirmatory message the consent itself. A
+  Resend outage degrades from "a parent cannot sign in" to "a parent cannot
+  complete consent". See the plan's risk table.
 
 ### Follow-up required
 - [ ] Owner approval for `next-auth@^5` and `@auth/prisma-adapter`.
@@ -176,13 +222,14 @@ do **not** cast to `any`.
       contingency and record it as a superseding ADR.
 - [ ] Verify the `Secure` flag and the `__Secure-` cookie prefix on a Vercel
       preview deployment — local Playwright runs over HTTP and cannot assert it.
-- [ ] Legal review of whether an in-app 18+ attestation plus adult-attested
-      consent meets COPPA's verifiable-parental-consent bar (M0 open question 2).
+- [ ] Add the transactional email provider to the §312.8 vendor capability
+      assessment in `docs/security-program.md` (AC 52) before it carries a
+      direct notice or a consent message.
 
 ## Revisit when
 
 Any of: the app needs a second sign-in factor or a social provider; sign-in
 email deliverability becomes a support burden; `next-auth@5` stays in beta past
-the point where a stable alternative is clearly better; or COPPA review forces a
-stronger identity-verification method, which would supersede this ADR rather
-than amend it.
+the point where a stable alternative is clearly better. Note that a stronger
+*parental consent* method does **not** revisit this ADR — consent identity and
+account identity are separate concerns, and consent lives in ADR-0008.
