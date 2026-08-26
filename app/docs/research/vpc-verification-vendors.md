@@ -44,7 +44,7 @@
   what does it cost, what does it store, and does it avoid pulling a billing
   system into M0?
 - **Verdict:** The `ConsentMethod` enum already in the codebase
-  (`SIGNED_FORM`, `PAYMENT_CARD`, `TOLL_FREE_CALL`, `VIDEO_CALL`,
+  (`SIGNED_FORM`, `PAYMENT_CARD`, `TOLL_FREE_PHONE`, `VIDEO_CONFERENCE`,
   `GOV_ID_CHECK`, `KBA`, `FMVPI`, `EMAIL_PLUS`, `TEXT_PLUS`) matches, in both
   label and order, the reconstruction of §312.5(b)(2)(i)–(ix) built here — good
   news, but still unconfirmed against primary text per the caveat above. For a
@@ -153,8 +153,8 @@ its confidence and how many independent search passes converged on it.
 |---|---|---|---|
 | (i) | `SIGNED_FORM` | "Providing a consent form to be signed by the parent and returned to the operator by postal mail, facsimile, or electronic scan." | High — two independent queries agreed verbatim. |
 | (ii) | `PAYMENT_CARD` | Pre-2025: "Requiring a parent, in connection with a **monetary** transaction, to use a credit card, debit card, or other online payment system that provides notification of each discrete transaction to the primary account holder." **The 2025 amendment removed the word "monetary."** Multiple secondary sources (Fenwick, Venable-class commentary) state this plainly; I could not reconstruct the *exact* restated clause text, only the fact of the change. | Medium — the pre-2025 text is high confidence; the post-amendment exact wording is not reconstructed, only the substance of the edit. |
-| (iii) | `TOLL_FREE_CALL` | "Having a parent call a toll-free telephone number staffed by trained personnel." | High. |
-| (iv) | `VIDEO_CALL` | "Having a parent connect to trained personnel via video-conference." | High. |
+| (iii) | `TOLL_FREE_PHONE` | "Having a parent call a toll-free telephone number staffed by trained personnel." | High. |
+| (iv) | `VIDEO_CONFERENCE` | "Having a parent connect to trained personnel via video-conference." | High. |
 | (v) | `GOV_ID_CHECK` | "Verifying a parent's identity by checking a form of government-issued identification against databases of such information, where the parent's identification is deleted by the operator from its records promptly after such verification is complete." | High — one query returned this as a single coherent block. |
 | (vi) | `KBA` | "Verifying a parent's identity using knowledge-based authentication provided: (A) the verification process uses dynamic, multiple-choice questions, where there are a reasonable number of questions with an adequate number of possible answers such that the probability of correctly guessing the answers is low; and (B) the questions are of sufficient difficulty that a child age 12 or younger in the parent's household could not reasonably ascertain the answers." | High — returned as one continuous quoted block by a targeted query. |
 | (vii) | `FMVPI` | "Having a parent submit a government-issued photographic identification that is verified to be authentic and is compared against an image of the parent's face taken with a phone camera or webcam, using facial recognition technology, and confirmed by trained personnel to determine that the photos match; provided that the parent's identification and images are promptly deleted by the operator from its records after the match is confirmed." | High — matches the FTC's own 2015 Riyo/Jest8 approval letter description almost word for word. |
@@ -174,7 +174,7 @@ disagreed, and only reading the primary text resolves it with certainty. That
 reading did not happen in this pass.**
 
 **Comparison against our `ConsentMethod` enum** (`prisma/schema.prisma` per
-ADR-0008): `SIGNED_FORM, PAYMENT_CARD, TOLL_FREE_CALL, VIDEO_CALL,
+ADR-0008): `SIGNED_FORM, PAYMENT_CARD, TOLL_FREE_PHONE, VIDEO_CONFERENCE,
 GOV_ID_CHECK, KBA, FMVPI, EMAIL_PLUS, TEXT_PLUS` — **this is exactly the
 reconstructed (i)–(ix) order and shape above.** None of the nine labels appear
 wrong on this evidence. That is a relief but not a verification: ADR-0008
@@ -324,7 +324,7 @@ the only enumerated methods, and the Rule does not require picking one method
 for everyone. A lawful, document-free fallback already sits in the enumerated
 list: `EMAIL_PLUS`/`TEXT_PLUS` (if the disclosure question resolves in our
 favor), `PAYMENT_CARD` (works with any card, not an ID), `SIGNED_FORM` (no
-document, just a signature), or `TOLL_FREE_CALL`/`VIDEO_CALL` (human
+document, just a signature), or `TOLL_FREE_PHONE`/`VIDEO_CONFERENCE` (human
 verification, no document). A production flow should offer at least one
 document-free path rather than dead-ending a parent who lacks ID — this is a
 design requirement worth adding as an acceptance criterion whenever the vendor

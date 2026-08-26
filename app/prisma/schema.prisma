@@ -11,3 +11,458 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// ───────────────────────────── enums ─────────────────────────────
+
+enum GradeLevel {
+  KINDERGARTEN
+  GRADE_1
+  GRADE_2
+  GRADE_3
+  GRADE_4
+  GRADE_5
+  GRADE_6
+  GRADE_7
+  GRADE_8
+  GRADE_9
+  GRADE_10
+  GRADE_11
+  GRADE_12
+  ADULT_LEARNER
+}
+
+/// Coarse age band only. A precise date of birth is never collected (M0 "Never stored").
+/// This is the ONLY learner data collected before consent (AC 8, AC 9).
+enum AgeBand {
+  UNDER_13
+  AGE_13_17
+  ADULT
+}
+
+enum Subject {
+  MATH
+  SCIENCE
+  ENGLISH_LANGUAGE_ARTS
+  READING
+  WRITING
+  HISTORY
+  SOCIAL_STUDIES
+  FOREIGN_LANGUAGE
+  COMPUTER_SCIENCE
+  OTHER
+}
+
+/// Per the spec's acceptance-criteria preamble:
+/// NOTICE_PENDING → CONSENT_PENDING → ACTIVE, plus CONSENT_WITHDRAWN.
+/// CONSENT_REQUIRED from the previous draft is gone: it conflated "no notice yet"
+/// with "notice given, consent not verified", which now have different consequences.
+enum StudentProfileStatus {
+  NOTICE_PENDING
+  CONSENT_PENDING
+  ACTIVE
+  CONSENT_WITHDRAWN
+}
+
+enum ConsentRelationship {
+  PARENT
+  LEGAL_GUARDIAN
+  OTHER_CAREGIVER
+  SELF
+}
+
+/// Append a value here for M6 voice cloning. Never rewrite existing rows. (ADR-0007)
+enum ConsentScope {
+  DATA_PROCESSING
+}
+
+/// Method shapes enumerated in 16 CFR §312.5(b)(2)(i)-(ix), confirmed verbatim
+/// against eCFR and Cornell LII (docs/research/coppa-312-5-primary-text.md).
+/// All nine values map one-to-one, in order, to the nine current subsections.
+/// Labels are FTC/industry shorthand, not literal regulatory wording, except
+/// KBA which is the CFR's own term. Append-only: removing a value is a
+/// destructive migration against legal evidence. See ADR-0008.
+enum ConsentMethod {
+  SIGNED_FORM
+  PAYMENT_CARD
+  TOLL_FREE_PHONE
+  VIDEO_CONFERENCE
+  GOV_ID_CHECK
+  KBA
+  FMVPI
+  EMAIL_PLUS
+  TEXT_PLUS
+}
+
+/// Which deletion happened. The distinction IS the evidence (ADR-0007 §4).
+enum DeletionKind {
+  ACCOUNT_CLOSURE // AC 47 — 30-day recovery window
+  PARENTAL_DELETION_REQUEST // AC 48 — §312.6, no recovery window, never queued
+  PROFILE_DELETED // AC 31, AC 46
+  PRE_CONSENT_PURGE // AC 22
+  RETENTION_EXPIRY // AC 45
+}
+
+enum UploadStatus {
+  PENDING // token issued, bytes may exist, not yet confirmed
+  STORED // confirmed; head() verified the object
+  FAILED // orphan threshold passed with no confirmation, or client reported failure
+  SOURCE_DELETED // bytes removed by retention or by the user; problem text retained
+}
+
+enum ExtractionStatus {
+  PENDING
+  RUNNING
+  COMPLETE
+  COMPLETE_EMPTY
+  FAILED
+  CONFIRMED
+}
+
+// ─────────────────── auth (Auth.js v5, ADR-0002) ───────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+
+  /// AC 6: stamped from the AdultAttestation that produced the first sign-in link.
+  /// An account-holder age gate. NOT consent. (ADR-0002, ADR-0008)
+  adultAttestedAt DateTime?
+
+  /// AC 47: account CLOSURE only. Sign-in is refused while this is set and the
+  /// recovery window is live. A §312.6 deletion request NEVER sets this. (ADR-0007 §4)
+  closureRequestedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts        Account[]
+  sessions        Session[]
+  studentProfiles StudentProfile[]
+  consentsGiven   ParentalConsent[]
+  noticesReceived DirectNotice[]
+
+  @@index([closureRequestedAt])
+}
+
+/// Required by @auth/prisma-adapter. Unused in M0 — no OAuth provider is configured.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+/// AC 5 / AC 47: sessions are rows, so sign-out and closure revoke server-side.
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// AC 4: Auth.js deletes the row on redemption (single use); maxAge 15 min sets expiry.
+/// NOTHING in the consent flow may reuse this table (ADR-0002 revision note).
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+/// AC 6: written by signInWithEmail BEFORE a link is dispatched. Without one, no email
+/// is sent, so no token exists, so no User row can be created.
+model AdultAttestation {
+  id         String   @id @default(cuid())
+  email      String
+  attestedAt DateTime @default(now())
+  expiresAt  DateTime
+  ipAddress  String?
+  userAgent  String?
+
+  @@index([email, expiresAt])
+}
+
+// ──────────────────────── student profiles ────────────────────────
+
+model StudentProfile {
+  id     String @id @default(cuid())
+  userId String
+
+  /// AC 9: with userId, status and createdAt, the ONLY thing a pending record holds.
+  ageBand AgeBand
+
+  status StudentProfileStatus @default(NOTICE_PENDING)
+
+  /// AC 9 / AC 25: NULL until the profile is ACTIVE and the owner fills the detail
+  /// step. Nullability is the schema-level expression of "collected only after
+  /// consent is verified" — it is not a convenience.
+  displayName String?
+  gradeLevel  GradeLevel?
+  subjects    Subject[] // empty until ACTIVE; 1–8 enforced by zod (AC 28)
+  avatarId    String? // preset id from AVATAR_IDS; never an uploaded image (AC 29)
+
+  /// Stamped once, when status first becomes ACTIVE. Used by nothing security-critical;
+  /// exists so "time to consent" is answerable without reading the consent table.
+  activatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notices  DirectNotice[]
+  consents ParentalConsent[]
+  uploads  Upload[]
+  grants   UploadTokenGrant[]
+
+  @@index([userId, createdAt])
+  /// The pre-consent purge job's query (AC 22). Without it that job seq-scans.
+  @@index([status, createdAt])
+}
+
+/// AC 12–15. The §312.4 direct notice actually served to this account owner for this
+/// student. A consent record cannot exist without one (AC 15), which is why this is a
+/// table and not a boolean.
+model DirectNotice {
+  id               String @id @default(cuid())
+  studentProfileId String
+  userId           String
+
+  /// AC 14: changing the notice text means a NEW version identifier. Existing rows
+  /// keep the version actually served to them; the copy is resolved from this string,
+  /// never from "whatever is deployed now".
+  noticeVersion String
+
+  /// When the screen was presented and acknowledged.
+  presentedAt      DateTime  @default(now())
+  /// AC 14: when the same content was emailed. NULL until the provider accepts it.
+  /// See §10 for the deliberate reading of AC 14 this represents.
+  sentAt           DateTime?
+  emailDeliveryRef String?
+
+  ipAddress String?
+  userAgent String?
+
+  studentProfile StudentProfile    @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  consents       ParentalConsent[]
+
+  @@index([studentProfileId, presentedAt])
+  @@index([sentAt]) // the notice-email retry job
+}
+
+/// APPEND-ONLY, with exactly one permitted mutation: the one-time verifiedAt stamp
+/// (ADR-0007 §3). Never deleted while the account lives. Withdrawal appends a new row;
+/// the prior row is byte-identical afterwards (AC 24).
+model ParentalConsent {
+  id String @id @default(cuid())
+
+  studentProfileId String
+  /// The signed-in adult who performed the action, kept for auditability.
+  userId           String
+
+  /// AC 15 / AC 17: the notice this consent was given against. Restrict, not Cascade —
+  /// a notice may not vanish out from under a live consent record.
+  directNoticeId String
+  /// Denormalised so the version survives the notice row's own retention (AC 17).
+  noticeVersion  String
+
+  consentingAdultName String
+  relationship        ConsentRelationship
+  scopes              ConsentScope[]
+  consentTextVersion  String // e.g. "2026-08-26.1" — new wording, new version
+
+  /// AC 16/17: recorded on the row, NEVER inferred from configuration at read time.
+  /// This is what lets the deployed method change without invalidating history.
+  method         ConsentMethod
+  /// AC 17: a method-specific REFERENCE — processor transaction id, vendor
+  /// verification id, signed-form pathname, consumed-challenge id. Never a live
+  /// credential (ADR-0008 §4).
+  methodEvidence String?
+
+  submittedAt         DateTime  @default(now())
+  /// AC 18/19: NULL until the corroborating step completes. The profile is ACTIVE
+  /// only when this is set. Stamped by a conditional UPDATE ... WHERE verified_at IS NULL.
+  verifiedAt          DateTime?
+  /// AC 24: set only on an appended withdrawal row.
+  withdrawnAt         DateTime?
+  supersedesConsentId String?
+
+  ipAddress String? // read server-side from headers, never from the body
+  userAgent String?
+
+  studentProfile StudentProfile                @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  user           User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  directNotice   DirectNotice                  @relation(fields: [directNoticeId], references: [id], onDelete: Restrict)
+  challenge      ConsentVerificationChallenge?
+
+  @@index([studentProfileId, submittedAt])
+  @@index([verifiedAt])
+}
+
+/// The pending corroborating step. Holds a HASH of the token, never the token —
+/// for EMAIL_PLUS that token IS parental consent (ADR-0008 §4).
+model ConsentVerificationChallenge {
+  id                String        @id @default(cuid())
+  parentalConsentId String        @unique
+  method            ConsentMethod
+  /// SHA-256 of the token that was emailed or texted.
+  tokenHash         String        @unique
+  expiresAt         DateTime
+  consumedAt        DateTime?
+  attemptCount      Int           @default(0)
+  createdAt         DateTime      @default(now())
+
+  parentalConsent ParentalConsent @relation(fields: [parentalConsentId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+}
+
+// ─────────────────────── uploads and extraction ───────────────────────
+
+/// Exists so the TOKEN endpoint can be rate limited (M1 AC 17). Counting Upload rows
+/// would only count uploads that were confirmed. Pruned after 24h by the reconciler.
+model UploadTokenGrant {
+  id                String   @id @default(cuid())
+  studentProfileId  String
+  requestedPathname String
+  createdAt         DateTime @default(now())
+
+  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  @@index([studentProfileId, createdAt])
+}
+
+model Upload {
+  id               String       @id @default(cuid())
+  studentProfileId String
+  /// Storage PATHNAME, never a fully-qualified URL (AC 39). Unique → confirm is idempotent.
+  pathname         String       @unique
+  /// contentType and sizeBytes come from storage.head(), never from the client.
+  contentType      String
+  sizeBytes        Int
+  originalFilename String
+  pageCount        Int? // PDFs only; null for images
+  status           UploadStatus @default(PENDING)
+
+  /// RETENTION ANCHOR. Stamped when this upload's extraction reaches COMPLETE,
+  /// COMPLETE_EMPTY or CONFIRMED. The source-file window is measured from HERE, not
+  /// from createdAt: the spec's table says "14 days after successful extraction".
+  extractedAt     DateTime?
+  sourceDeletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  extraction     Extraction?
+
+  @@index([studentProfileId, createdAt])
+  @@index([status, createdAt])
+  /// The retention sweep's query (AC 45, M1 AC 36).
+  @@index([status, extractedAt])
+}
+
+model Extraction {
+  id           String           @id @default(cuid())
+  uploadId     String           @unique
+  status       ExtractionStatus @default(PENDING)
+  model        String // "claude-opus-5"
+  attemptCount Int              @default(0)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  /// Internal code (REFUSED | PARSE_FAILED | TIMEOUT | UPSTREAM | INTERNAL). Mapped to a
+  /// fixed user-facing string at the API layer; never returned verbatim (M1 AC 24).
+  failureCode  String?
+  inputTokens  Int?
+  outputTokens Int?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  upload   Upload             @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  problems ExtractedProblem[]
+
+  @@index([status, startedAt])
+}
+
+model ExtractedProblem {
+  id                String   @id @default(cuid())
+  extractionId      String
+  /// Position on the page as reported by the model. NEVER renumbered after a delete —
+  /// that is what "stable, non-colliding" means in M1 AC 29.
+  ordinal           Int
+  label             String? // "4", "4a", "Question 3"
+  /// Problem text. Mathematics is LaTeX delimited $…$ / $$…$$ (M1 AC 21, ADR-0005).
+  text              String
+  containsMath      Boolean  @default(false)
+  subject           Subject?
+  problemType       String? // free text; the skill taxonomy is M2's job
+  /// M1 AC 22: the student's handwritten answer, structurally separate. Nothing reads it in M1.
+  studentAnswerText String?
+  confidence        Float
+  studentCorrected  Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  extraction Extraction @relation(fields: [extractionId], references: [id], onDelete: Cascade)
+
+  @@unique([extractionId, ordinal])
+  @@index([extractionId])
+}
+
+// ──────────────────────────── audit ────────────────────────────
+
+/// AC 47/48: must SURVIVE the purge, so there is deliberately no relation to User or
+/// StudentProfile and deliberately no email, no name, nothing about the child.
+/// `kind` is the only evidence that a §312.6 request was honoured promptly. (ADR-0007 §4)
+model DeletionAudit {
+  id          String       @id @default(cuid())
+  kind        DeletionKind
+  /// Opaque userId or studentProfileId. Not a foreign key, on purpose.
+  subjectRef  String
+  requestedAt DateTime     @default(now())
+  completedAt DateTime?
+
+  @@index([subjectRef])
+  @@index([kind, completedAt])
+}
+
+/// AC 50: what survives a deletion in place of the consent record. No foreign keys,
+/// no studentProfileId, no name, no relationship, no IP, no user agent.
+/// ASSUMPTION pending counsel — CONSENT_AUDIT_RETENTION_DAYS = 0 degrades this to
+/// "purged with everything else" with no schema change. (ADR-0007 §6)
+model ConsentAuditArtifact {
+  id                 String        @id @default(cuid())
+  consentTextVersion String
+  noticeVersion      String
+  method             ConsentMethod
+  submittedAt        DateTime
+  verifiedAt         DateTime?
+  withdrawnAt        DateTime?
+  /// HMAC-SHA256(account identifier, AUDIT_PSEUDONYM_KEY). Not the email. Not reversible.
+  adultIdentityHash  String
+  deletedAt          DateTime      @default(now())
+  purgeAfter         DateTime
+
+  @@index([purgeAfter])
+}

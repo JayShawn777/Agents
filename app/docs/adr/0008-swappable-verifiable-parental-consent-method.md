@@ -87,8 +87,8 @@ record ever depends on what the configuration happens to say when it is read.
 enum ConsentMethod {
   SIGNED_FORM
   PAYMENT_CARD
-  TOLL_FREE_CALL
-  VIDEO_CALL
+  TOLL_FREE_PHONE
+  VIDEO_CONFERENCE
   GOV_ID_CHECK
   KBA
   FMVPI
@@ -334,12 +334,21 @@ and this ADR does not change that.
 - **Rejected for M0:** it is a viable emergency fallback that needs no vendor, so
   it is worth keeping in the enum, but nobody should design a signup around it.
 
-### `TOLL_FREE_CALL` / `VIDEO_CALL`
+### `TOLL_FREE_PHONE` / `VIDEO_CONFERENCE`
 - **Pros:** Unambiguously accepted methods; high assurance.
 - **Cons:** Both require **trained personnel**. On a team of this size that means
   a vendor and a staffing model, and video is the highest-friction option in the
   entire list.
 - **Rejected:** not viable at our size. Present in the enum for completeness.
+
+## Revision note (2026-08-26, second)
+
+Two enum identifiers were renamed when the schema landed: `TOLL_FREE_CALL` →
+`TOLL_FREE_PHONE` and `VIDEO_CALL` → `VIDEO_CONFERENCE`. The regulation does not
+prescribe identifier names, so neither spelling was wrong; the schema and this
+ADR simply disagreed, and migration `0001_m0_m1_core` has been applied and is
+immutable. The code is therefore canonical and the documents were moved to match
+it, not the reverse.
 
 ## Consequences
 

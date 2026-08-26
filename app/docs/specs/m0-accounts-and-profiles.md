@@ -218,7 +218,7 @@ not verified", and the two now have different legal consequences.)
     student record id, the consent scope list, the consent text version, the
     notice version from AC 14, the request IP address, the request user agent, a
     UTC `submittedAt`, a `method` drawn from an enumerated set of §312.5(b)(2)
-    methods (`SIGNED_FORM`, `PAYMENT_CARD`, `TOLL_FREE_CALL`, `VIDEO_CALL`,
+    methods (`SIGNED_FORM`, `PAYMENT_CARD`, `TOLL_FREE_PHONE`, `VIDEO_CONFERENCE`,
     `GOV_ID_CHECK`, `KBA`, `FMVPI`, `EMAIL_PLUS`, `TEXT_PLUS`), a
     `methodEvidence` value specific to that method (confirmation token,
     payment-processor transaction reference, vendor verification id, stored

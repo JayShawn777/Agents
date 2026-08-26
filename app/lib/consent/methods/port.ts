@@ -12,40 +12,30 @@
  */
 
 import type { z } from "zod";
+import { ConsentMethod as PrismaConsentMethod } from "@/lib/generated/prisma/enums";
 
 // ─────────────────────────── the method enum ───────────────────────────
 
 /**
- * Method shapes enumerated in 16 CFR §312.5(b)(2). The subsection LETTERING
- * is deliberately not encoded here or anywhere else — the research that
- * named these methods had web search but not web fetch, and never read
- * §312.5(b)(2) as a continuous list (ADR-0008, "A caveat on the enum
- * labels"). CONFIRM THESE LABELS AGAINST eCFR before any of them reaches
- * parent-facing copy, a privacy policy, or a filing.
+ * Method shapes enumerated in 16 CFR §312.5(b)(2)(i)-(ix), confirmed verbatim
+ * against eCFR and Cornell LII
+ * (`docs/research/coppa-312-5-primary-text.md`). All nine values map
+ * one-to-one, in order, to the nine current subsections.
  *
- * THIS IS THE ONE PLACE these values are defined while
- * `prisma/schema.prisma` has no `ConsentMethod` enum yet (S2 has not run).
- * Once the schema migration lands and `lib/generated/prisma/enums.ts`
- * exports the real Prisma `ConsentMethod` enum, `lib/domain/enums.ts` (S5)
- * should re-export the generated enum and this array should be reconciled
- * with it (ideally replaced by a re-export) so there is never a second
- * source of truth. Values are append-only for the same reason the Prisma
- * enum is: removing one would be a destructive migration against rows that
- * are legal evidence.
+ * RECONCILED (S2/S7): `prisma/schema.prisma` now owns this enum —
+ * `ConsentMethod` and `CONSENT_METHODS` here are derived from the generated
+ * Prisma enum (`lib/generated/prisma/enums`, browser-safe: a plain `as const`
+ * object, no client import) rather than hand-duplicated, so there is exactly
+ * one place these nine values are spelled out. Values are append-only for
+ * the same reason the Prisma enum is: removing one would be a destructive
+ * migration against rows that are legal evidence (ADR-0008).
  */
-export const CONSENT_METHODS = [
-  "SIGNED_FORM",
-  "PAYMENT_CARD",
-  "TOLL_FREE_CALL",
-  "VIDEO_CALL",
-  "GOV_ID_CHECK",
-  "KBA",
-  "FMVPI",
-  "EMAIL_PLUS",
-  "TEXT_PLUS",
-] as const;
+export const CONSENT_METHODS = Object.values(PrismaConsentMethod) as [
+  PrismaConsentMethod,
+  ...PrismaConsentMethod[],
+];
 
-export type ConsentMethod = (typeof CONSENT_METHODS)[number];
+export type ConsentMethod = PrismaConsentMethod;
 
 // ─────────────────────────── begin() / corroborate() shapes ───────────────────────────
 
