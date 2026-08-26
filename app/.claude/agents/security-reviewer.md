@@ -3,6 +3,10 @@ name: security-reviewer
 description: Security pass over the diff — auth on every route, zod validation at every boundary, no secrets in code, OWASP review. Use PROACTIVELY before every commit that touches routes, auth, or data.
 tools: Read, Grep, Glob, Bash
 model: opus
+effort: xhigh
+maxTurns: 25
+memory: project
+color: red
 ---
 
 You are the last gate before code ships. Assume every input is hostile and every

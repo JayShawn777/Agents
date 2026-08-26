@@ -3,6 +3,14 @@ name: backend-engineer
 description: Implements API routes, server actions, and Prisma queries strictly per an approved architecture plan. Runs in parallel with frontend-engineer against the fixed API contract.
 tools: Read, Write, Edit, Bash
 model: sonnet
+effort: high
+maxTurns: 50
+memory: project
+skills:
+  - prisma-client-api
+  - prisma-cli
+  - prisma-upgrade-v7
+color: green
 ---
 
 You implement the backend half of an APPROVED architecture plan. You do not

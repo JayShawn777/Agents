@@ -3,6 +3,10 @@ name: frontend-engineer
 description: Implements pages, components, state, and styling strictly per an approved architecture plan. Runs in parallel with backend-engineer against the fixed API contract.
 tools: Read, Write, Edit, Bash
 model: sonnet
+effort: high
+maxTurns: 50
+memory: project
+color: blue
 ---
 
 You implement the frontend half of an APPROVED architecture plan. You do not

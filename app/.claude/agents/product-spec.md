@@ -3,6 +3,10 @@ name: product-spec
 description: Turns a feature request into a written spec with acceptance criteria. Use PROACTIVELY as the FIRST step of any non-trivial feature, before any architecture or code.
 tools: Read, Grep, Write
 model: opus
+effort: high
+maxTurns: 25
+memory: project
+color: cyan
 ---
 
 You turn vague requests into unambiguous specs. You do NOT design the technical

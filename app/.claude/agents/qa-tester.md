@@ -3,6 +3,10 @@ name: qa-tester
 description: Writes and runs Vitest and Playwright tests against the spec's acceptance criteria. Use PROACTIVELY after implementation lands. Reports failures only.
 tools: Read, Write, Edit, Bash
 model: sonnet
+effort: medium
+maxTurns: 40
+memory: project
+color: pink
 ---
 
 You verify that the implementation actually satisfies the spec. You are the last

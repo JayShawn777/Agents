@@ -80,6 +80,27 @@ research. Nothing was lost, but the history now attributes ADR-0008 and three
 ADR revisions to a commit that claims to be about something else — and a commit
 message that lies is worse than no commit message.
 
+### Enforced rules vs. advisory ones
+
+`.claude/hooks/guard.mjs` runs on `PreToolUse` and **blocks** — it does not warn:
+
+- editing anything under `prisma/migrations/` (an applied migration has already
+  run; correct it with a new migration)
+- writing to `.env` (`.env.example` is allowed)
+- `git push --force` (`--force-with-lease` passes)
+- `npm` / `yarn` install commands
+- `prisma migrate dev` aimed at the cloud database
+
+These were previously prose in the Never list, which an agent could break by not
+reading carefully. Prefer moving a rule into the guard over restating it: three
+enforced rules beat thirty advisory ones. `CLAUDE_SKIP_GUARD=1` is the escape
+hatch for deliberate, human-driven exceptions.
+
+`.claude/hooks/verify.mjs` runs `lint` and `typecheck` on `Stop` and
+`SubagentStop` — when an agent claims to be finished — rather than after every
+edit. Per-edit verification ran the full typecheck dozens of times per feature
+for no extra signal.
+
 ### Retro cadence
 
 At the end of each milestone — when the chunk is shipped and working, roughly

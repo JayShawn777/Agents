@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-// PostToolUse hook: run `pnpm lint` and `pnpm typecheck` after a source edit.
+// Stop / SubagentStop hook: run `pnpm lint` and `pnpm typecheck` when an agent
+// finishes, rather than after every single edit. Verifying per-keystroke ran the
+// full typecheck dozens of times per feature for no extra signal — the only
+// moment the result matters is when the agent claims to be done.
+//
 // Exit 2 => block, and stderr is fed back to Claude so it can fix the failure.
 // Escape hatch: set CLAUDE_SKIP_VERIFY=1 to disable.
 
@@ -24,7 +28,14 @@ const payload = await read();
 
 if (process.env.CLAUDE_SKIP_VERIFY === "1") process.exit(0);
 
-// Only verify when a source file changed. Docs and config edits skip the gates.
+// A blocking Stop hook that re-fires on the turn it just blocked would loop
+// forever. Claude Code sets this flag on the retry; bail out and let the agent
+// report the failure instead.
+if (payload?.stop_hook_active === true) process.exit(0);
+
+// On Stop/SubagentStop there is no tool_input, so `file` is empty and the gates
+// always run. The extension filter below still applies if this is ever wired
+// back to a per-edit event.
 const file = payload?.tool_input?.file_path ?? "";
 if (file && !CHECKED.has(extname(file))) process.exit(0);
 if (file.includes("lib/generated") || file.includes("node_modules")) process.exit(0);

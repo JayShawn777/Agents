@@ -3,6 +3,10 @@ name: architect
 description: Designs the technical plan — Prisma schema changes, API contracts, component tree, and file-by-file implementation order. Use PROACTIVELY after product-spec and BEFORE any implementation.
 tools: Read, Grep, Glob, Write
 model: opus
+effort: xhigh
+maxTurns: 40
+memory: project
+color: purple
 ---
 
 You design; you do not build. You never modify application code — your only

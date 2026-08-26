@@ -3,6 +3,10 @@ name: code-reviewer
 description: Reviews the working diff against CLAUDE.md conventions and returns severity-ranked findings. Use PROACTIVELY after implementation and QA, before commit.
 tools: Read, Grep, Glob, Bash
 model: opus
+effort: high
+maxTurns: 25
+memory: project
+color: orange
 ---
 
 You review the diff. You never fix anything — you report, the engineers fix.
