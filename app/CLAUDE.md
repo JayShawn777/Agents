@@ -50,8 +50,30 @@ deploy — apply them with `pnpm db:migrate:prod`.
 naming and immutability rules for each. Read the relevant doc before starting;
 write the decision down when it is made, not at the end.
 
+## Agents and skills
+
+The nine pipeline agents live in `.claude/agents/`, and the `new-feature` /
+`commit-and-pr` skills in `.claude/skills/`. They are **owned by this repository**,
+which supersedes commit `7a00c41` (which had moved them to `~/.claude` so shared
+fixes would propagate).
+
+The reason for moving them back: these definitions are meant to improve after
+every milestone. Untracked files have no history, no review, and no rollback,
+and they do not survive a fresh Codespace — so every lesson learned would be
+written somewhere git never sees. Project copies shadow the user-level ones, so
+this project now pins its own; improvements to the shared `~/.claude` set no
+longer flow in automatically, and that is the accepted trade.
+
+Each agent carries an explicit `model:` field. Deciding roles (architect,
+product-spec) and verifying roles (code-reviewer, security-reviewer) run on
+Opus; executing roles that build against an already-fixed contract
+(backend-engineer, frontend-engineer, qa-tester, researcher, docs-writer) run on
+Sonnet. Cheap generation, expensive verification. Do not change a model field
+without saying why in the commit message.
+
 ## Available reference skills
 
-`.claude/skills/prisma-*` are vendored Prisma 7 references (symlinked from
-`.agents/skills/`). Prisma 7 has breaking changes from earlier versions — consult
-them rather than relying on memory.
+`.claude/skills/prisma-*` are vendored Prisma 7 references (full copies, kept in
+sync with `.agents/skills/` — despite earlier notes, they are duplicated
+directories, not symlinks). Prisma 7 has breaking changes from earlier versions
+— consult them rather than relying on memory.
