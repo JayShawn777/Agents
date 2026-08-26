@@ -4,7 +4,7 @@ description: Writes and runs Vitest and Playwright tests against the spec's acce
 tools: Read, Write, Edit, Bash
 model: sonnet
 effort: medium
-maxTurns: 40
+maxTurns: 60
 memory: project
 color: pink
 ---

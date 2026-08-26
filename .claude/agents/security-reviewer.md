@@ -4,7 +4,7 @@ description: Security pass over the diff — auth on every route, zod validation
 tools: Read, Grep, Glob, Bash
 model: opus
 effort: xhigh
-maxTurns: 25
+maxTurns: 60
 memory: project
 color: red
 ---

@@ -4,7 +4,7 @@ description: Reviews the working diff against CLAUDE.md conventions and returns 
 tools: Read, Grep, Glob, Bash
 model: opus
 effort: high
-maxTurns: 25
+maxTurns: 60
 memory: project
 color: orange
 ---

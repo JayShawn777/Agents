@@ -1,0 +1,1 @@
+- [Falsify ADR-0006 ordering tests](review-ordering-tests-must-be-falsified.md) — run check-order tests against a reordered handler; reading them proves nothing.

@@ -4,7 +4,7 @@ description: Turns a feature request into a written spec with acceptance criteri
 tools: Read, Grep, Write
 model: opus
 effort: high
-maxTurns: 25
+maxTurns: 60
 memory: project
 color: cyan
 ---

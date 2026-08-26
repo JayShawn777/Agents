@@ -1,0 +1,3 @@
+- [Shadcn hidden deps](feedback_shadcn_hidden_deps.md) — `shadcn add` can silently install real npm packages (e.g. sonner+next-themes); diff package.json after every add.
+- [Server action adapters](feedback_server_action_adapters.md) — wrap mismatched backend server-action signatures in a small frontend-owned "use server" adapter instead of editing the backend file.
+- [Parallel track workflow](project_parallel_track_workflow.md) — this repo runs frontend/backend engineers concurrently against a fixed contract; backend files land mid-session, poll briefly rather than blocking.
