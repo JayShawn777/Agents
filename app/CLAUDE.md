@@ -57,8 +57,15 @@ write the decision down when it is made, not at the end.
 
 ## Agents and skills
 
-The nine pipeline agents live in `.claude/agents/`, and the `new-feature` /
-`commit-and-pr` skills in `.claude/skills/`. They are **owned by this repository**,
+The nine pipeline agents live in **`/workspaces/Agents/.claude/agents/`** — the
+repository root, NOT `app/.claude/agents/`. Subagent definitions are discovered
+only at the project root; a `.claude/agents/` directory inside a subdirectory is
+silently ignored. They were briefly kept under `app/` and every change made
+there — tool grants, effort, memory, turn limits — was inert while appearing to
+be applied. Skills do not share this limitation: `app/.claude/skills/` is
+discovered and scoped to files under `app/`.
+
+They are **owned by this repository**,
 which supersedes commit `7a00c41` (which had moved them to `~/.claude` so shared
 fixes would propagate).
 
@@ -139,6 +146,10 @@ strictly blank each time. That memory is theirs and is narrow; the documents in
 `docs/` remain the shared, reviewable record, which is why they are
 version-controlled and why the retro is a real step rather than a good
 intention.
+
+A copy is mirrored into `~/.claude/agents/` so edits take effect in a running
+session. The repository copy is canonical; refresh the mirror after changing it,
+and expect a session restart to be needed otherwise.
 
 Each agent carries an explicit `model:` field. Deciding roles (architect,
 product-spec) and verifying roles (code-reviewer, security-reviewer) run on
