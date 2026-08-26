@@ -1,0 +1,97 @@
+/**
+ * The `StoragePort` interface (ADR-0003). Types only — no `@vercel/blob`
+ * import, no implementation. `lib/storage/vercel-blob.ts` (backend track,
+ * B15) implements this against the real, verified signatures in
+ * `docs/research/vercel-blob-verified.md`; a future provider swap (e.g. the
+ * Supabase Storage fallback named in ADR-0003) replaces only that one file.
+ *
+ * Every storage call in the app goes through this port. `Upload.pathname`,
+ * any signed URL, and the client-token payload never appear in a DTO, in
+ * HTML, or in any client payload (plan §3).
+ */
+
+import type { UploadContentType } from "@/lib/config";
+
+/**
+ * The constraints returned to the client token-generation callback
+ * (`onBeforeGenerateToken` inside the real implementation). Enforced by the
+ * storage provider itself, so a tampered client cannot exceed them
+ * (M0 AC 37/38). `allowedContentTypes` is typed against `lib/config.ts`'s
+ * `ALLOWED_UPLOAD_CONTENT_TYPES` so there is exactly one place the accepted
+ * MIME list is spelled out.
+ */
+export type ClientUploadPolicy = {
+  /** Every store in this app is private (ADR-0003). No public store is ever configured. */
+  access: "private";
+  allowedContentTypes: UploadContentType[];
+  maximumSizeInBytes: number;
+  /**
+   * `@vercel/blob` v2 refuses to overwrite an existing key unless
+   * `allowOverwrite: true`. We rely on `addRandomSuffix: true` instead so a
+   * retried upload never collides with a prior attempt (M1 AC 9). Always
+   * `true` — there is no code path that wants a fixed key.
+   */
+  addRandomSuffix: true;
+  /**
+   * Opaque data round-tripped to `onUploadCompleted`. Never a secret and
+   * never a live credential — treat it as readable by the client that
+   * requested the token.
+   */
+  tokenPayload?: string;
+};
+
+export interface StoragePort {
+  /**
+   * Handles one HTTP round trip of the client-direct upload protocol —
+   * either a `blob.generate-client-token` request (our authorization checks
+   * have already run: session, ownership, `status === 'ACTIVE'`, hourly cap
+   * — see `app/api/blob/upload/route.ts`) or an `upload-completed` callback
+   * from the provider. `body` is the request body already parsed exactly
+   * once by the caller and handed through unchanged; this port never reads
+   * the request body itself. `opts` carries the constraints for a
+   * client-token request and is unused for a completed-upload callback.
+   */
+  handleClientUpload(req: Request, body: unknown, opts: ClientUploadPolicy): Promise<Response>;
+
+  /**
+   * Reads provider-verified metadata for an object, or `null` if it doesn't
+   * exist. `contentType` and `sizeBytes` here — never the client's claims —
+   * are what gets written to the `Upload` row (endpoint 15's trust model).
+   */
+  head(pathname: string): Promise<{ contentType: string; sizeBytes: number } | null>;
+
+  /**
+   * Mints a time-boxed read URL. In the verified real implementation this
+   * is composed from two provider calls, `issueSignedToken` then
+   * `presignUrl` (docs/research/vercel-blob-verified.md) — that composition
+   * is an implementation detail of `lib/storage/vercel-blob.ts` and is not
+   * visible here. `expiresAt - now` must never exceed `ttlMs`
+   * (M0 AC 41 / M1 AC 32); the only caller of this method is
+   * `GET /api/uploads/[uploadId]/preview-url`.
+   */
+  signedReadUrl(pathname: string, ttlMs: number): Promise<{ url: string; expiresAt: Date }>;
+
+  /**
+   * Reads an object's bytes server-side, for the extraction path only
+   * (M1 AC 31) — no signed URL is ever minted for this. The verified
+   * provider `get()` call also accepts an `ifNoneMatch` ETag for a cheap
+   * 304 short-circuit (docs/research/vercel-blob-verified.md); nothing in
+   * M0/M1 needs that yet, so it is deliberately not threaded through this
+   * signature. Add it here (as an optional second parameter) rather than on
+   * a second method if a caching-aware caller — e.g. the proxy-preview
+   * fallback described in ADR-0003's spike contingency for S3/S4 — is ever
+   * built.
+   */
+  readBytes(pathname: string): Promise<ArrayBuffer>;
+
+  /** Deletes objects by pathname. Used blob-first, before row deletion (ADR-0007). */
+  del(pathnames: string[]): Promise<void>;
+
+  /**
+   * Enumerates the store itself, optionally scoped to a pathname prefix —
+   * the reconciliation job's mechanism for finding objects with no matching
+   * `Upload` row (M0 AC 43). Implementations page internally; callers only
+   * see one object at a time.
+   */
+  listAll(prefix?: string): AsyncIterable<{ pathname: string; uploadedAt: Date }>;
+}

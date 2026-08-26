@@ -27,8 +27,11 @@ Overstating it obscures the obligations that are real — see
 ## Databases
 
 - **Local (development):** `prisma dev`, server named `app`. `DATABASE_URL` in
-  `.env` points at it. If the app cannot reach the database, it is simply
-  stopped — run `pnpm exec prisma dev start app`.
+  `.env` points at it. **First time on a machine**, the instance does not exist
+  yet and `prisma dev start app` prints "No prisma dev servers found to start"
+  and does nothing — create it with `pnpm exec prisma dev --name app --detach`.
+  After that it exists and stays; if the app cannot reach the database, it is
+  simply stopped — run `pnpm exec prisma dev start app`. See runbook §1.
 - **Cloud (deployment):** Neon. The connection string lives in `.env.neon`,
   which is gitignored and deliberately separate so day-to-day work can never
   run against production.
