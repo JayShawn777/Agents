@@ -7,7 +7,36 @@
 - **ADRs:** n/a — none written yet. Depends on the storage ADR and auth ADR
   called for in [m0-accounts-and-profiles.md](m0-accounts-and-profiles.md).
   Research: [file-upload-storage.md](../research/file-upload-storage.md),
-  [anthropic-api.md](../research/anthropic-api.md).
+  [anthropic-api.md](../research/anthropic-api.md),
+  [coppa-childrens-privacy.md](../research/coppa-childrens-privacy.md).
+
+> **Revision note (2026-08-26).** A narrow revision of the previous Draft,
+> following `docs/research/coppa-childrens-privacy.md` and the revised
+> [m0-accounts-and-profiles.md](m0-accounts-and-profiles.md). Two things changed
+> and nothing else.
+>
+> **(1) Retention.** The previous draft assumed a flat **12 months** for the
+> uploaded source file. That is superseded. M0 now publishes a tiered retention
+> table by data category (§312.10 requires the purpose, the business need and a
+> deletion timeframe for each), in which an uploaded image or PDF is deleted
+> **14 days after successful extraction** — because once the questions have been
+> read out of the page, there is no articulable business need to keep a
+> photograph of a child's schoolwork. AC 36 and **Data touched → Retention** now
+> *point at* M0's table instead of restating a number: M0 owns the windows, and
+> a duration written down in two specs will drift.
+>
+> **(2) Profile status.** M0 replaced `CONSENT_REQUIRED` with `NOTICE_PENDING` →
+> `CONSENT_PENDING` → `ACTIVE`, plus `CONSENT_WITHDRAWN`. AC 11 is updated
+> accordingly, and the preconditions to the acceptance criteria now say plainly
+> that uploading requires an `ACTIVE` profile — which under M0's flow is reached
+> only once verifiable parental consent has been *verified*, not merely
+> submitted.
+>
+> **No acceptance criterion was added, removed or renumbered**; the architect's
+> plan references these numbers. Pointers into M0's own renumbered criteria were
+> corrected mechanically, changing no M1 requirement. The consequence of the
+> shorter window for viewing an older upload is raised in Open questions rather
+> than designed around.
 
 ## Problem
 
@@ -78,11 +107,23 @@ Named explicitly because a reader will assume several of these are included:
 - As a parent, I want to delete an upload of my child's work and know the file is
   actually gone, so that my child's schoolwork is not accumulating somewhere
   forever.
+- As a parent, I want the photograph itself thrown away once the app has read the
+  questions off it, so that a picture of my child's handwriting is not sitting in
+  a bucket a year from now.
 - As a security reviewer, I want the file bytes to travel from the browser to
   private storage without passing through our functions, so that a minor's
   schoolwork is never sitting in a function log or a request body.
 
 ## Acceptance criteria
+
+**Preconditions for every criterion below.** Uploading requires a student
+profile whose status is `ACTIVE`. Under M0's revised flow a profile becomes
+`ACTIVE` only after the §312.4 direct notice has been given and verifiable
+parental consent has been **verified** — `verifiedAt` set, not merely submitted
+(M0 AC 19) — or, for a self-declared adult learner, at the neutral age gate (M0
+AC 10). No M1 surface is reachable, and no upload token is issued, for a profile
+in `NOTICE_PENDING`, `CONSENT_PENDING` or `CONSENT_WITHDRAWN` (M0 AC 36). The
+status values are M0's; M1 defines none of its own.
 
 ### Upload path
 
@@ -113,7 +154,7 @@ Named explicitly because a reader will assume several of these are included:
 6. **Given** a 25 MB file, **when** the student selects it, **then** a
    size-limit message is shown before any bytes are transmitted; and **given** a
    client that bypasses that check, **when** it attempts the write, **then** the
-   storage layer rejects it and no object is created (M0 AC 27/28).
+   storage layer rejects it and no object is created (M0 AC 37/38).
 7. **Given** a `.txt`, `.docx` or `.exe` file, **when** the student attempts to
    upload it, **then** it is rejected with a message naming the accepted formats
    and no object is created.
@@ -126,10 +167,14 @@ Named explicitly because a reader will assume several of these are included:
 10. **Given** a PDF with more pages than the configured page limit, **when** it
     is uploaded, **then** it is rejected with a message stating the page limit,
     and no extraction is attempted.
-11. **Given** a student profile in status `CONSENT_REQUIRED`, **when** the
+11. **Given** a student profile in any status other than `ACTIVE` — that is,
+    `NOTICE_PENDING`, `CONSENT_PENDING` or `CONSENT_WITHDRAWN` — **when** the
     upload screen is opened for it, **then** the upload control is disabled with
-    an explanation, and a direct request for an upload token returns HTTP 403
-    (M0 AC 30).
+    an explanation appropriate to that status, and a direct request for an
+    upload token returns HTTP 403 with the typed error shape and issues no token
+    (M0 AC 36). *(A profile is `ACTIVE` only once consent is verified, so this
+    criterion is the fail-closed boundary for "no child data before consent". It
+    must key off the status, never off the presence of a consent row.)*
 12. **Given** an account owner signed in, **when** they attempt to upload
     against a student profile belonging to a different account, **then** the
     request is refused with HTTP 403 and no object is created.
@@ -220,7 +265,7 @@ Named explicitly because a reader will assume several of these are included:
     the student's own preview.
 32. **Given** a signed URL issued to render the student's own preview, **when**
     it is inspected, **then** its expiry is no more than 5 minutes in the future
-    (M0 AC 32).
+    (M0 AC 41).
 33. **Given** account A signed in, **when** it requests an upload or an extracted
     problem belonging to account B, **then** the response is HTTP 404 and no
     content is disclosed.
@@ -229,12 +274,21 @@ Named explicitly because a reader will assume several of these are included:
     record and all extracted-problem rows are removed, and a subsequently
     requested signed URL for that pathname does not return the file.
 35. **Given** a student profile with uploads, **when** the profile is deleted
-    (M0 AC 35), **then** all of that profile's uploads, extractions and extracted
+    (M0 AC 46), **then** all of that profile's uploads, extractions and extracted
     problems are removed along with their stored objects.
-36. **Given** an upload older than the configured file retention window, **when**
-    the retention job runs, **then** the stored image or PDF object is deleted
-    while the extracted problem text is retained per the retention policy in
-    Data touched, and the upload record reflects that the source file is gone.
+36. **Given** an upload whose extraction succeeded, **when** the retention job
+    runs after the source-file window defined in **M0's retention table**
+    (`m0-accounts-and-profiles.md` → Data touched → Retention, row "Uploaded
+    schoolwork image or PDF"), **then** the stored image or PDF object is deleted
+    from the blob store, the extracted problem text is retained per that same
+    table, and the upload record reflects that the source file is gone rather
+    than being deleted itself; **and given** an upload whose extraction failed
+    and was then retried or abandoned, **when** the job runs, **then** its stored
+    object is deleted per the same row. The window is read from configuration and
+    no duration is a literal in M1 code (M0 AC 45). *(M1 deliberately states no
+    number. M0 owns every retention window and publishes them; a figure written
+    down in two specs will drift, and the published policy in M0 AC 44 is the one
+    a parent is shown.)*
 
 ## Out of scope for this milestone
 
@@ -255,7 +309,15 @@ not build them:
   four times, but M1 reads each upload once. Named here so it is not designed
   out; see Open questions.
 - Re-running extraction with a different model or effort setting when the first
-  attempt is low-confidence.
+  attempt is low-confidence. Note the consequence of AC 36: once the source-file
+  window has elapsed the file is gone, so any such re-run is possible only inside
+  that window. If a later milestone wants re-extraction after a model upgrade, it
+  needs its own retention argument put to M0, not a quiet extension of the window
+  here.
+- **The parent's §312.6 review surface** (deferred by M0). M1 is what makes it
+  urgent — this is the milestone where there is finally something to review — but
+  M1 does not build it. See Open questions for what it will and will not be able
+  to show.
 - Multi-page and multi-file uploads, and stitching several photos of one long
   worksheet into a single extraction.
 - Image preprocessing (deskew, crop, contrast) to improve extraction accuracy.
@@ -282,13 +344,30 @@ not build them:
   student will ever upload; the real constraint is cost and latency per
   extraction. Needs a product decision. **ASSUMPTION pending an answer: 20
   pages.** Non-blocking if the limit is configuration.
-- [ ] **How long do we keep the uploaded image or PDF (AC 36)?** A photograph of
-  a minor's homework is the most sensitive artifact in the product and the least
-  useful to keep once its problems are extracted. **ASSUMPTION: the source file
-  is deleted 12 months after upload; extracted problem text is retained until
-  the profile is deleted.** Both numbers are guesses. Needs the same legal review
-  as the M0 consent question. Non-blocking for the build if stored as
-  configuration.
+- [ ] **How long is the uploaded image or PDF kept (AC 36)?** No longer M1's
+  question. M0's retention table sets the source-file window and M0 carries the
+  open question against it ("LAWYER + PRODUCT — what is the source-file retention
+  window?", still an **ASSUMPTION** there). M1's previous 12-month assumption is
+  withdrawn and must not be reintroduced. Non-blocking for building M1 provided
+  the window is read from M0's configuration rather than restated here.
+- [ ] **What does a student or a parent see when they open an upload whose
+  source file has already been deleted?** Checked against every criterion that
+  could depend on the file surviving extraction: extraction runs once,
+  immediately after persistence (see ASSUMPTIONS), retries under AC 23/24/27
+  happen within minutes, and the only later reader is the short-lived preview URL
+  of AC 31/32 — so **the shorter window breaks no acceptance criterion in this
+  spec as written**. It does bite at two seams that M1 does not specify and must
+  not paper over. (a) A student or parent returning to an older upload: the
+  preview has to degrade to an explicit "the original file has been deleted; the
+  problems we read from it are below" state, not a broken image, a 404, or a
+  silent empty box. No criterion here specifies that state; decide it before the
+  upload-detail screen is built. (b) M0's deferred §312.6 review surface — one of
+  the two stated business needs for keeping the source file at all is "letting a
+  parent see a recent upload", and after the window there is no file to show, so
+  that screen can only ever show the extracted text and the metadata. Neither
+  seam is a reason to lengthen the window; the right answer is to say so plainly
+  in the UI and in the published policy. Non-blocking for M1, **blocking for the
+  review surface.**
 - [ ] **Will a `high`-effort extraction call complete inside the Vercel function
   duration limit?** The API research flags model latency versus function
   duration as the biggest unvalidated assumption in the whole plan. If it does
@@ -300,7 +379,9 @@ not build them:
 - [ ] Does capturing a student's handwritten answers (AC 22) require its own
   consent scope, given it is a record of the child's academic performance rather
   than of the assignment? Non-blocking for M1 since nothing consumes the field,
-  but it must be answered before M7 uses it.
+  but it must be answered before M7 uses it. Note that it is *not* covered by the
+  source-file window: the answer text is extracted data and outlives the
+  photograph it came from.
 
 ## Data touched
 
@@ -324,49 +405,67 @@ child, never as an ordinary file.
 
 **Transmitted to third parties.** The file contents are transmitted to Anthropic
 for extraction — this is the first time any student data leaves our
-infrastructure, and the consent text presented in M0 AC 18 must say so. Nothing
-is sent to any analytics, logging or error-reporting service that includes file
-bytes, extracted problem text, or a signed storage URL. Signed URLs are bearer
-credentials: anyone holding one reads the file until it expires, so they must
-never appear in logs, error reports, cached HTML, or a URL bar the student can
-share.
+infrastructure, and the direct notice presented and emailed in M0 AC 12–13 must
+name Anthropic and say what it receives. Nothing is sent to any analytics,
+logging or error-reporting service that includes file bytes, extracted problem
+text, or a signed storage URL. Signed URLs are bearer credentials: anyone holding
+one reads the file until it expires, so they must never appear in logs, error
+reports, cached HTML, or a URL bar the student can share.
 
-**Retention.** The source image or PDF is retained for 12 months from upload,
-then deleted by the retention job (AC 36) — **ASSUMPTION**, see Open questions.
-Extracted problem text is retained until the student profile or account is
-deleted, because M2 and M7 will build on it. Neither number has legal sign-off.
+**Retention — owned by M0, not restated here.** Every window that applies to M1's
+data is a row in M0's tiered retention table (`m0-accounts-and-profiles.md` →
+Data touched → Retention), which is published under §312.10, linked from the
+direct notice, and tested by M0 AC 44 and AC 45. Two rows govern this milestone:
+the **uploaded source image or PDF**, which the retention job deletes a short,
+configured period after successful extraction (and promptly on extraction failure
+once retried or abandoned), and the **extracted problem text**, which is retained
+for the life of the `ACTIVE` profile because M2 and M7 build on it. AC 36
+implements the first. **M1 states no duration deliberately** — the previous
+draft's flat 12 months is superseded, both windows remain ASSUMPTIONS pending the
+legal review flagged in M0's open questions, and a number duplicated across two
+specs is a number that will drift. Read the value from the same configuration
+M0's retention job reads.
 
-**Deletion.** Four paths, all specified above and all of which must remove the
-stored object and not merely the database row: delete a single upload (AC 34),
-delete a student profile (AC 35, inherited from M0), delete the account (M0
-AC 36), and the retention job (AC 36). Withdrawal of parental consent (M0 AC 23)
-must additionally stop new uploads for that profile.
+**Deletion.** Five paths, all of which must remove the stored object and not
+merely the database row: delete a single upload (AC 34), delete a student profile
+(AC 35, inherited from M0 AC 46), the parent's §312.6 deletion request (M0 AC 48
+— prompt, no recovery window), account closure (M0 AC 47 — a 30-day recovery
+window that applies to closure only and must never be used to delay the previous
+path), and the retention job (AC 36). Withdrawal of parental consent (M0 AC 24)
+does not by itself delete anything, but must stop new uploads for that profile —
+the profile leaves `ACTIVE`, which AC 11 already refuses.
 
 **The orphaned-blob problem, restated because M1 is where it becomes real.**
 Every deletion path above starts from a database row and walks to a pathname. An
 upload whose bytes stored successfully but whose database write failed has no
-row, so no deletion path can ever reach it. The file — a child's homework — sits
-in storage indefinitely, and a parent who asks us to delete everything would be
-told truthfully that we had, and would be wrong. AC 16 is the only control
-against this and it must enumerate the *store*, not the database. It cannot be
-cut for scope, and its absence should be treated by the reviewer as a compliance
-defect rather than a missing nice-to-have.
+row, so no deletion path can ever reach it — including the retention job, which
+is why a short retention window is not a substitute for reconciliation. The file
+— a child's homework — sits in storage indefinitely, and a parent who asks us to
+delete everything would be told truthfully that we had, and would be wrong. AC 16
+is the only control against this and it must enumerate the *store*, not the
+database. It cannot be cut for scope, and its absence should be treated by the
+reviewer as a compliance defect rather than a missing nice-to-have.
 
 **ASSUMPTIONS made in this spec** (each was a guess):
 
 - One file per upload; a worksheet is one page or one PDF.
-- The 20 MB size ceiling and the accepted format list carry over from M0 AC 27.
+- The 20 MB size ceiling and the accepted format list carry over from M0 AC 37.
 - HEIC conversion happens client-side before upload, so the AI-ready format is
   what gets stored and no server CPU is spent on it. Server-side conversion
   would require pulling the file back out of storage into a function, and the
   common server-side toolchain has awkward HEIC support.
 - Extraction runs once per upload, automatically, immediately after the upload
-  is persisted — the student does not press a second button.
+  is persisted — the student does not press a second button. This is what makes
+  the short source-file window in AC 36 safe: nothing in M1 needs to read the
+  original file days later.
 - `claude-opus-5` with schema-validated structured output is the extraction
   mechanism, per the API research's project default.
 - Preview rendering uses a short-lived signed URL rather than proxying bytes
   through a function; if the security reviewer disagrees, proxying via a
   server-side read satisfies AC 31 and AC 32 equally.
-- 20 pages, 12 months, the hourly upload cap in AC 17, the low-confidence
-  threshold in AC 26 and the extraction time limit in AC 27 are all placeholder
-  values that must live in one configuration module, not scattered as literals.
+- 20 pages, the hourly upload cap in AC 17, the low-confidence threshold in
+  AC 26 and the extraction time limit in AC 27 are all placeholder values that
+  must live in one configuration module, not scattered as literals. The
+  source-file retention window is configuration too, but it is **M0's** value —
+  read it from wherever M0's retention job reads it, and do not add a second
+  copy here.
