@@ -60,7 +60,7 @@ Schema lives in `prisma/schema.prisma`. The datasource URL is read from
 | Create + apply a migration in dev | `pnpm db:migrate` |
 | Regenerate the client after a schema edit | `pnpm db:generate` |
 | Inspect data in a GUI | `pnpm db:studio` |
-| Apply migrations in production | `pnpm exec prisma migrate deploy` |
+| Apply migrations in production | `pnpm db:migrate:prod` (guarded — see below) |
 | Check drift | `pnpm exec prisma migrate status` |
 
 **Rules**
@@ -110,19 +110,25 @@ direct one for migrations.
 
 **One-time setup**
 1. Push the repo to GitHub.
-2. Vercel → Add New → Project → import the repo. Vercel detects Next.js; leave
-   build settings at their defaults.
-3. Settings → Environment Variables: add `DATABASE_URL` and `NEXT_PUBLIC_APP_URL`
+2. Vercel → Add New → Project → import the repo. Vercel detects Next.js.
+3. Settings → General → **Root Directory: `app`**. The app lives in a
+   subdirectory of this repository; without this, the build fails looking for
+   `package.json` at the repo root.
+4. Settings → Environment Variables: add `DATABASE_URL` and `NEXT_PUBLIC_APP_URL`
    for Production, Preview, and Development. They are NOT read from `.env` —
    `.env` is gitignored and never reaches Vercel.
-4. Set the build command to `prisma generate && next build` so the client exists
-   at build time (`lib/generated/prisma/` is gitignored).
+5. **Leave the Build and Install commands at their defaults.** `postinstall` in
+   `package.json` already runs `prisma generate`, so the gitignored client is
+   recreated on every build. Overriding the Build command to
+   `prisma generate && next build` is a common mistake — it works, but it means
+   two sources of truth for the same step, and Vercel's Install and Build fields
+   are easy to confuse. See CLAUDE.md.
 
 **Each deploy**
 - Push to `main` → Production. Open a PR → Preview deployment with its own URL.
-- Migrations do NOT run automatically. Run `pnpm exec prisma migrate deploy`
-  against production after deploying a schema change, or add it to the build
-  command once you are confident in the migrations.
+- Migrations do NOT run automatically. Run `pnpm db:migrate:prod` after
+  deploying a schema change. Do not add it to the build command — a failed
+  migration would then take the whole deploy down with it.
 
 **Rollback:** Vercel → Deployments → pick the last good one → Promote. Note that
 this does NOT roll back a database migration; write a corrective migration.
@@ -130,7 +136,7 @@ this does NOT roll back a database migration; write a corrective migration.
 **When a deploy fails**
 | Symptom | Cause | Fix |
 |---|---|---|
-| `@prisma/client did not initialize` | Client not generated at build | Build command must run `prisma generate` |
+| `@prisma/client did not initialize` | Client not generated at build | `postinstall` must still run `prisma generate` — check it was not removed |
 | `Can't reach database server` | Wrong URL, or unpooled connection | Use the pooled connection string |
 | Works locally, 500 in prod | Missing env var in Vercel | Add it in Settings → Environment Variables |
 | Type errors only in CI | Stale local `.next/types` | Run `pnpm typecheck` locally — it runs `next typegen` first |

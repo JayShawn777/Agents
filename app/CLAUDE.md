@@ -7,8 +7,17 @@ Stack, workflow, conventions, and the Never list are inherited from
 
 ## What this is
 
-A Next.js application. No features have been built yet — `app/page.tsx` is still
-the starter page. The first real work starts with `new feature: <description>`.
+**An AI tutor app.** A student uploads a photo or PDF of their schoolwork; the
+app reads it, generates similar practice, tutors them through it in chat,
+explains with interactive whiteboard lessons narrated by a chosen voice, and
+adapts to that student over time.
+
+No features have been built yet — `app/page.tsx` is still the starter page.
+Planning and research live in `docs/`; start at [docs/README.md](docs/README.md).
+
+Because the app tutors minors, anything touching student data carries
+COPPA/FERPA consent and retention obligations. Treat uploaded schoolwork as
+sensitive personal data about a child, not as an ordinary file.
 
 ## Databases
 
@@ -34,6 +43,12 @@ the starter page. The first real work starts with `new feature: <description>`.
 
 Pushing to `main` deploys to Vercel automatically. Migrations do not run on
 deploy — apply them with `pnpm db:migrate:prod`.
+
+## Documentation
+
+`docs/README.md` is the map: specs, ADRs, research, and the runbook, with the
+naming and immutability rules for each. Read the relevant doc before starting;
+write the decision down when it is made, not at the end.
 
 ## Available reference skills
 
