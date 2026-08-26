@@ -45,7 +45,8 @@ structure is what makes these greppable and skimmable later.
 Keep this current. A knowledge base nobody can navigate is a folder of files.
 
 ### Specs
-_None yet._
+- [m0-accounts-and-profiles.md](specs/m0-accounts-and-profiles.md) — Accounts, student profiles, parental consent, storage plumbing (Draft)
+- [m1-upload-and-extract.md](specs/m1-upload-and-extract.md) — Upload schoolwork and extract its problems (Draft)
 
 ### ADRs
 - [ADR-0001](adr/0001-record-architecture-decisions.md) — Record architecture decisions (Accepted)
