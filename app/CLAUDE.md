@@ -64,6 +64,26 @@ written somewhere git never sees. Project copies shadow the user-level ones, so
 this project now pins its own; improvements to the shared `~/.claude` set no
 longer flow in automatically, and that is the accepted trade.
 
+### Retro cadence
+
+At the end of each milestone — when the chunk is shipped and working, roughly
+every one to two weeks — run a retro before starting the next one:
+
+1. Review what the agents actually got wrong. Where was a spec ambiguous? What
+   did the reviewers miss that QA caught, or that nobody caught? Where did an
+   agent need correcting mid-run?
+2. Write those lessons into the agent definitions in `.claude/agents/`, the
+   skills in `.claude/skills/`, or this file — whichever is the right home.
+3. Commit the changes separately from feature work, with the commit message
+   naming the incident that motivated each edit.
+
+Only act on repeated patterns. A one-off mistake is not evidence, and rewriting
+an agent's instructions after every stumble makes them worse, not better.
+
+Agents do not learn between runs — every run starts blank. These files ARE the
+memory, which is why they are version-controlled and why the retro is a real
+step rather than a good intention.
+
 Each agent carries an explicit `model:` field. Deciding roles (architect,
 product-spec) and verifying roles (code-reviewer, security-reviewer) run on
 Opus; executing roles that build against an already-fixed contract
