@@ -18,7 +18,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dbMock = {
   upload: {
-    findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
+    // Typed (via the generic, with no implementation) to accept the `where`
+    // shape production code actually passes, so the stateful fake table
+    // (below, in the retry regression suite) can be installed via
+    // `.mockImplementation()` without a signature mismatch. Every test sets
+    // a real implementation before use (`beforeEach` below, or its own
+    // `mockResolvedValue`/`mockImplementation`).
+    findMany:
+      vi.fn<(args: { where: { studentProfileId: string; status?: { not: string } } }) => Promise<Array<{ pathname: string }>>>(),
     updateMany: vi.fn(),
   },
   parentalConsent: {
@@ -120,23 +127,108 @@ describe("deleteStudentData — blob-before-row ordering (ADR-0007 §1)", () => 
     expect(dbMock.studentProfile.delete).toHaveBeenCalledWith({ where: { id: "sp_1" } });
   });
 
-  it("excludes already-SOURCE_DELETED uploads from the blob-deletion pathname set (retry-safe)", async () => {
+  it("reads the FULL pathname set unfiltered by status (so a retry cannot lose objects), but only marks not-yet-marked rows", async () => {
     dbMock.upload.findMany.mockResolvedValue([{ pathname: "students/sp_1/uploads/b.jpg" }]);
     const storage = fakeStorage();
 
     await deleteStudentData("sp_1", "PROFILE_DELETED", storage);
 
+    // Step 1 must NOT filter on `status` — see the docstring on
+    // `deleteStudentData` for why filtering here is the bug that orphans
+    // blobs on retry.
     expect(dbMock.upload.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { studentProfileId: "sp_1", status: { not: "SOURCE_DELETED" } },
+        where: { studentProfileId: "sp_1" },
       }),
     );
+    // Step 2's *mark* is still scoped to not-yet-marked rows, so a retry
+    // doesn't re-stamp `sourceDeletedAt` on rows a prior attempt already
+    // marked.
     expect(dbMock.upload.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { studentProfileId: "sp_1", status: { not: "SOURCE_DELETED" } },
         data: expect.objectContaining({ status: "SOURCE_DELETED" }),
       }),
     );
+  });
+});
+
+describe("deleteStudentData — retry after STORAGE_FAILURE must not orphan blobs (regression)", () => {
+  /**
+   * A stateful fake `Upload` table, standing in for what a real Postgres
+   * table does: `findMany`/`updateMany` actually apply the `status` filter
+   * from `where`, and `updateMany` actually persists the mutation. A naive
+   * stub that always resolves the same fixed array (as used elsewhere in
+   * this file) cannot catch this bug — it would return the same pathnames
+   * on both calls regardless of what `where` the production code passed,
+   * masking exactly the defect this test exists to catch.
+   */
+  function makeUploadTable(initial: Array<{ pathname: string; status: string }>) {
+    const rows = initial.map((row) => ({ ...row }));
+    return {
+      rows,
+      findMany: vi.fn(
+        async ({ where }: { where: { studentProfileId: string; status?: { not: string } } }) => {
+          const filtered = where.status?.not
+            ? rows.filter((row) => row.status !== where.status!.not)
+            : rows;
+          return filtered.map((row) => ({ pathname: row.pathname }));
+        },
+      ),
+      updateMany: vi.fn(
+        async ({ where }: { where: { studentProfileId: string; status?: { not: string } } }) => {
+          let count = 0;
+          for (const row of rows) {
+            if (where.status?.not && row.status === where.status.not) continue;
+            row.status = "SOURCE_DELETED";
+            count += 1;
+          }
+          return { count };
+        },
+      ),
+    };
+  }
+
+  it("calls storage.del() with the same full pathname set on retry, and only destroys the profile once bytes are confirmed gone", async () => {
+    const table = makeUploadTable([
+      { pathname: "students/sp_1/uploads/a.jpg", status: "PENDING" },
+      { pathname: "students/sp_1/uploads/b.jpg", status: "PENDING" },
+    ]);
+    dbMock.upload.findMany.mockImplementation(table.findMany);
+    dbMock.upload.updateMany.mockImplementation(table.updateMany);
+
+    const expectedPathnames = ["students/sp_1/uploads/a.jpg", "students/sp_1/uploads/b.jpg"];
+
+    // First attempt: storage.del() rejects.
+    const failingStorage = fakeStorage({
+      del: async () => {
+        throw new Error("simulated provider outage");
+      },
+    });
+    const firstResult = await deleteStudentData("sp_1", "PROFILE_DELETED", failingStorage);
+
+    expect(firstResult).toEqual({ ok: false, code: "STORAGE_FAILURE" });
+    expect(failingStorage.del).toHaveBeenCalledWith(expectedPathnames);
+    expect(dbMock.studentProfile.delete).not.toHaveBeenCalled();
+    expect(dbMock.$transaction).not.toHaveBeenCalled();
+
+    // Second attempt (the retry): storage.del() now succeeds.
+    const succeedingStorage = fakeStorage();
+    const secondResult = await deleteStudentData("sp_1", "PROFILE_DELETED", succeedingStorage);
+
+    expect(secondResult).toEqual({ ok: true });
+    // The point of this test: the retry must call del() with the SAME full
+    // set, not an empty array. The unfixed implementation filters step 1's
+    // `findMany` on `status: { not: "SOURCE_DELETED" }`, so after the first
+    // call's `updateMany` marks every row, this second call's `findMany`
+    // resolves to `[]`, `storage.del()` is never called again, and the
+    // profile is destroyed with its blobs never actually deleted — an
+    // orphan.
+    expect(succeedingStorage.del).toHaveBeenCalledWith(expectedPathnames);
+    // The profile is only destroyed on the attempt where the bytes are
+    // actually confirmed gone.
+    expect(dbMock.studentProfile.delete).toHaveBeenCalledTimes(1);
+    expect(dbMock.studentProfile.delete).toHaveBeenCalledWith({ where: { id: "sp_1" } });
   });
 });
 

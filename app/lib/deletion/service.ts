@@ -21,11 +21,33 @@ import { CONSENT_AUDIT_RETENTION_DAYS } from "@/lib/config";
  *
  * Order, per ADR-0007 §1, always blobs-then-rows:
  *
- *   1. Read the pathnames to be removed (every `Upload` row for this
- *      profile not already `SOURCE_DELETED`).
- *   2. Mark those `Upload` rows `SOURCE_DELETED` and commit, so the UI is
- *      honest the instant deletion starts.
- *   3. `storage.del(pathnames)`.
+ *   1. Read the pathnames to be removed — every `Upload` row for this
+ *      profile, REGARDLESS of `status`. `SOURCE_DELETED` records only that a
+ *      removal attempt was made, not that the bytes are confirmed gone, so
+ *      it must never be the filter that decides which objects this function
+ *      asks `storage` to delete. (An earlier version of this function *did*
+ *      filter step 1 on `status: { not: "SOURCE_DELETED" }` — the same
+ *      clause step 2 writes. That made retrying after a `STORAGE_FAILURE`
+ *      actively harmful: the second call's step 1 found zero rows, skipped
+ *      steps 2/3 entirely, and fell through to step 4, destroying the
+ *      `Upload` rows with their blobs never actually deleted — an orphan,
+ *      the exact failure this ordering exists to prevent. See the
+ *      regression test in `tests/unit/lib/deletion/service.test.ts`.) While
+ *      the `StudentProfile` row still exists, the full pathname set is
+ *      always re-derivable from it, so re-reading it unfiltered on every
+ *      call is cheap and correct.
+ *   2. Mark the not-yet-`SOURCE_DELETED` `Upload` rows `SOURCE_DELETED` and
+ *      commit, so the UI is honest the instant deletion starts — a reader
+ *      mid-deletion sees "source file removed", never a live upload whose
+ *      bytes are already gone. A retry only re-stamps rows a prior attempt
+ *      hadn't already marked; already-marked rows are left as they are.
+ *   3. `storage.del(pathnames)`, called with the FULL set read in step 1 —
+ *      including any pathname already marked `SOURCE_DELETED` by a prior,
+ *      failed call, or already removed by `enforce-retention` under its own
+ *      retention window. This relies on `StoragePort.del()` being
+ *      idempotent for objects that no longer exist (a reasonable
+ *      requirement of any implementation, and one `enforce-retention`
+ *      already relies on too).
  *   4. Only once (3) has succeeded: pseudonymise every `ParentalConsent`
  *      row into a `ConsentAuditArtifact` (ADR-0007 §6, AC 50), write the
  *      `DeletionAudit` row, then delete the database rows and let cascades
@@ -33,12 +55,16 @@ import { CONSENT_AUDIT_RETENTION_DAYS } from "@/lib/config";
  *
  * If step 3 fails, the function returns `{ ok: false, code:
  * "STORAGE_FAILURE" }` WITHOUT touching any row from step 4 onward — the
- * `Upload` rows marked `SOURCE_DELETED` in step 2 are left in place. That is
- * a dangling reference (visible: renders as "source file removed"; harmless;
- * retryable by calling this function again) rather than an orphan (a blob
- * with no row, invisible and undeletable) — ADR-0007 §1's accepted
- * trade-off. Callers MUST map `STORAGE_FAILURE` to `502 UPSTREAM_ERROR` and
- * must NOT retry the destructive half automatically.
+ * `Upload` rows marked `SOURCE_DELETED` in step 2 are left in place, and NO
+ * row is destroyed. This is genuinely retry-safe: because step 1 never
+ * filters on `SOURCE_DELETED`, calling this function again re-reads the same
+ * full pathname set and re-attempts `storage.del()` against it — nothing is
+ * silently dropped because an earlier attempt already marked it. That is a
+ * dangling reference (visible: renders as "source file removed"; harmless;
+ * retryable) rather than an orphan (a blob with no row, invisible and
+ * undeletable) — ADR-0007 §1's accepted trade-off. Callers MUST map
+ * `STORAGE_FAILURE` to `502 UPSTREAM_ERROR` and must NOT retry the
+ * destructive half automatically.
  *
  * `storage` is taken as a parameter, never imported concretely — no
  * `StoragePort` implementation exists yet (pending B15,
@@ -53,15 +79,16 @@ export async function deleteStudentData(
   kind: DeletionKind,
   storage: StoragePort,
 ): Promise<DeleteStudentDataResult> {
-  // Step 1 — read the pathnames to be removed. Already-`SOURCE_DELETED`
-  // uploads have no live object left to remove and are excluded so a retry
-  // of this function (after a prior `STORAGE_FAILURE`) only re-attempts the
-  // objects that are still actually there.
+  // Step 1 — read every pathname for this profile, unfiltered by `status`.
+  // See the docstring above: filtering this query the same way step 2 marks
+  // rows is the bug this function once had (orphans blobs on retry).
+  // `storage.del()` is required to tolerate an already-gone object, so
+  // reading the full set on every call — including on a retry — is safe.
   const uploads = await db.upload.findMany({
-    where: { studentProfileId, status: { not: "SOURCE_DELETED" } },
+    where: { studentProfileId },
     select: { pathname: true },
   });
-  const pathnames = uploads.map((upload) => upload.pathname);
+  const pathnames = Array.from(new Set(uploads.map((upload) => upload.pathname)));
 
   if (pathnames.length > 0) {
     // Step 2 — mark + commit BEFORE the blob deletion call, so a reader in
