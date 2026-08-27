@@ -54,3 +54,15 @@ export type SubmitAttemptInput = z.infer<typeof submitAttemptInputSchema>;
 export const revealPracticeProblemInputSchema = z.object({}).strict();
 
 export type RevealPracticeProblemInput = z.infer<typeof revealPracticeProblemInputSchema>;
+
+// ─────────────────────────── M2.5: checkpoints ───────────────────────────
+
+/**
+ * `POST /api/students/[studentId]/checkpoints`. No body — which skills a
+ * checkpoint asks about is composed server-side from the student's own mastery
+ * history (`lib/checkpoints/compose.ts`), never chosen by the client. `.strict()`
+ * so a client that starts sending one finds out immediately.
+ */
+export const createCheckpointInputSchema = z.object({}).strict();
+
+export type CreateCheckpointInput = z.infer<typeof createCheckpointInputSchema>;
