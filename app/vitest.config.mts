@@ -48,6 +48,9 @@ export default defineConfig({
           ...shared,
           name: "integration",
           include: ["tests/integration/**/*.{test,spec}.{ts,tsx}"],
+          // Turns "13 opaque Prisma failures" into one sentence naming the
+          // command to run. See that file's docstring.
+          globalSetup: ["./tests/integration/global-setup.ts"],
           // Integration tests share ONE local Postgres. Run in parallel they
           // corrupt each other's connection state — Postgres returns
           // `08P01: bind message supplies N parameters, but prepared statement
