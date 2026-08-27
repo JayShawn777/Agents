@@ -12,9 +12,14 @@ app reads it, generates similar practice, tutors them through it in chat,
 explains with interactive whiteboard lessons narrated by a chosen voice, and
 adapts to that student over time.
 
-## Where the build is (2026-08-27)
+## Where the build is (2026-08-28)
 
-**M0, M1, M2 and M2.5 built. M3 started. 629 tests. All gates green and stable.**
+**M0, M1, M2 and M2.5 built. M3 half built. 655 tests, 2 live tests skipped by
+default. All gates green and stable.**
+
+**The vision path is verified.** On 2026-08-28 a real worksheet went to the real
+model for the first time: 35 of 35 problems, every addend pair correct, labels
+in order, 0.97 confidence. See `tests/unit/live/`.
 
 A parent can sign up, read the §312.4 notice, give verified consent, add a
 student, upload a worksheet, see its problems extracted and correctable, and
@@ -28,7 +33,7 @@ generate graded practice from them. The retention jobs enforce what
 | **M2** practice, grading, mastery | built, **reviewed** 2026-08-27 — 27 criteria |
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
 | **M2.5** checkpoints (quizzes) | **done and reviewed** 2026-08-27 — all 7 slices, spec, plan, ADRs 0016/0017/0018 |
-| **M3** chat tutor | **slices 1-2 built** 2026-08-27 — schema + binding CHECK, and the CHAT_TRANSCRIPT retention rule with its job step. Nothing writes a chat row yet. |
+| **M3** chat tutor | **slices 1-3 + the system prompt built** 2026-08-28 — schema and binding CHECK, the CHAT_TRANSCRIPT retention rule and job, the twelve CHAT_* tunables, ADR-0012's context renderer, and TUTOR_SYSTEM_PROMPT. **Nothing writes a chat row yet** — the streaming route is next. |
 | **M4–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
@@ -82,39 +87,57 @@ generate graded practice from them. The retention jobs enforce what
    gate, and `CheckpointResult` is handed one summary with no history so a
    comparison is unreachable rather than merely absent.
 
-3. **FIRST THING NEXT SESSION: set `ANTHROPIC_API_KEY`.** The owner asked to
-   start here on 2026-08-28. It is the longest-standing gap in the project —
-   four milestones now stand on an assumption nobody has tested — and M3 is the
-   first milestone where it stops being optional.
+3. **The credentials work, and one detail cost time.** `ANTHROPIC_API_KEY` is
+   set (2026-08-28). It is an **identity-linked key**, which the API rejects
+   with a **400, not a 401** — `anthropic-workspace-id is required when
+   authenticating with an identity-linked API key` — so `ANTHROPIC_WORKSPACE_ID`
+   is also set and `lib/ai/client.ts` sends it as a default header, but ONLY
+   when present, so a classic workspace-scoped key still works. A 400 that reads
+   like a malformed body but is really an auth-shape problem is worth
+   recognising on sight.
 
-   `.env.example` already documents the variable. **The guard hook blocks
-   writing to `.env`, deliberately, so a human must paste the key in.** After
-   that:
+   **`RUN_LIVE_AI=1` is the convention for tests that need the real API**
+   (ADR-0012 §4). They live in `tests/unit/live/` and skip otherwise, so a
+   normal `pnpm test` costs nothing. `.scratch/` is gitignored and holds test
+   inputs — currently a copyrighted third-party worksheet, which must stay out
+   of the history.
 
-   - Run one real extraction against a real worksheet photo. That alone
-     validates M1's whole vision path, which every later milestone assumes.
-   - Then take plan §9.1's measurements, which fix M3's remaining constants:
-     first-token latency (`CHAT_FIRST_TOKEN_BUDGET_MS`, currently a guess of
-     3000ms) and the idle timeout. **M3 AC 2 and AC 8 cannot be satisfied by
-     mocks** — AC 8 requires observing `cache_read_input_tokens > 0` across
-     three consecutive real turns, which is the only signal that the cached
-     prefix is byte-stable and therefore that the cost model holds.
+4. **NEXT: M3's streaming route** (plan §3.4's contract, ADR-0013). It is the
+   biggest single piece left in the milestone and everything else waits on it:
+   NDJSON framing, client-supplied turn keys for idempotency, abort-time partial
+   persistence (AC 12 — persist the partial and mark it, or persist nothing;
+   one of the two, consistently, never a duplicate turn on reconnect), the
+   `stop_reason` handling AC 13 and AC 18 need, and AC 19's idle timeout.
 
-4. **Then continue M3 at slice 3.** Slices 1 and 2 are done (schema with its
-   hand-written binding CHECK; the `CHAT_TRANSCRIPT` retention rule and job).
+   It is also the first place **§9.1's measurements become takeable** — you
+   cannot time a first token without a stream. `CHAT_FIRST_TOKEN_BUDGET_MS`
+   (3000) and `CHAT_IDLE_TIMEOUT_MS` (20000) are still guesses and say so in
+   their own doc comments.
 
-   Slice 3 is the `CHAT_*` tunables from plan §7.1 plus **the context renderer**
-   — ADR-0012's stable prefix, rendered ONCE at session open and stamped on
-   `ChatSession.renderedContext`. It is pure and exhaustively testable, and
-   everything downstream depends on it: the streaming route cannot be built
-   against a prefix that is not fixed. Then the streaming route (§3.4's
-   contract), then the UI — **with the entry point as its own named slice**,
-   per the M2.5 retro.
+   Then the UI, **with the entry point as its own named slice**, per the M2.5
+   retro.
+
+   Already built for it: `lib/chat/context.ts` (ADR-0012's pure, byte-stable
+   renderer plus `hashContext`), `lib/chat/prompt.ts` (`TUTOR_SYSTEM_PROMPT` at
+   a measured 1,742 tokens against a 1,024 minimum, `buildProblemContextBlock`,
+   `REVEAL_OPERATOR_INSTRUCTION`, `DISTRESS_SAFETY_MESSAGE`), and the twelve
+   `CHAT_*` tunables. The request shape they assemble into is ADR-0012 §3.
 
    Both hand-written CHECK constraints so far live only in migrations and are
    invisible in `schema.prisma`; each has an integration test that is its real
    documentation. The plan's §1.2 SQL for the M3 one was snake_case and would
    not have applied — Prisma generates camelCase.
+
+5. **Two things need the owner, not an engineer.**
+   - **`DISTRESS_SAFETY_MESSAGE` (AC 21) is an engineer-written DRAFT.** It is
+     what a child in distress actually reads. ADR-0012's follow-up says this
+     copy needs someone qualified, and the owner still has to answer **whether
+     the account holder is notified when it fires** — notifying has real value
+     and real risk, since a child who learns the tutor reports them stops
+     telling it anything true.
+   - **ADR-0012 is still `Status: Proposed`.** M3's session bounds, the
+     snapshotted context and the whole cache design rest on it, and the
+     streaming route is about to sit on top.
 
 ### This app is not a math app
 
@@ -198,13 +221,32 @@ and a history question, not just an equation.**
   reachable); and the reveal route returns 200 with empty strings when an
   answer key is missing, masking an invariant violation as success.
 
-### The one thing that is not verified
+### What is verified now, and what still is not
 
-**No worksheet has ever been put in front of the model.** Every extraction test
-mocks it. `ANTHROPIC_API_KEY` is unset. Two milestones now stand on an
-assumption nobody has tested, and M2's grading plus M7's parent report stack on
-top of it. Setting that key and running one real extraction is the highest-value
-hour available in this project.
+**The vision path is verified** (2026-08-28), and this section used to say the
+opposite. One real worksheet — a printed Addition Doubles 10-20 sheet, 1159x1500
+webp — went to the real model through the production prompt, schema, model and
+effort: **35 of 35 problems, every addend pair correct**, labels 1-35 in order
+with no gaps or duplicates, 0.97 confidence throughout, zero student answers on
+a blank sheet, and the vertical layout preserved as LaTeX rather than flattened.
+It read the repeats correctly (three separate 14+14s, 18+18 twice in a row),
+which is what catches a model pattern-matching instead of reading. 36 seconds,
+4,081 input / 4,391 output tokens.
+
+`tests/unit/live/extraction.live.test.ts` is that run, kept. It imports the
+prompt, schema, model and effort from production rather than restating them, so
+it cannot drift from what actually runs.
+
+**What that does NOT prove**, and nobody should claim it does:
+
+- Only a clean, high-contrast, printed **math** worksheet. Nothing yet about
+  handwriting, an angled phone photo, or a reading passage. The most
+  informative next test is a **non-math page** — the "it very nearly shipped as
+  a math app" incident came from exactly that blind spot.
+- Nothing downstream. `SLATE_EMPTY`, skill resolution, practice generation and
+  grading all still stand on their own mocks.
+- **A student still cannot report a bad question.** Extraction accuracy is now
+  sampled at n=1; generation quality is still unmeasured.
 
 Storage runs on a local filesystem adapter (`STORAGE_DRIVER=local`); the Vercel
 Blob implementation is unbuilt and its placeholder throws.
