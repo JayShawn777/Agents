@@ -511,26 +511,79 @@ export const CHAT_MESSAGES_PER_HOUR = 60;
 export const CHAT_SESSIONS_PER_HOUR = 10;
 
 /**
- * M3 AC 2 — **PENDING MEASUREMENT (plan §9.1, ADR-0012 follow-up).** This is a
- * GUESS and is known to be one. It cannot be fixed from a mock: it is the
- * wall-clock budget for the first streamed token against the real API, and
- * streaming time counts toward Vercel's `maxDuration`.
+ * M3 AC 2 — **MEASURED 2026-08-28** (`tests/unit/live/chat.live.test.ts`), no
+ * longer a guess.
  *
- * Do not treat a passing test as evidence this number is right.
+ * Three real streamed turns on `claude-opus-5` at `CHAT_EFFORT`: first token at
+ * **2072ms, 1732ms, 1749ms**. The first turn is the slowest because it pays the
+ * cache write. 3000ms is kept: it clears the measured worst case by ~45%, which
+ * is the right size for a budget that exists to catch a regression rather than
+ * to trim a fast path.
+ *
+ * **The caveat that keeps this honest:** measured from a development machine,
+ * not from a deployed Vercel function. ADR-0013's follow-up asks for a preview
+ * deployment, and that is still outstanding — the network path differs, even if
+ * the model time does not.
  */
 export const CHAT_FIRST_TOKEN_BUDGET_MS = 3_000;
 
 /**
- * M3 AC 19 — **PENDING MEASUREMENT (plan §9.1).** Same standing as
- * `CHAT_FIRST_TOKEN_BUDGET_MS`: a guess until one real streaming turn is timed.
+ * M3 AC 19 — **MEASURED 2026-08-28**, and deliberately left generous.
+ *
+ * A whole turn — first byte to last — took **2183ms, 2198ms and 2887ms** in the
+ * live run, so 20s is roughly seven times a complete reply. That is not slack
+ * to be trimmed: this value detects a STALL, and the cost of the two errors is
+ * lopsided. Too low kills a legitimately slow reply on a bad connection and
+ * makes a child retype; too high leaves a dead socket spinning for a few extra
+ * seconds before the same retry appears. Sized for the first failure, not the
+ * second.
+ *
+ * Same caveat as `CHAT_FIRST_TOKEN_BUDGET_MS`: measured locally, not on Vercel.
  */
 export const CHAT_IDLE_TIMEOUT_MS = 20_000;
 
-/** M3 AC 13. Ceiling on one tutor reply. */
+/**
+ * M3 AC 13. Ceiling on one tutor reply.
+ *
+ * **Measured 2026-08-28:** real replies ran **87, 105 and 99 output tokens** —
+ * roughly 2% of this ceiling. Truncation is therefore unreachable in ordinary
+ * tutoring, which is the intent: AC 13's "cut short" notice should be a genuine
+ * edge case, not a routine experience. Kept rather than lowered, because the
+ * headroom costs nothing (only tokens actually generated are billed) and the
+ * one thing worse than a long reply is a good one that stops mid-sentence.
+ */
 export const CHAT_MAX_OUTPUT_TOKENS = 4_000;
 
 /** `docs/research/anthropic-api.md` §1. */
 export const CHAT_MODEL = "claude-opus-5";
+
+/**
+ * M3 AC 2 — **PENDING THE SAME MEASUREMENT** as `CHAT_FIRST_TOKEN_BUDGET_MS`,
+ * and the one lever that actually moves it.
+ *
+ * `low`, not `high`, and deliberately unlike `EXTRACTION_EFFORT`. Extraction
+ * reads a photograph once and nobody is watching; a tutoring turn is a child
+ * sitting in front of a "typing" indicator, and AC 2 gives the first token a
+ * three-second budget. Effort is what buys that back: on Opus 5 it governs
+ * thinking depth, and thinking happens BEFORE the first text delta, so a high
+ * effort setting spends the whole budget before a single character is streamed.
+ *
+ * Thinking itself stays ON (adaptive, the model default). Disabling it is the
+ * documented way to leak `<thinking>` tags into a reply, and the reply here is
+ * read by a nine-year-old. Lower effort with thinking on is the recommended
+ * shape for exactly this trade.
+ *
+ * **Measured 2026-08-28** and kept. Three live turns spent 10-15 thinking
+ * tokens each and produced replies that opened with a question rather than an
+ * explanation, refused "just tell me the answer" without scolding, and — given
+ * a child who had added both numerators and denominators — asked about the step
+ * where the thinking went sideways instead of marking it wrong. That is the
+ * behaviour the system prompt asks for, at first-token latency inside budget.
+ *
+ * If measurement ever shows the tutor asking shallow questions, this is the
+ * first constant to raise — before the prompt is rewritten.
+ */
+export const CHAT_EFFORT = "low";
 
 /**
  * ADR-0012 §3. One hour rather than the 5-minute default: a student thinking

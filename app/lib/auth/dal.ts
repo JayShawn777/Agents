@@ -8,6 +8,8 @@ import { isInClosureRecoveryWindow } from "@/lib/auth/closure";
 import { db } from "@/lib/db";
 import type {
   Attempt,
+  ChatMessage,
+  ChatSession,
   Extraction,
   ExtractedProblem,
   PracticeAnswerKey,
@@ -263,3 +265,109 @@ export const requirePracticeProblem = cache(
 export async function requirePracticeAnswerKey(practiceProblemId: string): Promise<PracticeAnswerKey | null> {
   return db.practiceAnswerKey.findUnique({ where: { practiceProblemId } });
 }
+
+/**
+ * A chat session with everything one turn needs, and nothing it does not.
+ *
+ * `messages` carries the full transcript in `sequence` order because that IS
+ * the conversation sent to the model — the API is stateless, so a turn resends
+ * every prior turn. It is not a convenience include.
+ *
+ * The bound problem's TEXT arrives through exactly one of the two relations,
+ * mirroring the CHECK constraint that guarantees exactly one is non-null.
+ */
+export type ChatSessionWithContext = ChatSession & {
+  studentProfile: Pick<StudentProfile, "id" | "status">;
+  extractedProblem: Pick<ExtractedProblem, "id" | "text"> | null;
+  attempt: (Pick<Attempt, "id"> & { practiceProblem: Pick<PracticeProblem, "id" | "text"> }) | null;
+  messages: ChatMessage[];
+};
+
+/**
+ * Resolves a chat session scoped to the CALLING user via the
+ * `ChatSession -> StudentProfile.userId` join. Used by endpoints 37/38/39
+ * (`app/api/chat/sessions/[sessionId]/**`). A cross-account id and an unknown
+ * id are both `null`, so both are a 404 — M3 AC 15's "no content is disclosed"
+ * is this query's `where` clause, not a check the handler remembers to run.
+ *
+ * NOT wrapped in `cache()`, unlike its siblings above. The streaming route
+ * re-reads this session AFTER its own transaction has written two message rows,
+ * and a memoised read would hand back the pre-transaction transcript — the
+ * request-scoped cache is a correctness hazard rather than a saving for the one
+ * caller that mutates what it just read.
+ */
+export async function requireChatSession(sessionId: string): Promise<ChatSessionWithContext | null> {
+  const session = await verifySession();
+  if (!session) return null;
+  return db.chatSession.findFirst({
+    where: { id: sessionId, studentProfile: { userId: session.userId } },
+    include: {
+      studentProfile: { select: { id: true, status: true } },
+      extractedProblem: { select: { id: true, text: true } },
+      attempt: { select: { id: true, practiceProblem: { select: { id: true, text: true } } } },
+      messages: { orderBy: { sequence: "asc" } },
+    },
+  });
+}
+
+/** An `ExtractedProblem` with the extraction whose status gates chat, and just enough of the owning profile for the Owner+ACTIVE gate. */
+export type ExtractedProblemWithContext = ExtractedProblem & {
+  extraction: Extraction & {
+    upload: Upload & { studentProfile: Pick<StudentProfile, "id" | "status" | "gradeLevel"> };
+  };
+};
+
+/**
+ * Resolves an extracted problem scoped to the CALLING user via the
+ * `ExtractedProblem -> Extraction -> Upload -> StudentProfile.userId` join.
+ * Used by endpoint 35 (`POST /api/extracted-problems/[problemId]/chat-sessions`).
+ *
+ * Unlike M1's problem routes, this one addresses a problem by its OWN id with
+ * no extraction in the path, so the ownership join is this query's `where` and
+ * there is no parent resource to hang it off. Cross-account and nonexistent ids
+ * are both `null`, so both are a 404 (M3 AC 15).
+ */
+export const requireExtractedProblem = cache(
+  async (problemId: string): Promise<ExtractedProblemWithContext | null> => {
+    const session = await verifySession();
+    if (!session) return null;
+    return db.extractedProblem.findFirst({
+      where: { id: problemId, extraction: { upload: { studentProfile: { userId: session.userId } } } },
+      include: {
+        extraction: {
+          include: {
+            upload: { include: { studentProfile: { select: { id: true, status: true, gradeLevel: true } } } },
+          },
+        },
+      },
+    });
+  },
+);
+
+/** An `Attempt` with the practice problem whose text a chat session is about, and its set's status. */
+export type AttemptWithContext = Attempt & {
+  practiceProblem: PracticeProblem & { practiceSet: PracticeSet };
+  studentProfile: Pick<StudentProfile, "id" | "status" | "gradeLevel">;
+};
+
+/**
+ * Resolves an attempt scoped to the CALLING user. `Attempt.studentProfileId` is
+ * denormalised (see the schema note), so this is one index hit rather than a
+ * three-table join — and it is the same profile either way.
+ *
+ * Used by endpoint 36 (`POST /api/attempts/[attemptId]/chat-sessions`), M2
+ * AC 10's join point: the student got it wrong, and now wants to ask why.
+ */
+export const requireAttempt = cache(
+  async (attemptId: string): Promise<AttemptWithContext | null> => {
+    const session = await verifySession();
+    if (!session) return null;
+    return db.attempt.findFirst({
+      where: { id: attemptId, studentProfile: { userId: session.userId } },
+      include: {
+        practiceProblem: { include: { practiceSet: true } },
+        studentProfile: { select: { id: true, status: true, gradeLevel: true } },
+      },
+    });
+  },
+);

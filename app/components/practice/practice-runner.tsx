@@ -29,6 +29,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AnswerInput } from "@/components/practice/answer-input";
 import { FeedbackPanel } from "@/components/practice/feedback-panel";
+import { OpenChatButton } from "@/components/chat/open-chat-button";
 import { RevealPanel, type RevealResult } from "@/components/practice/reveal-panel";
 import { apiFetch } from "@/lib/api/client";
 import { ATTEMPTS_BEFORE_REVEAL, PRACTICE_ANSWER_MAX_LENGTH } from "@/lib/config";
@@ -56,6 +57,13 @@ export function PracticeRunner({
   });
   const [answerValue, setAnswerValue] = useState("");
   const [feedback, setFeedback] = useState<FeedbackDTO | null>(null);
+  /**
+   * M3 AC 1 / M2 AC 10's join point: the attempt a chat session would be bound
+   * to. Held only for the CURRENT problem's latest attempt — cleared with the
+   * rest of the interaction state on every move — because a session must bind
+   * to the answer the student is actually looking at.
+   */
+  const [lastAttemptId, setLastAttemptId] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [revealByProblemId, setRevealByProblemId] = useState<Record<string, RevealResult>>({});
@@ -67,6 +75,7 @@ export function PracticeRunner({
   function resetInteractionState() {
     setAnswerValue("");
     setFeedback(null);
+    setLastAttemptId(null);
     setValidationError(null);
     setActionError(null);
   }
@@ -96,6 +105,7 @@ export function PracticeRunner({
         return;
       }
       setFeedback(result.data.feedback);
+      setLastAttemptId(result.data.attempt.id);
       setAnswerValue("");
     });
   }
@@ -181,6 +191,21 @@ export function PracticeRunner({
       ) : (
         <div className="flex flex-col gap-4">
           {feedback ? <FeedbackPanel feedback={feedback} /> : null}
+
+          {/*
+            M3 AC 1, and the user story this milestone exists for: "I want to
+            ask why my answer was wrong, so that I understand the mistake
+            instead of just seeing a red cross." Offered only when there is
+            something to ask ABOUT — a wrong or unscored answer — because
+            after a correct one the useful next action is the next problem.
+          */}
+          {lastAttemptId && feedback && feedback.result !== "CORRECT" ? (
+            <OpenChatButton
+              subject={{ kind: "ATTEMPT", attemptId: lastAttemptId }}
+              label="Ask the tutor why"
+            />
+          ) : null}
+
           {validationError ? <p className="text-sm text-muted-foreground">{validationError}</p> : null}
           {actionError ? (
             <Alert variant="destructive">

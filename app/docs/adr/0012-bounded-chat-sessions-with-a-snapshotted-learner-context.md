@@ -209,6 +209,19 @@ Two tests, because one of them cannot run in CI.
 - **Behind `RUN_LIVE_AI=1`:** the same three turns against the real API,
   asserting `usage.cache_read_input_tokens > 0` on turns 2 and 3.
 
+**Both halves now exist, and the live one passed on 2026-08-28**
+(`tests/unit/live/chat.live.test.ts`). Turn 1 paid a cache WRITE of **1967
+tokens** at `ttl: '1h'` (`ephemeral_1h_input_tokens: 1967`); turns 2 and 3 each
+READ **1967** and wrote none, with only the new messages billed as fresh input
+(**94** and **212** tokens). The cached span covers both breakpoints — the
+static prompt, the snapshotted learner context, and the problem block — so §3's
+placement is confirmed working rather than assumed.
+
+**This is the assertion that could not be made any other way.** Every mocked
+test in the suite passes identically whether or not Anthropic ever cached
+anything; the only symptom of failure would have been a bill roughly ten times
+the cost model, with no error and no log line.
+
 Stated plainly in the plan: **CI proves the prefix does not vary; only the live
 test proves Anthropic cached it.** `cacheReadTokens` and `cacheWriteTokens` are
 persisted on every `ChatMessage` from day one, per the research's "this failure is

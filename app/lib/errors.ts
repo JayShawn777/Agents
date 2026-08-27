@@ -261,3 +261,50 @@ export function successResponse<T>(
   const body: ApiResult<T> = { ok: true, data };
   return jsonResponse(body, init?.status ?? 200, init?.headers);
 }
+
+// ─────────────────────────── M3: chat stream failures ───────────────────────────
+
+/**
+ * ADR-0013 §5. Internal reasons a chat turn can fail AFTER the stream has
+ * opened — the point past which the HTTP status is already 200 and can no
+ * longer change, so the failure travels as a terminal `{ type: 'error' }`
+ * NDJSON event instead of an `ApiResult` response.
+ *
+ * These are classified from typed SDK error classes and from `stop_reason`,
+ * most specific first, exactly as `lib/extraction/run-extraction.ts` does it.
+ * NOTHING in this path string-matches an exception message, and nothing
+ * derives a code from one.
+ */
+export const CHAT_FAILURE_CODES = ["REFUSED", "TIMEOUT", "UPSTREAM", "INTERNAL"] as const;
+
+export type ChatFailureCode = (typeof CHAT_FAILURE_CODES)[number];
+
+/**
+ * The allowlist AC 18 is actually about: what a CHILD reads when a turn
+ * fails. Every string here is hand-written and user-safe — never an exception
+ * message, never a stack trace, never a model identifier, never a provider
+ * payload.
+ *
+ * The wording is deliberately blameless and short. A child who has just typed
+ * a question and got an error should not be handed something that reads like
+ * they broke it, and should not have to parse a sentence to learn that trying
+ * again is the move.
+ */
+export const CHAT_FAILURE_MESSAGES: Record<ChatFailureCode, { code: ErrorCode; message: string }> = {
+  REFUSED: {
+    code: "UPSTREAM_ERROR",
+    message: "I can't help with that one. Try asking about the problem in a different way.",
+  },
+  TIMEOUT: {
+    code: "UPSTREAM_ERROR",
+    message: "That took too long to come back. Please try asking again.",
+  },
+  UPSTREAM: {
+    code: "UPSTREAM_ERROR",
+    message: "The tutor isn't available right now. Please try again in a moment.",
+  },
+  INTERNAL: {
+    code: "INTERNAL_ERROR",
+    message: "Something went wrong on our end. Please try asking again.",
+  },
+};

@@ -93,7 +93,12 @@ export default async function UploadResultsPage({
 
       {showProblems && extraction ? (
         <>
-          <ProblemList extractionId={extraction.id} problems={problems} editable={Boolean(isEditable)} />
+          <ProblemList
+            extractionId={extraction.id}
+            problems={problems}
+            editable={Boolean(isEditable)}
+            chatEnabled={extraction.status === "CONFIRMED"}
+          />
           {isConfirmable ? <ConfirmExtractionButton extractionId={extraction.id} /> : null}
           {extraction.status === "CONFIRMED" ? (
             <div className="flex flex-col gap-3">

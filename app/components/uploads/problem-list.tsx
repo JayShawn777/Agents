@@ -1,3 +1,4 @@
+import { OpenChatButton } from "@/components/chat/open-chat-button";
 import { LowConfidenceBadge } from "@/components/uploads/low-confidence-badge";
 import { ProblemRowActions } from "@/components/uploads/problem-row-actions";
 import { renderProblemText } from "@/components/uploads/render-math";
@@ -19,10 +20,18 @@ export function ProblemList({
   extractionId,
   problems,
   editable,
+  chatEnabled = false,
 }: {
   extractionId: string;
   problems: ExtractedProblemDTO[];
   editable: boolean;
+  /**
+   * M3 AC 1's entry point, on only once the extraction is CONFIRMED — chat is
+   * bound to a problem the student has actually reviewed (endpoint 35 enforces
+   * the same rule with a 409, so this only decides whether the button is worth
+   * offering, never whether it is allowed).
+   */
+  chatEnabled?: boolean;
 }) {
   return (
     <ol className="flex flex-col gap-4">
@@ -40,6 +49,14 @@ export function ProblemList({
             renderedHtml={renderProblemText(problem.text)}
             editable={editable}
           />
+          {chatEnabled ? (
+            <div className="mt-3">
+              <OpenChatButton
+                subject={{ kind: "EXTRACTED_PROBLEM", problemId: problem.id }}
+                label="Ask about this one"
+              />
+            </div>
+          ) : null}
         </li>
       ))}
     </ol>

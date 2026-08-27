@@ -24,7 +24,7 @@
  * route handlers.
  */
 
-import { apiErrResult, type ApiResult } from "@/lib/errors";
+import { apiErrResult, ERROR_MESSAGES, type ApiError, type ApiResult, type ErrorCode } from "@/lib/errors";
 
 export type ApiFetchInit = Omit<RequestInit, "body"> & {
   /**
@@ -109,4 +109,144 @@ export async function apiFetch<T>(
   // Parsed JSON that isn't the contract's envelope shape. Treat it the
   // same as a malformed response rather than guessing at a shape.
   return apiErrResult("INTERNAL_ERROR");
+}
+
+// ─────────────────────────── the streaming primitive ───────────────────────────
+
+/**
+ * A terminal failure, in the SAME shape the NDJSON stream itself uses for one
+ * (ADR-0013 §1). `apiStream` synthesises one of these from a pre-stream
+ * `ApiResult` failure so a caller has exactly one thing to handle.
+ */
+export type StreamErrorEvent = { type: "error"; code: ErrorCode; message: string };
+
+/**
+ * `apiStream<E>()` (ADR-0013 §6) — the second and only other primitive beside
+ * `apiFetch<T>()`, for the one endpoint that streams (`POST /api/chat/sessions/
+ * [sessionId]/messages`). It yields parsed NDJSON lines.
+ *
+ * **DEVIATION from ADR-0013 §6, deliberate.** The ADR says this "throws
+ * `ApiError` on a non-2xx". It does not throw. A pre-stream failure is yielded
+ * as a terminal `{ type: 'error' }` event instead — which is what ADR-0013 §2
+ * asks of the caller in its own words: "the client treats an `error` event
+ * exactly as it treats a non-2xx response." Throwing would give this app two
+ * ways to report the same failure and would be the only place a network error
+ * crosses a component boundary as an exception, which `apiFetch` exists
+ * specifically to prevent. One shape, one code path, and a caller that cannot
+ * forget a `try`.
+ *
+ * The generator always terminates. It yields at most one error event and stops.
+ */
+export async function* apiStream<E>(
+  url: string | URL,
+  init?: RequestInit,
+): AsyncGenerator<E | StreamErrorEvent> {
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch {
+    // Includes the AbortController firing on component unmount. There is
+    // nothing to report to a component that is being torn down, but a caller
+    // that aborted deliberately already knows, and one that lost the network
+    // needs to leave its typing state.
+    yield streamError("UPSTREAM_ERROR");
+    return;
+  }
+
+  if (!response.ok || !response.body) {
+    yield await preStreamError(response);
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  // THE BUG THIS EXISTS TO PREVENT (ADR-0013's own accepted trade-off): a
+  // `delta` will eventually be split mid-JSON across two network chunks. A
+  // naive `chunk.split("\n")` per chunk works on localhost, where a small
+  // response usually arrives whole, and fails on a real connection. Everything
+  // after the last newline is held back until the next chunk completes it.
+  let buffer = "";
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      let newline = buffer.indexOf("\n");
+      while (newline !== -1) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+
+        if (line.trim().length === 0) continue;
+        const parsed = parseLine<E>(line);
+        if (!parsed.ok) {
+          yield parsed.error;
+          return;
+        }
+        yield parsed.value;
+      }
+    }
+
+    // A final line with no trailing newline. The server always terminates its
+    // lines, so this is defensive rather than expected — but dropping a
+    // terminal `done` because a byte went missing would leave the UI stuck in
+    // its typing state forever, which is the exact failure AC 19 is about.
+    buffer += decoder.decode();
+    const tail = buffer.trim();
+    if (tail.length > 0) {
+      const parsed = parseLine<E>(tail);
+      if (!parsed.ok) {
+        yield parsed.error;
+        return;
+      }
+      yield parsed.value;
+    }
+  } catch {
+    yield streamError("UPSTREAM_ERROR");
+  } finally {
+    // Releasing the lock lets the body be cancelled by the caller's
+    // `AbortController` without an unhandled rejection.
+    reader.releaseLock();
+  }
+}
+
+function streamError(code: ErrorCode, message?: string): StreamErrorEvent {
+  return { type: "error", code, message: message ?? ERROR_MESSAGES[code] };
+}
+
+function parseLine<E>(line: string): { ok: true; value: E } | { ok: false; error: StreamErrorEvent } {
+  try {
+    return { ok: true, value: JSON.parse(line) as E };
+  } catch {
+    // A line that is not JSON means something between the app and the browser
+    // rewrote the body. Treat it like a malformed response, never like content.
+    return { ok: false, error: streamError("INTERNAL_ERROR") };
+  }
+}
+
+/**
+ * A failure BEFORE the stream opened, which per ADR-0013 §2 is always a normal
+ * `ApiResult` body with a real status code. Its allowlisted message is reused
+ * verbatim — it was written to be read by a child or a parent.
+ */
+async function preStreamError(response: Response): Promise<StreamErrorEvent> {
+  try {
+    const parsed: unknown = await response.json();
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "ok" in parsed &&
+      (parsed as { ok: unknown }).ok === false &&
+      "error" in parsed
+    ) {
+      const error = (parsed as { error: ApiError }).error;
+      return { type: "error", code: error.code, message: error.message };
+    }
+  } catch {
+    // Not JSON — a proxy error page, an empty body. Falls through.
+  }
+  return streamError(response.status >= 500 ? "UPSTREAM_ERROR" : "INTERNAL_ERROR");
 }

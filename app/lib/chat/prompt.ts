@@ -117,3 +117,47 @@ export const REVEAL_OPERATOR_INSTRUCTION = `The child has now tried this several
  * distressed child sees is fixed text somebody chose, not generated prose.
  */
 export const DISTRESS_SAFETY_MESSAGE = `I want to stop the schoolwork for a moment. What you said sounds important, and it is bigger than something I can help with — I am a computer program that helps with homework. Please talk to a grown-up you trust about this: a parent, someone who looks after you, or a teacher at school. Telling someone is the right thing to do, and it is not something you should have to sort out on your own.`;
+
+/**
+ * AC 6's wrap-up, written as a stored assistant message by the closing
+ * transaction (ADR-0012 §1). TEMPLATED, not generated: a farewell costs a model
+ * call the student will not read, and a session that ends should end promptly
+ * rather than after one more spinner.
+ *
+ * Both variants name a next action, because AC 6 asks for one and because "we
+ * are done" with nowhere to go is how a bounded session reads as a punishment
+ * rather than as a finish. Neither says anything about how the student did —
+ * a wrap-up is not a report card.
+ */
+export const CHAT_WRAP_UP_MESSAGES = {
+  CLOSED_TURN_LIMIT: `That's everything for this session — we covered a good amount on this one. When you're ready, you can start a fresh session on this problem or go and try some practice.`,
+  CLOSED_TIME_LIMIT: `We're out of time for this session. That's a good stopping point — you can start a fresh session on this problem whenever you like, or go and try some practice.`,
+  CLOSED_BY_STUDENT: `Okay, we'll stop there. You can start a fresh session on this problem any time, or go and try some practice.`,
+} as const;
+
+/**
+ * AC 1's opening message — TEMPLATED, not generated (ADR-0012 §1, and the
+ * spec's own assumption).
+ *
+ * Generating a greeting costs a model call before the child has said anything,
+ * and it is the one turn where there is nothing yet to be responsive to. This
+ * also makes session-open free and deterministic, so a child who opens chat and
+ * changes their mind has cost nothing.
+ *
+ * It quotes the problem so AC 1's "refers to that problem" is satisfied by
+ * construction rather than by hoping the model does. It ends with a question
+ * rather than a step, matching the system prompt's rule that a tutoring turn
+ * should find out where the child actually is before explaining anything.
+ *
+ * The problem text is interpolated as-is: it carries LaTeX, and it renders
+ * through the same `renderMathText` path as M1 and M2 (`lib/chat/dto.ts`),
+ * which escapes HTML. This is an assistant message so it renders as
+ * mathematics, which is what the child expects to see.
+ */
+export function buildOpeningMessage(problemText: string): string {
+  return `Let's take a look at this one together:
+
+${problemText}
+
+Before I say anything — what have you tried so far, or which bit is confusing?`;
+}

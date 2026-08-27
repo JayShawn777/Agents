@@ -5,6 +5,67 @@
 - **Deciders:** Jaysh (pending)
 - **Spec:** docs/specs/m3-chat-tutor.md
 
+## Revision 2026-08-28 — a partial turn is REGENERATED, not resumed, and `apiStream` does not throw
+
+Revised in place under docs rule 3 (a **Proposed** ADR may be revised with a
+dated note saying what changed and why). Written while building the route, from
+two things that only surface once the code exists.
+
+### §3's "resumes streaming into the same row" is not implementable
+
+**What changed.** §3 says a retry whose assistant message is still `partial`
+"replays what exists and resumes streaming into the same row". It cannot resume.
+Resuming a half-written assistant message means prefilling the assistant turn,
+and **assistant prefill returns a 400 on Claude Opus 5** and on every model in
+the 4.6+ family. There is no supported way to ask the model to continue its own
+truncated reply.
+
+**What the code does instead**, in `lib/chat/turn.ts`:
+
+| State of the assistant row on a `clientTurnId` collision | Action |
+|---|---|
+| not `partial` (complete) | **replay** — one `delta` with the stored text, then `done`. No AI call, no bill. §3's cost argument, unchanged. |
+| `partial`, younger than `CHAT_IDLE_TIMEOUT_MS` | **replay** — presumed in flight. |
+| `partial`, older than `CHAT_IDLE_TIMEOUT_MS` | **regenerate** from the top into the same row, replacing the fragment. |
+
+**Why the age split.** Without it, two concurrent requests carrying one
+`clientTurnId` both find a fresh empty partial and both start generating into
+the same row — two generations for one turn, which is precisely what §3's own
+verification test forbids. The budget is the same one the GET endpoint uses for
+staleness, so a turn cannot be retryable by one surface and in-flight by the
+other.
+
+**What this does not change.** Every guarantee §3 actually makes survives: one
+user row, one assistant row, one turn, `clientTurnId` unique, and no duplicate
+on reconnect. The student ends up with a whole reply rather than a fragment with
+a seam in the middle. A regenerate does **not** increment `studentTurnCount` — a
+dropped connection must not cost a child one of their twenty turns.
+
+### §6's `apiStream` yields a terminal error event rather than throwing
+
+**What changed.** §6 types `apiStream` as throwing `ApiError` on a non-2xx. It
+does not throw. A pre-stream failure is yielded as the same terminal
+`{ type: 'error' }` event the stream itself uses.
+
+**Why.** This is §2's own instruction to the caller — "the client treats an
+`error` event exactly as it treats a non-2xx response" — carried into the
+signature instead of left to the caller to remember. Throwing would give the app
+two ways to report one failure and would make this the only place a network
+error crosses a component boundary as an exception, which `apiFetch` exists
+specifically to prevent.
+
+### `CHAT_EFFORT` is new, and it is the lever the follow-up should measure
+
+`output_config.effort` is `low` for chat, unlike `EXTRACTION_EFFORT`'s `high`.
+On Opus 5 effort governs thinking depth, and thinking happens **before the first
+text delta** — so a high setting spends AC 2's entire three-second first-token
+budget before a single character reaches the child. Thinking itself stays on
+(adaptive, the model default): disabling it is the documented way to leak
+`<thinking>` tags into a reply, and the reply here is read by a nine-year-old.
+
+The measurement this ADR's follow-up already demands should now also fix
+`CHAT_EFFORT`, because it is the constant that actually moves the number.
+
 ## Context
 
 M3 needs a transport, and the acceptance criteria are unusually specific about
@@ -295,11 +356,19 @@ what produces the server-side abort in §4.
   makes duplicates possible.
 
 ### Follow-up required
-- [ ] **Measure a real streaming turn end to end on a deployed preview
-      function** (p50/p95 wall clock, output tokens, time to first delta) before
-      `CHAT_IDLE_TIMEOUT_MS`, `CHAT_FIRST_TOKEN_BUDGET_MS` and
-      `CHAT_MAX_OUTPUT_TOKENS` are fixed. M3's open question; blocking for the
-      values, not for the shape.
+- [~] **Measure a real streaming turn end to end.** Done locally 2026-08-28
+      (`tests/unit/live/chat.live.test.ts`, three real turns): first token
+      **2072 / 1732 / 1749 ms**, whole turn **2183 / 2198 / 2887 ms**, output
+      **87 / 105 / 99** tokens. All three constants are now measured rather than
+      guessed and their doc comments say so. **Still outstanding: the same
+      measurement from a DEPLOYED PREVIEW FUNCTION** — this was taken from a
+      development machine, and the network path to Anthropic differs even though
+      the model time will not.
+      One thing it settles decisively: a ~3-second turn against
+      `maxDuration = 300` means the polling fallback in "Alternatives
+      considered" is not needed, and M3's open question "does the streaming call
+      fit inside the function duration limit" is answered with two orders of
+      magnitude to spare.
 - [ ] Unit-test `apiStream` with chunk boundaries deliberately placed mid-JSON and
       mid-line.
 - [ ] A Vitest test that fires the same `clientTurnId` twice concurrently and

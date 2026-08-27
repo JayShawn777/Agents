@@ -11,10 +11,13 @@
  * `Date` — DTOs cross a JSON boundary.
  */
 
+import type { ErrorCode } from "@/lib/errors";
 import type {
   AgeBand,
   AnswerFormat,
   AttemptResult,
+  ChatRole,
+  ChatSessionStatus,
   ConsentMethod,
   ConsentRelationship,
   ExtractionStatus,
@@ -233,3 +236,59 @@ export type AttemptResponse = {
   feedback: FeedbackDTO;
   mastery: SkillMasteryDTO;
 };
+
+// ─────────────────────────── M3: the chat tutor ───────────────────────────
+
+export type ChatSessionDTO = {
+  id: string;
+  status: ChatSessionStatus;
+  /** AC 1: a session is bound to exactly ONE of these and never re-pointed. */
+  subject: { kind: "EXTRACTED_PROBLEM" | "ATTEMPT"; id: string };
+  studentTurnCount: number;
+  maxStudentTurns: number;
+  expiresAt: string;
+  openedAt: string;
+  closedAt: string | null;
+  // NOTE: renderedContext, contextHash, contextVersion, systemPromptVersion and
+  // model are NEVER in a DTO. `renderedContext` is the student's mastery
+  // summary rendered for the model; it is not copy anybody wrote for a child
+  // to read, and ADR-0012 §2 keeps it server-side.
+};
+
+export type ChatMessageDTO = {
+  id: string;
+  role: ChatRole;
+  content: string;
+  /** Server-rendered KaTeX, matching M1/M2 (AC 17). Null when the text carries no math. */
+  contentHtml: string | null;
+  sequence: number;
+  /** AC 12: the stream was aborted; this is what had been generated. Render it as incomplete. */
+  partial: boolean;
+  /** AC 13: the output token cap was hit and the reply stops mid-thought. */
+  truncated: boolean;
+  /** AC 21: fixed safety copy, not model output. */
+  safetyResponse: boolean;
+  createdAt: string;
+  // NOTE: token counts, cache metrics and `clientTurnId` are NEVER in a DTO.
+};
+
+export type ChatSessionDetailResponse = {
+  session: ChatSessionDTO;
+  messages: ChatMessageDTO[];
+};
+
+/**
+ * ADR-0013 §1. The NDJSON wire format — one JSON object per `\n`-terminated
+ * line, and the ONE place in this app where a success body is not
+ * `ApiResult<T>`.
+ *
+ * Order is always: exactly one `turn`, then zero or more `delta`, then exactly
+ * one of `done` or `error`. Never both, and never a `delta` after a terminal
+ * event. A socket that closes with no terminal event is a client-side idle
+ * timeout, not a success.
+ */
+export type ChatStreamEvent =
+  | { type: "turn"; userMessage: ChatMessageDTO; assistantMessageId: string }
+  | { type: "delta"; text: string }
+  | { type: "done"; message: ChatMessageDTO; session: ChatSessionDTO }
+  | { type: "error"; code: ErrorCode; message: string };

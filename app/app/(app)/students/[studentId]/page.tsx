@@ -195,6 +195,26 @@ export default async function StudentHomePage({
 
       <MasteryStrip mastery={mastery} />
 
+      {/*
+        M3 AC 14 — the parent's way into the tutor transcripts. The user story
+        is trust: a machine talks to their child unsupervised, so the record of
+        what it said has to be reachable without being hunted for. Always
+        present, even with no sessions yet, because a parent looking for this
+        and not finding it learns the wrong thing.
+      */}
+      <div className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-foreground">Tutor conversations</h2>
+        <p className="text-sm text-muted-foreground">
+          Everything the tutor and your child said to each other.
+        </p>
+        <Link
+          href={`/students/${studentId}/chat`}
+          className="w-fit rounded-lg border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted/40"
+        >
+          Read the conversations
+        </Link>
+      </div>
+
       <div className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-foreground">Check-in</h2>
         <p className="text-sm text-muted-foreground">
