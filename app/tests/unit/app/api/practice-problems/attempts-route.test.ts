@@ -1,5 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
+import { ATTEMPTS_PER_HOUR, MAX_ATTEMPTS_PER_PROBLEM } from "@/lib/config";
+
 /** `app/api/practice-problems/[problemId]/attempts/route.ts` (endpoint 32). */
 
 const dalMock = {
@@ -127,4 +129,68 @@ it("M2 AC 10: a second attempt on the same problem creates a SECOND row (attempt
   expect(dbMock.attempt.create).toHaveBeenCalledWith(
     expect.objectContaining({ data: expect.objectContaining({ attemptNumber: 2 }) }),
   );
+});
+
+// ─────────── the two caps added by the M2 review, 2026-08-27 ───────────
+
+it("stops accepting answers at MAX_ATTEMPTS_PER_PROBLEM — 409, no attempt row, no model call", async () => {
+  const spent = Array.from({ length: MAX_ATTEMPTS_PER_PROBLEM }, () => ({ revealed: true, result: "INCORRECT" }));
+  dalMock.requirePracticeProblem.mockResolvedValue(problem({ attempts: spent }));
+
+  const res = await POST(req({ answer: "1/2" }), ctx());
+
+  expect(res.status).toBe(409);
+  expect(dbMock.attempt.create).not.toHaveBeenCalled();
+});
+
+it("the last allowed attempt still goes through — the cap is a ceiling, not an off-by-one", async () => {
+  const spent = Array.from({ length: MAX_ATTEMPTS_PER_PROBLEM - 1 }, () => ({ revealed: false, result: "INCORRECT" }));
+  dalMock.requirePracticeProblem.mockResolvedValue(problem({ attempts: spent }));
+
+  const res = await POST(req({ answer: "1/2" }), ctx());
+
+  expect(res.status).toBe(201);
+  expect(dbMock.attempt.create).toHaveBeenCalledOnce();
+});
+
+it("the 409 message never tells a child they failed — it points at the worked answer", async () => {
+  const spent = Array.from({ length: MAX_ATTEMPTS_PER_PROBLEM }, () => ({ revealed: true, result: "INCORRECT" }));
+  dalMock.requirePracticeProblem.mockResolvedValue(problem({ attempts: spent }));
+
+  const res = await POST(req({ answer: "1/2" }), ctx());
+  const body = (await res.json()) as { error: { message: string } };
+
+  expect(body.error.message).toMatch(/good go/i);
+  expect(body.error.message).not.toMatch(/fail|wrong|too many|error/i);
+});
+
+it("caps attempts per hour per student profile — 429 before the answer is even parsed", async () => {
+  dalMock.requirePracticeProblem.mockResolvedValue(problem());
+  dbMock.attempt.count.mockResolvedValue(ATTEMPTS_PER_HOUR);
+
+  const res = await POST(req({ answer: "1/2" }), ctx());
+
+  expect(res.status).toBe(429);
+  expect(dbMock.attempt.create).not.toHaveBeenCalled();
+});
+
+it("the hourly cap counts THIS profile's attempts in a one-hour window, not every attempt ever", async () => {
+  dalMock.requirePracticeProblem.mockResolvedValue(problem());
+  await POST(req({ answer: "1/2" }), ctx());
+
+  expect(dbMock.attempt.count).toHaveBeenCalledWith({
+    where: { studentProfileId: "sp_1", createdAt: { gte: expect.any(Date) } },
+  });
+});
+
+it("an unparseable answer submitted in a loop cannot outrun the cap — the abuse path the review found", async () => {
+  // "x" against a FRACTION problem misses stage one deterministically, so every
+  // one of these would reach Anthropic (ADR-0011 §2) if nothing bounded it.
+  dalMock.requirePracticeProblem.mockResolvedValue(problem());
+  dbMock.attempt.count.mockResolvedValue(ATTEMPTS_PER_HOUR + 500);
+
+  const res = await POST(req({ answer: "x" }), ctx());
+
+  expect(res.status).toBe(429);
+  expect(dbMock.attempt.create).not.toHaveBeenCalled();
 });

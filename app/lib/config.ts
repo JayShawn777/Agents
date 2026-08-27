@@ -293,6 +293,36 @@ export const PRACTICE_SET_DIFFICULTY_LADDER = [0, 0, 0, 0, 0, 1] as const;
  */
 export const ATTEMPTS_BEFORE_REVEAL = 3;
 
+/**
+ * The most attempts one practice problem will ever accept — ASSUMPTION.
+ *
+ * `ATTEMPTS_BEFORE_REVEAL` decides when the worked answer *unlocks*; it caps
+ * nothing. Without this ceiling a problem accepts answers forever, which is
+ * two problems at once. The product one is the failure the M2 spec names by
+ * name — a child "stuck in a loop feeling stupid", grinding the same problem
+ * with nothing stopping them. The technical one is that every attempt whose
+ * answer the normalizer cannot decide costs an adjudication call (ADR-0011
+ * §2), so an unbounded attempt count is an unbounded bill.
+ *
+ * Ten leaves seven tries after the worked answer has been shown — room to
+ * genuinely re-work it — while still ending.
+ */
+export const MAX_ATTEMPTS_PER_PROBLEM = 10;
+
+/**
+ * Attempts one student profile may submit per rolling hour — ASSUMPTION, and
+ * a spend control rather than a product rule.
+ *
+ * `PRACTICE_SETS_PER_HOUR` (5) x `PRACTICE_SET_SIZE` (6) x
+ * `MAX_ATTEMPTS_PER_PROBLEM` (10) puts the theoretical ceiling at 300, which
+ * no child approaches; 120 is two per minute sustained for a full hour. It
+ * exists because the grading path reaches Anthropic on any answer the
+ * normalizer cannot decide, and `"x"` submitted against a NUMERIC problem
+ * misses deterministically — so without a cap one authenticated account can
+ * buy model calls in a loop.
+ */
+export const ATTEMPTS_PER_HOUR = 120;
+
 /** M2 AC 16. Caps a submitted answer's length at the API boundary. */
 export const PRACTICE_ANSWER_MAX_LENGTH = 500;
 

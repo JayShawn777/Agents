@@ -14,7 +14,7 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-27)
 
-**3 of 8 milestones built. 517 tests. All gates green and stable.**
+**3 of 8 milestones built. 523 tests. All gates green and stable.**
 
 A parent can sign up, read the §312.4 notice, give verified consent, add a
 student, upload a worksheet, see its problems extracted and correctable, and
@@ -25,17 +25,21 @@ generate graded practice from them. The retention jobs enforce what
 |---|---|
 | **M0** accounts, consent, deletion | done, reviewed — 52 criteria |
 | **M1** upload, extraction | done, reviewed — 36 criteria |
-| **M2** practice, grading, mastery | **built, NOT reviewed** — 27 criteria |
+| **M2** practice, grading, mastery | built; **routes/auth/retention reviewed** 2026-08-27, frontend + `lib/practice/dto.ts` + ratchet concurrency still unreviewed — 27 criteria |
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
 | **M2.5** checkpoints (quizzes) | spec written 2026-08-27, no architecture yet. Not built. |
 | **M3–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
 
 ### Start here, in this order
 
-1. **Review M2.** It has had no code review and no security review. Both
-   previous reviews returned blockers in code that looked finished — an
-   authorization helper that failed open, and a route that destroyed consent
-   evidence. Assume this one will too.
+1. **Finish reviewing M2.** The security surface was reviewed on 2026-08-27:
+   ownership scoping, `withAuth`, answer-key separation and retention coverage
+   all came back clean, and the one real finding (an uncapped attempts route
+   that could buy Anthropic calls in a loop) is fixed. Still unreviewed: the
+   frontend track, `lib/practice/dto.ts`, mastery-ratchet behaviour under real
+   concurrency, and the complete/retry routes. One surface is unexamined and
+   worth a deliberate look — **extracted worksheet text flows into the
+   generation prompt, so a crafted image is a prompt-injection path.**
 2. **Then M2.5** (checkpoints — the quiz/test surface), spec at
    [docs/specs/m2-5-checkpoints.md](docs/specs/m2-5-checkpoints.md). It extends
    M2's machinery and needs its architecture + two ADRs before any code. It is
@@ -70,8 +74,8 @@ skills for it exist. See ADR-0009's 2026-08-27 revision note.
 
 `FOREIGN_LANGUAGE` is still uncovered and is the known gap against the promise:
 ACTFL is organised by proficiency rather than grade, so bundling it means
-deciding a mapping ACTFL does not publish. It needs its own ADR. A test asserts
-it is non-gradable so that adding it has to be deliberate.
+deciding a mapping ACTFL does not publish. It needs its own ADR. A test asserts it is non-gradable so
+that adding it has to be deliberate.
 
 **Before shipping anything subject-specific, ask whether it works for an essay
 and a history question, not just an equation.**

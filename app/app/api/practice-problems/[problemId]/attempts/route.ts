@@ -12,7 +12,7 @@ import { applyMastery } from "@/lib/mastery/apply";
 import { toAttemptDTO, toFeedbackDTO, toSkillMasteryDTO } from "@/lib/practice/dto";
 import { resolveSkill } from "@/lib/taxonomy";
 import type { Subject } from "@/lib/domain/enums";
-import { ATTEMPTS_BEFORE_REVEAL } from "@/lib/config";
+import { ATTEMPTS_BEFORE_REVEAL, ATTEMPTS_PER_HOUR, MAX_ATTEMPTS_PER_PROBLEM } from "@/lib/config";
 
 async function resolveOwnedProblem({
   params,
@@ -44,9 +44,41 @@ async function resolveOwnedProblem({
 export const POST = withAuth({
   resolveResource: resolveOwnedProblem,
   requireState: (problem) => problem.practiceSet.studentProfile.status === "ACTIVE",
-  // Step 5: AC — a set that is still generating or has failed has nothing to submit against.
-  requireFlow: ({ resource }) => resource.practiceSet.status !== "FAILED" && resource.practiceSet.status !== "GENERATING",
+  // Step 5, two preconditions sharing one 409.
+  //
+  //   a) A set still generating, or failed, has nothing to submit against.
+  //   b) `MAX_ATTEMPTS_PER_PROBLEM` — the ceiling `ATTEMPTS_BEFORE_REVEAL`
+  //      never was. Without it a problem accepts answers forever, which is
+  //      both the spec's named product failure (a child grinding one problem
+  //      "stuck in a loop feeling stupid") and an unbounded bill, since any
+  //      answer the normalizer cannot decide reaches Anthropic (ADR-0011 §2).
+  //
+  // They share `requireFlowMessage` because `withAuth` takes one static
+  // string per gate. The copy is written for (b), which is the only one a
+  // child can actually reach: (a) needs a set that the practice page will not
+  // render an answer input for at all, so it is a race or a hand-rolled
+  // request, not a path through the UI.
+  requireFlow: ({ resource }) =>
+    resource.practiceSet.status !== "FAILED" &&
+    resource.practiceSet.status !== "GENERATING" &&
+    resource.attempts.length < MAX_ATTEMPTS_PER_PROBLEM,
+  requireFlowMessage:
+    "You've given this one a good go. Take a look at how it's done, then try the next problem.",
   bodySchema: submitAttemptInputSchema,
+  // Step 7: the hourly attempt cap, counted per student profile against the
+  // existing `@@index([studentProfileId, createdAt])`. This route reaches
+  // Anthropic on every stage-one grading miss and a miss is trivial to force
+  // ("x" against a NUMERIC problem misses deterministically), so without this
+  // one authenticated account can buy model calls in a loop. Its sibling
+  // generation route has had `PRACTICE_SETS_PER_HOUR` since M2; this one was
+  // missed.
+  rateLimit: async ({ resource }) => {
+    const windowStart = new Date(Date.now() - 60 * 60 * 1000);
+    const count = await db.attempt.count({
+      where: { studentProfileId: resource.practiceSet.studentProfileId, createdAt: { gte: windowStart } },
+    });
+    return count < ATTEMPTS_PER_HOUR;
+  },
   handler: async ({ resource: problem, body }) => {
     const alreadyRevealed = problem.attempts.some((attempt) => attempt.revealed);
 
