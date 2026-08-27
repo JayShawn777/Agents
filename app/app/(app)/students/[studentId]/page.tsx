@@ -98,12 +98,33 @@ export default async function StudentHomePage({
   // M2 AC 22-23 (plan §4, F23): the resumable practice-set list, reusing the
   // SAME `toPracticeSetDTO` the practice page and endpoint 30 use, so this
   // list can never drift from what the runner itself shows.
+  // `kind: "PRACTICE"` is load-bearing, not tidiness. Without it a checkpoint
+  // appears in this list labelled as practice, and — the part that matters —
+  // every COMPLETE checkpoint becomes one click from every other, which is a
+  // browsable score history assembled by accident. Spec AC 13 forbids showing
+  // a value lower than one previously rendered; two old results a click apart
+  // is that, built by hand instead of by us. Filtering in the QUERY rather
+  // than after it makes it structurally impossible rather than remembered.
   const practiceSetRows = await db.practiceSet.findMany({
-    where: { studentProfileId: studentId },
+    where: { studentProfileId: studentId, kind: "PRACTICE" },
     orderBy: { createdAt: "desc" },
     include: { problems: { include: { attempts: true } } },
   });
   const practiceSets: PracticeSetDTO[] = practiceSetRows.map(toPracticeSetDTO);
+
+  // An unfinished check-in is resumable; a finished one is not re-openable from
+  // here. A child who walked away mid-checkpoint gets back to it, and nobody
+  // gets a list of past scores to compare. `GENERATING` counts as unfinished so
+  // the page does not offer a second one while the first is still being built.
+  const unfinishedCheckpoint = await db.practiceSet.findFirst({
+    where: {
+      studentProfileId: studentId,
+      kind: "CHECKPOINT",
+      status: { in: ["GENERATING", "READY", "IN_PROGRESS"] },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
 
   const missingStep =
     student.status === "CONSENT_WITHDRAWN" || student.canUpload
@@ -179,7 +200,16 @@ export default async function StudentHomePage({
         <p className="text-sm text-muted-foreground">
           A short mix of questions from things practised a while back, to see what&apos;s stuck.
         </p>
-        <StartCheckpointButton studentId={studentId} available={checkpointAvailable} />
+        {unfinishedCheckpoint ? (
+          <Link
+            href={`/practice/${unfinishedCheckpoint.id}`}
+            className="w-fit rounded-lg border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted/40"
+          >
+            Finish your check-in
+          </Link>
+        ) : (
+          <StartCheckpointButton studentId={studentId} available={checkpointAvailable} />
+        )}
       </div>
     </div>
   );

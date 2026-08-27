@@ -14,7 +14,7 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-27)
 
-**3 of 8 milestones built. 544 tests. All gates green and stable.**
+**M0, M1, M2 and M2.5 built. 620 tests. All gates green and stable.**
 
 A parent can sign up, read the §312.4 notice, give verified consent, add a
 student, upload a worksheet, see its problems extracted and correctable, and
@@ -27,7 +27,7 @@ generate graded practice from them. The retention jobs enforce what
 | **M1** upload, extraction | done, reviewed — 36 criteria |
 | **M2** practice, grading, mastery | built, **reviewed** 2026-08-27 — 27 criteria |
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
-| **M2.5** checkpoints (quizzes) | spec, plan, ADRs 0017/0018. **Slice 1 built** 2026-08-27 (migration, CHECK constraint, config, shared DTO). Slices 2, 4-7 open. |
+| **M2.5** checkpoints (quizzes) | **done and reviewed** 2026-08-27 — all 7 slices, spec, plan, ADRs 0016/0017/0018 |
 | **M3–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
@@ -54,17 +54,32 @@ generate graded practice from them. The retention jobs enforce what
    `MASTERY_MIN_ATTEMPTS_FOR_REPORT` now exists in `lib/config.ts` but nothing
    reads it. **Whoever builds M7 must wire it in.**
 
-2. **Review M2.5, then M3.** M2.5 is built end to end — a student can ask for a
-   check-in from their own page, answer one question per problem, and see how
-   they did once, at the end. It has had no code review and no security review.
-   M2's review found three real things in code that looked finished; assume this
-   will too.
+2. **M2.5 is reviewed** (2026-08-27). Two findings, both fixed.
 
-   Worth a reviewer's attention first: the CHECK constraint is invisible in
-   `schema.prisma` (ADR-0017), `lib/practice/finalize.ts` is now the single
-   answer-key writer for BOTH generators, and spec AC 13 is enforced by
-   `components/checkpoints/checkpoint-result.tsx` being handed one summary with
-   no history — a comparison is unreachable rather than merely absent.
+   The one worth remembering: **checkpoints were appearing in the student
+   page's "Practice" list**, because that query filtered by profile and not by
+   `kind`. Mislabelling was the small half. The real problem was that every
+   COMPLETE checkpoint became one click from every other, which is a browsable
+   score history — spec AC 13 forbids showing a value lower than one previously
+   rendered, and two old results a click apart is that, assembled by hand
+   instead of by us. The list now filters `kind: "PRACTICE"` IN THE QUERY, so
+   it is structurally impossible rather than remembered, and an unfinished
+   check-in is resumable from the Check-in section while a finished one is not
+   re-openable from there.
+
+   The second: ADR-0017 claims "checkpoints are removed only when the student
+   profile is". The half that an extraction delete cannot reach one was tested;
+   the half that profile deletion DOES reach one was not. A checkpoint has no
+   `extractionId`, so any deletion path walking uploads and extractions misses
+   it by construction — it now has an integration test asserting the set, its
+   problems, its answer keys and its attempts are all gone.
+
+   Verified clean: the CHECK constraint is live in the database (proven by the
+   integration tests, not just present in the migration file), `lib/practice/
+   finalize.ts` is the only writer of `PracticeAnswerKey` for both generators,
+   both new routes carry ownership scoping and the create route the ACTIVE
+   gate, and `CheckpointResult` is handed one summary with no history so a
+   comparison is unreachable rather than merely absent.
 
 3. **Then M3** (chat tutor). Its contract is fixed in the M2–M7 plan.
    M4–M7 are shape-only until the measurements in that plan's §9 are taken.
@@ -99,9 +114,12 @@ without the taxonomy work cannot pass silently.
 
 The skills themselves are still missing:
 ACTFL is organised by proficiency rather than grade, so bundling it means
-deciding a mapping ACTFL does not publish. It needs its own ADR (proposed
-**ADR-0016**) before any JSON is written. A test asserts it is non-gradable so
-that adding it has to be deliberate.
+deciding a mapping ACTFL does not publish.
+[ADR-0016](docs/adr/0016-foreign-language-is-proficiency-banded-not-grade-banded.md)
+settles how — proficiency-banded, with the anchor derived from existing
+`SkillMastery` rows by the caller so `candidateSlate` stays pure — but no ACTFL
+JSON is bundled yet. A test asserts the subject is non-gradable so that adding
+it has to be deliberate.
 
 **Speaking is in scope, and it is not a taxonomy entry.** Confirmed by the owner
 on 2026-08-27: the tutor should help a child practise *speaking* a foreign

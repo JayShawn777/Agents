@@ -113,3 +113,83 @@ describe("PracticeSet.kind is paired with extractionId by the database itself", 
     expect(await db.practiceSet.findUnique({ where: { id: checkpoint.id } })).not.toBeNull();
   });
 });
+
+/**
+ * ADR-0017 states, as a consequence rather than a decision, that "checkpoints
+ * are removed only when the student profile is". The first half — that an
+ * extraction delete cannot reach one — is asserted above. This is the other
+ * half, and it was untested until M2.5's review.
+ *
+ * It matters more than an ordinary cascade test. A checkpoint has no
+ * `extractionId`, so every deletion path that walks uploads and extractions
+ * misses it by construction. If the profile cascade did not reach it, a
+ * checkpoint and its answer keys would survive a COPPA deletion request while
+ * everything around them vanished — and nothing in the suite would have said so.
+ */
+describe("a checkpoint is reached by the deletion that matters", () => {
+  it("profile deletion removes a checkpoint, its problems, its answer keys and its attempts", async () => {
+    const { profile } = await fixtureForDeletion();
+
+    const checkpoint = await db.practiceSet.create({
+      data: {
+        studentProfileId: profile.id,
+        kind: "CHECKPOINT",
+        extractionId: null,
+        status: "READY",
+        model: "claude-opus-5",
+        effort: "high",
+        promptVersion: "test",
+        taxonomyVersion: "test",
+      },
+    });
+    const problem = await db.practiceProblem.create({
+      data: {
+        practiceSetId: checkpoint.id,
+        ordinal: 1,
+        skillCode: "4.NF.B.3",
+        text: "What is 1/2 + 1/4?",
+        answerFormat: "FRACTION",
+        choices: [],
+      },
+    });
+    await db.practiceAnswerKey.create({
+      data: { practiceProblemId: problem.id, canonicalAnswer: "3/4", acceptedForms: [], workedSolution: "steps" },
+    });
+    await db.attempt.create({
+      data: {
+        practiceProblemId: problem.id,
+        studentProfileId: profile.id,
+        attemptNumber: 1,
+        submittedAnswer: "3/4",
+        result: "CORRECT",
+        gradedBy: "NORMALIZER",
+      },
+    });
+
+    await db.studentProfile.delete({ where: { id: profile.id } });
+
+    expect(await db.practiceSet.findUnique({ where: { id: checkpoint.id } })).toBeNull();
+    expect(await db.practiceProblem.findUnique({ where: { id: problem.id } })).toBeNull();
+    expect(await db.practiceAnswerKey.findUnique({ where: { practiceProblemId: problem.id } })).toBeNull();
+    expect(await db.attempt.count({ where: { practiceProblemId: problem.id } })).toBe(0);
+  });
+
+  async function fixtureForDeletion() {
+    const user = await db.user.create({
+      data: { email: `checkpoint-delete-${Date.now()}-${Math.random()}@example.com`, adultAttestedAt: new Date() },
+    });
+    createdUserIdsForDeletion.push(user.id);
+    const profile = await db.studentProfile.create({
+      data: { userId: user.id, ageBand: "UNDER_13", status: "ACTIVE", gradeLevel: "GRADE_4" },
+    });
+    return { profile };
+  }
+
+  const createdUserIdsForDeletion: string[] = [];
+
+  afterAll(async () => {
+    for (const id of createdUserIdsForDeletion) {
+      await db.user.delete({ where: { id } }).catch(() => {});
+    }
+  });
+});
