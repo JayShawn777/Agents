@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+// Only the CSS reaches the browser — the KaTeX JavaScript renderer runs
+// server-side only, in components/uploads/render-math.ts (ADR-0005, M1
+// AC 21). Imported once, here, so every page that renders an extracted
+// problem's math gets the stylesheet without each one importing it itself.
+import "katex/dist/katex.min.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

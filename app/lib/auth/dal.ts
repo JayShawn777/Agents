@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/config";
 import { isInClosureRecoveryWindow } from "@/lib/auth/closure";
 import { db } from "@/lib/db";
-import type { StudentProfile } from "@/lib/generated/prisma/client";
+import type { Extraction, ExtractedProblem, StudentProfile, Upload } from "@/lib/generated/prisma/client";
 
 /**
  * The Data Access Layer (Next.js's own recommended pattern — see
@@ -107,3 +107,44 @@ export const requireActiveStudentProfile = cache(
     return profile;
   },
 );
+
+/** An `Upload` row plus its `Extraction` sibling's status and problem count — the shape M1's routes need without a second query. */
+export type UploadWithExtraction = Upload & {
+  extraction: (Extraction & { _count: { problems: number } }) | null;
+};
+
+/**
+ * Resolves an upload scoped to the CALLING user via the
+ * `Upload -> StudentProfile.userId` join — the same "id in a URL is not
+ * authorization" rule (plan §0) applied to uploads. Cross-account and
+ * nonexistent ids are indistinguishable (both `null`), which is exactly the
+ * 404 M1 AC 33 demands. Used by endpoints 16-18
+ * (`app/api/uploads/[uploadId]/**`).
+ */
+export const requireUpload = cache(async (uploadId: string): Promise<UploadWithExtraction | null> => {
+  const session = await verifySession();
+  if (!session) return null;
+  return db.upload.findFirst({
+    where: { id: uploadId, studentProfile: { userId: session.userId } },
+    include: { extraction: { include: { _count: { select: { problems: true } } } } },
+  });
+});
+
+/** An `Extraction` row plus its parent `Upload` and its `ExtractedProblem` rows, ordered by `ordinal` (never renumbered, ADR-0005). */
+export type ExtractionWithProblems = Extraction & { upload: Upload; problems: ExtractedProblem[] };
+
+/**
+ * Resolves an extraction scoped to the CALLING user via the
+ * `Extraction -> Upload -> StudentProfile.userId` join. Used by endpoints
+ * 19-23 (`app/api/extractions/**`); a cross-account or nonexistent
+ * `extractionId` is a 404 (M1 AC 33), never a 403 that would confirm the id
+ * exists.
+ */
+export const requireExtraction = cache(async (extractionId: string): Promise<ExtractionWithProblems | null> => {
+  const session = await verifySession();
+  if (!session) return null;
+  return db.extraction.findFirst({
+    where: { id: extractionId, upload: { studentProfile: { userId: session.userId } } },
+    include: { upload: true, problems: { orderBy: { ordinal: "asc" } } },
+  });
+});

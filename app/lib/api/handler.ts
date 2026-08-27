@@ -167,7 +167,7 @@ type RouteContext = { params: Promise<Record<string, string>> };
  * control, and plenty of legitimate non-browser callers (server-to-server,
  * this very test suite) send neither header.
  */
-function isSameOriginRequest(req: Request): boolean {
+export function isSameOriginRequest(req: Request): boolean {
   const secFetchSite = req.headers.get("sec-fetch-site");
   if (secFetchSite) return secFetchSite === "same-origin" || secFetchSite === "none";
 
