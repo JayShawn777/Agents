@@ -88,7 +88,7 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [m2-m7-implementation.md](plans/m2-m7-implementation.md) — Schema for all six remaining milestones; full contract for M2-M3, shape only beyond (revised 2026-08-26 against the 52-AC M0 spec)
 
 ### Retros
-- [m0-m2.md](retros/m0-m2.md) — Twelve things the pipeline got wrong across the first three milestones, and what changed
+- [m0-m3.md](retros/m0-m3.md) — Nineteen lessons across M0-M3, and what changed because of each. A running document: each milestone's retro is appended and the file is renamed.
 
 ### Research
 - [anthropic-api.md](research/anthropic-api.md) — Claude API: vision, PDF, structured output, streaming, caching, pricing

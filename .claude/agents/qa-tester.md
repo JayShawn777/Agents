@@ -67,3 +67,37 @@ carrying its weight.
 Where an invariant must hold across files a suite does not import — "only this
 module may write to that table" — a static check over the source tree is worth
 more than any number of mocked assertions.
+
+## A mock cannot answer whether the real thing works (M3 retro)
+
+Twice now a green suite has covered a completely dead path, because the mock
+stood in for exactly the thing in doubt.
+
+M1: every extraction test mocked the Anthropic client, so all of them would have
+passed if the vision path were broken. M3: `after()` was mocked, the test
+asserted the mock had been called, and the real `after()` would have **thrown**
+in that context — so AC 12's abort-time persist never ran.
+
+Two rules follow:
+
+- **Asserting a mock was called answers a different question** than "would this
+  work". When the doubt is whether an API is callable at all in a given context
+  — a request-scoped helper, a platform global, a vendor call — either exercise
+  the real thing (`RUN_LIVE_AI=1` for billed calls) or verify the precondition
+  directly. Fifteen lines of plain Node proved the `AsyncLocalStorage` one.
+- **A mock must match production's timing.** M3's `after` mock ran its callback
+  immediately; the real one defers until the response finishes. A mock more
+  forgiving than production invents a passing path that does not exist.
+
+## Every cascade gets an integration test (M3 retro)
+
+`onDelete: Cascade` is invisible to the unit suite — no unit test touches a
+foreign key, so every one of them passes whether the cascade fires or not. This
+has now been missed three times (ADR-0017's checkpoint, twice; M3's AC 16).
+
+**Checklist, not a habit:** for each `onDelete: Cascade` touching student data,
+write an integration test against real Postgres that deletes each parent and
+asserts the children are gone. Assert a **count over the child rows is zero**,
+not a list of known ids — a count is the only form of the question a future
+column or a second binding cannot slip past. Cover every binding: a row reachable
+only through one of two optional foreign keys is the one that gets missed.

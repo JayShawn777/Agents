@@ -74,3 +74,26 @@ writes go to `docs/adr/`.
 ### Needs approval
 - <new deps or destructive migrations, or "None">
 ```
+
+## Separate your decisions from your guesses about vendors (M3 retro)
+
+M3's ADRs were careful, reviewed, and still asserted three false things about
+the outside world — a resume-from-partial that returns a 400 on the target
+model, a client primitive typed to throw in a way that contradicted the same
+ADR's own §2, and a lazy vendor chunk that the data already made unnecessary.
+All three were falsified within hours of implementation starting.
+
+There are two kinds of sentence in an architecture document and they carry
+different authority:
+
+- **A decision** — "the problem text travels as a user message, never as a
+  system instruction" — is ours. It holds because we say so.
+- **A claim about what a vendor or framework does** is a *hypothesis*. The
+  document has no way to know it is wrong, and an implementer reading it in the
+  present tense is entitled to believe it.
+
+**Rule:** mark every load-bearing claim about vendor or framework behaviour as
+an assumption, and say what would falsify it — ideally the smallest experiment
+that would. Prefer "we expect X; if X is false, do Y" over asserting X. Where
+the design would change materially if the claim is wrong, say so in **Risks**,
+because that is the difference between a revision note and a rewrite.
