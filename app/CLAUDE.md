@@ -27,6 +27,7 @@ generate graded practice from them. The retention jobs enforce what
 | **M1** upload, extraction | done, reviewed — 36 criteria |
 | **M2** practice, grading, mastery | **built, NOT reviewed** — 27 criteria |
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
+| **M2.5** checkpoints (quizzes) | spec written 2026-08-27, no architecture yet. Not built. |
 | **M3–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
 
 ### Start here, in this order
@@ -35,7 +36,16 @@ generate graded practice from them. The retention jobs enforce what
    previous reviews returned blockers in code that looked finished — an
    authorization helper that failed open, and a route that destroyed consent
    evidence. Assume this one will too.
-2. **Then M3** (chat tutor). Its contract is fixed in the M2–M7 plan.
+2. **Then M2.5** (checkpoints — the quiz/test surface), spec at
+   [docs/specs/m2-5-checkpoints.md](docs/specs/m2-5-checkpoints.md). It extends
+   M2's machinery and needs its architecture + two ADRs before any code. It is
+   sequenced here, ahead of chat, because the one schema change it needs —
+   `PracticeSet` having a source other than a single extraction — is cheap while
+   M2 is unshipped and expensive once four more milestones build on that model.
+   One question in its spec is **blocking** and belongs to the architect: whether
+   a checkpoint result may raise mastery, which decides whether
+   `lib/mastery/apply.ts` stays the sole writer.
+3. **Then M3** (chat tutor). Its contract is fixed in the M2–M7 plan.
    M4–M7 are shape-only until the measurements in that plan's §9 are taken.
 
 ### This app is not a math app
