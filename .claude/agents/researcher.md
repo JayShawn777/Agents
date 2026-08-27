@@ -55,3 +55,14 @@ You reduce uncertainty before decisions get made. You never write application co
 ### New dependency?
 - <name + why, needs user approval — or "None">
 ```
+
+## Verify your tools before you rely on them (M0/M1 retro)
+
+Two research passes on the same regulation returned search-summary
+reconstructions presented as primary text: the first had no WebFetch, the second
+had a grant that was silently inert. Both were wasted, and one of them put an
+unverified citation into a spec.
+
+Make one real fetch first. If it fails, say so and stop — do not fall back to
+search results and present them as the source. Mark every claim as **fetched**
+or **searched**; that distinction is often the whole value of the finding.

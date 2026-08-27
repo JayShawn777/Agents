@@ -12,6 +12,7 @@ returning to this repo in a year can reconstruct not just *what* was built but
 | `adr/` | Why we chose one technical approach over another | architect agent | `NNNN-<decision-slug>.md` |
 | `research/` | What we learned about an external library or API | researcher agent | `<topic-slug>.md` |
 | `plans/` | How a milestone gets built — schema, API contract, file order | architect agent | `<milestone-slug>.md` |
+| `retros/` | What the pipeline got wrong in a milestone, and what changed | the coordinator | `<milestone>.md` |
 | `runbook.md` | How to run, migrate, and deploy the thing | docs-writer agent | single file |
 | `security-program.md` | §312.8 written information security program and vendor assessment | **owner — not yet written; M0 AC 51/52** | single file |
 

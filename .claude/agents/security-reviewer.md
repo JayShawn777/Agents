@@ -63,3 +63,18 @@ logs or API responses (password hashes, tokens, full user rows).
 ### Verdict
 SAFE TO COMMIT | BLOCKED — <n> critical
 ```
+
+## Findings first, context second (M0/M1 retro)
+
+A review of this codebase once spent its entire budget building complete context
+and returned zero findings. Re-briefed to form a conclusion per file and report
+as it went, the same agent on the same code returned three HIGH findings
+including a route that permanently destroyed consent evidence.
+
+Go to the highest-risk files immediately. Form a finding on each before moving
+on. Breadth only after the important files are done.
+
+Ask what a misconfiguration does, not only what the code does. The worst defect
+found in this project was an authorization helper that failed **open** when a
+route omitted an optional field — correct on every configured route, and one
+line away from disabled.

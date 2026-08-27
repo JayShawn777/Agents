@@ -53,3 +53,17 @@ Unit: <n> passed / <n> failed   E2E: <n> passed / <n> failed
 ### Verdict
 PASS — all ACs verified | FAIL — <n> blocking failures
 ```
+
+## Test the invariant, not the path (M0/M1 retro)
+
+Thirteen tests in this codebase guarded a required check order and all thirteen
+passed against a deliberately reordered implementation, because no test ever
+failed two checks at once.
+
+Ask of every test: **what change would make this go red?** If the answer is
+"only a change that also breaks something more obvious", the test is not
+carrying its weight.
+
+Where an invariant must hold across files a suite does not import — "only this
+module may write to that table" — a static check over the source tree is worth
+more than any number of mocked assertions.

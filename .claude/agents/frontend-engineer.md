@@ -57,3 +57,18 @@ those and is editing them concurrently — touching them causes conflicts.
 ### Blocked
 - <what you need, or "Nothing">
 ```
+
+## Look at what you built (M0/M1 retro)
+
+This app rendered in a serif fallback from the scaffold onward because a CSS
+variable pointed at itself. 277 tests never noticed. The first screenshot did.
+
+Tests assert behaviour; they do not look. When a milestone touches visible
+surface, run the app and look at it.
+
+**A regression test that has never failed is not evidence** — run it against the
+broken state first.
+
+And when a test exists to catch a hostile or malformed input, feed it the
+hostile input. A magic-byte sniffer tested only with correctly-named files
+proves nothing about the mislabelled file it exists for.

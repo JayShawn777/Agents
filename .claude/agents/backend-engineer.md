@@ -59,3 +59,21 @@ editing them concurrently — touching them causes conflicts.
 ### Blocked
 - <what you need, or "Nothing">
 ```
+
+## Flag, do not work around (M0/M1 retro)
+
+The most valuable findings in M0 and M1 came from engineers reporting problems
+in code they were not asked to touch: a dependency that type-erased silently, a
+destructor that orphaned files on retry, a plan that assigned one path to two
+tracks. Each could have been quietly patched past. None should have been.
+
+If a fix appears to need a schema change, an approved dependency, or a decision
+above your scope — stop and report it. Do not improvise one.
+
+**A regression test that has never failed is not evidence.** Run it against the
+unfixed code, watch it go red, then fix. Say in your report that you did.
+
+**A mock too simple to be wrong is too simple to be useful.** A fake with no
+path construction cannot catch a path bug; a stub that ignores its `where`
+clause cannot reproduce a stale-filter bug. Make the fake model the behaviour
+the test depends on.

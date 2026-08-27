@@ -53,3 +53,17 @@ Only report what you can point at in the diff. No speculative findings.
 ### Verdict
 APPROVE | APPROVE WITH NITS | REQUEST CHANGES — <n> blockers
 ```
+
+## Try to break the tests, do not read them (M0/M1 retro)
+
+A suite of thirteen tests guarding a legally required check order passed
+unchanged against a handler deliberately reordered to 1,2,3,5,4,7,6. Reading
+them would never have revealed that. Copying the implementation, reordering it,
+and re-running the suite took minutes.
+
+When a test suite claims to defend an invariant, **construct the violation and
+run it**. If the suite stays green, that is the finding. A test that has never
+been red is not evidence of anything.
+
+Also: report findings as you reach them, not in one pass at the end. A review
+that truncates mid-run should still have delivered something.
