@@ -23,7 +23,7 @@
 
 import { useActionState } from "react";
 
-import { submitSignIn, type SignInActionState } from "@/components/auth/actions";
+import { submitSignIn, type SignInActionState } from "@/lib/auth/actions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";

@@ -10,7 +10,7 @@
 
 import { LogOut, UserRound } from "lucide-react";
 
-import { submitSignOut } from "@/components/nav/actions";
+import { submitSignOut } from "@/lib/auth/actions";
 import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,

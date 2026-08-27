@@ -149,3 +149,47 @@ export async function signOutSession(input: unknown = {}): Promise<ApiResult<{ s
 
   redirect("/");
 }
+
+// ─────────────────────── frontend-owned FormData adapters ───────────────────────
+//
+// ADR-0006 permits exactly two server actions, both in this file — every
+// `"use server"` export is a publicly invokable endpoint, and the count must
+// stay greppable (`grep -rl '"use server"' app lib components` returns this
+// one file). `signInWithEmail` and `signOutSession` above have a fixed
+// contract — a single validated `input: unknown`, returning `ApiResult<T>` —
+// because their shape is what a route handler would need too, not what
+// `useActionState`/`<form action>` needs. These two adapters translate
+// between the two without adding a second `"use server"` file under
+// `components/`.
+
+/**
+ * A `useActionState`-shaped adapter around `signInWithEmail`. `useActionState`
+ * needs a `(prevState, formData)` signature; `signInWithEmail` has no opinion
+ * about `FormData`, so that adaptation lives here.
+ */
+export type SignInActionState = ApiResult<{ sent: true }> | null;
+
+export async function submitSignIn(
+  _prevState: SignInActionState,
+  formData: FormData,
+): Promise<SignInActionState> {
+  return signInWithEmail({
+    email: formData.get("email"),
+    // The checkbox posts "on" when ticked and is absent from the FormData
+    // entirely when it isn't (plan's AC 6 — never a pre-checked default).
+    // `signInWithEmailInputSchema` requires the literal `true`, so anything
+    // else (including an absent key) must become `false` here and fail
+    // validation with a field error, not silently pass.
+    isAdult: formData.get("isAdult") === "on",
+  });
+}
+
+/**
+ * A `<form action>`-shaped adapter around `signOutSession`. A plain
+ * `<form action={signOutSession}>` would hand `signOutSession` a raw
+ * `FormData` object, which its `z.object({}).strict()` contract does not
+ * accept — that adaptation lives here.
+ */
+export async function submitSignOut(): Promise<void> {
+  await signOutSession({});
+}

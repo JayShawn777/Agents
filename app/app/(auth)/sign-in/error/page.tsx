@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { TriangleAlert } from "lucide-react";
 
+import { MAGIC_LINK_TTL_SECONDS } from "@/lib/config";
+
 /**
  * Auth.js's configured `pages.error` target (plan §5.1 B1; M0 AC 4). Shown
  * when a sign-in link is expired, already used, or otherwise invalid — no
@@ -28,7 +30,8 @@ export default function SignInErrorPage() {
       </h1>
       <p className="text-sm text-muted-foreground">
         This sign-in link has expired or has already been used. Links are
-        valid for 15 minutes and can only be used once.
+        valid for {MAGIC_LINK_TTL_SECONDS / 60} minutes and can only be used
+        once.
       </p>
       <Link
         href="/sign-in"

@@ -9,7 +9,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RETENTION_POLICY, type RetentionPolicyEntry } from "@/lib/config";
+import { RETENTION_POLICY } from "@/lib/config";
+
+type RetentionEntry = (typeof RETENTION_POLICY)[number];
+type RetentionCategoryKey = RetentionEntry["key"];
+// `RetentionEntry` is a union of ten distinct object-literal types (from
+// `as const`), and several of them omit `anchor` entirely rather than
+// declaring it `undefined` — so `RetentionEntry["anchor"]` can't be indexed
+// directly. `Extract` filters the union down to the members that DO declare
+// an `anchor: string`, distributively, before indexing.
+type RetentionAnchorKey = Extract<RetentionEntry, { anchor: string }>["anchor"];
 
 /**
  * The published retention policy (M0 AC 44). PUBLIC — reachable without
@@ -30,8 +39,13 @@ export const metadata: Metadata = {
  * Display-only labels for each `RETENTION_POLICY` category. Presentation
  * sugar, not a tunable — every duration and every word of purpose /
  * business-need copy comes from `lib/config.ts` itself, never from here.
+ *
+ * Keyed off `(typeof RETENTION_POLICY)[number]["key"]` rather than
+ * `Record<string, string>` so this map stays exhaustive: adding an eleventh
+ * retention entry in `lib/config.ts` without adding its label here is now a
+ * typecheck failure, not a raw enum key rendered to the public.
  */
-const CATEGORY_LABELS: Record<RetentionPolicyEntry["key"], string> = {
+const CATEGORY_LABELS: Record<RetentionCategoryKey, string> = {
   PRE_CONSENT: "Age band collected before consent",
   SOURCE_FILE: "Uploaded schoolwork (photo or PDF)",
   EXTRACTED_TEXT: "Extracted problem text",
@@ -44,8 +58,11 @@ const CATEGORY_LABELS: Record<RetentionPolicyEntry["key"], string> = {
   DELETION_AUDIT: "Deletion audit record",
 };
 
-/** Human phrasing for each `anchor` field name used in `RETENTION_POLICY`. */
-const ANCHOR_LABELS: Record<string, string> = {
+/**
+ * Human phrasing for each `anchor` field name used in `RETENTION_POLICY`.
+ * Same exhaustiveness rationale as `CATEGORY_LABELS` above.
+ */
+const ANCHOR_LABELS: Record<RetentionAnchorKey, string> = {
   createdAt: "when it was first created",
   extractedAt: "successful extraction",
   deletedAt: "the underlying record's deletion",
@@ -54,12 +71,24 @@ const ANCHOR_LABELS: Record<string, string> = {
   completedAt: "the deletion completing",
 };
 
-function formatTimeframe(entry: RetentionPolicyEntry): string {
+function formatTimeframe(entry: RetentionEntry): string {
   if (entry.windowDays === null) {
     return entry.note ?? "No fixed window";
   }
-  const anchor = entry.anchor ? ANCHOR_LABELS[entry.anchor] : undefined;
-  const days = `${entry.windowDays} day${entry.windowDays === 1 ? "" : "s"}`;
+  // Widen the per-entry literal (14 | 30 | 365 | ...) to `number` — the
+  // comparisons below are generic arithmetic, not specific to today's
+  // configured values, and a literal-to-literal comparison against `0`/`1`
+  // would otherwise fail to typecheck for whichever entries don't happen to
+  // use those exact numbers today.
+  const windowDays: number = entry.windowDays;
+  if (windowDays === 0) {
+    return "Deleted immediately";
+  }
+  // `"anchor" in entry` narrows the union to only the members that declare
+  // it, which is what makes `entry.anchor` indexable into `ANCHOR_LABELS`
+  // below (see the `RetentionAnchorKey` comment above).
+  const anchor = "anchor" in entry ? ANCHOR_LABELS[entry.anchor] : undefined;
+  const days = `${windowDays} day${windowDays === 1 ? "" : "s"}`;
   return anchor ? `${days} after ${anchor}` : days;
 }
 
@@ -93,7 +122,7 @@ export default function RetentionPolicyPage() {
             {RETENTION_POLICY.map((entry) => (
               <TableRow key={entry.key}>
                 <TableCell className="whitespace-normal align-top font-medium text-foreground">
-                  {CATEGORY_LABELS[entry.key] ?? entry.key}
+                  {CATEGORY_LABELS[entry.key]}
                 </TableCell>
                 <TableCell className="whitespace-normal align-top text-muted-foreground">
                   {entry.purpose}
