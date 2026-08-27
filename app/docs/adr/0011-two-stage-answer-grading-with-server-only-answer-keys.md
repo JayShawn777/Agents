@@ -1,5 +1,28 @@
 # ADR-0011: Grade with a deterministic normaliser first and the model second, and keep answer keys in their own table
 
+## Revision 2026-08-27 — the grader reads attacker-controlled text
+
+This ADR's two-stage design is unchanged. What was missing is that stage two's
+request is assembled from strings the student controls: `submittedAnswer` is up
+to `PRACTICE_ANSWER_MAX_LENGTH` characters of anything, and `problemText`
+descends from a photograph plus whatever the student typed when correcting the
+extraction (M1). Both were interpolated raw.
+
+Exfiltration was never the risk — the request carries a grade level and a
+subject and nothing else (M2 AC 27), and structured output bounds the reply.
+The risk is that a student can address the grader that marks them, and
+ADR-0010's ratchet makes a resulting inflated `SkillMastery.level` permanent
+and un-lowerable, under a parent report that presents it as evidence.
+
+Both spans are now fenced by `lib/ai/untrusted.ts` and both system prompts
+carry `UNTRUSTED_INPUT_RULE`. That is mitigation, not a fix — prompt injection
+has no fix — so the controls that actually decide anything stay in code and are
+unchanged by this revision: §4's `stripAnswerFromHint` post-check, ADR-0009 §2's
+closed `skillCode` enum, and the post-reveal short-circuit in
+`lib/mastery/apply.ts`. `MASTERY_MIN_ATTEMPTS_FOR_REPORT` (ADR-0010's revision
+note) is the fourth, and is the one still waiting on its consumer.
+
+
 - **Status:** Proposed
 - **Date:** 2026-08-27
 - **Deciders:** Jaysh (pending)

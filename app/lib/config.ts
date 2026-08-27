@@ -323,6 +323,24 @@ export const MAX_ATTEMPTS_PER_PROBLEM = 10;
  */
 export const ATTEMPTS_PER_HOUR = 120;
 
+/**
+ * ADR-0010 §5's evidence floor, and the M2-M7 plan §10's value (4).
+ *
+ * A skill does not appear in M7's parent report until it has at least this
+ * many attempts AND at least one graded by the deterministic normaliser
+ * rather than the model. ADR-0010 §5 described this constant in the present
+ * tense as though it existed; it did not exist anywhere in the codebase until
+ * 2026-08-27, only in that ADR and in the plan.
+ *
+ * It is defined here now, ahead of its consumer, because it is the mitigation
+ * that bounds a real hole: a student can talk to the grader that marks them
+ * (`lib/ai/untrusted.ts`), `SkillMastery.level` is a ratchet ADR-0010 forbids
+ * lowering, and M7's parent report is a durable narrative about a child built
+ * on top of it. Nothing reads this yet — M7 is unbuilt — and whoever builds
+ * that report must wire it in rather than rediscovering why it is here.
+ */
+export const MASTERY_MIN_ATTEMPTS_FOR_REPORT = 4;
+
 /** M2 AC 16. Caps a submitted answer's length at the API boundary. */
 export const PRACTICE_ANSWER_MAX_LENGTH = 500;
 

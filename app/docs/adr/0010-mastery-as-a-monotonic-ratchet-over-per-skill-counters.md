@@ -1,5 +1,28 @@
 # ADR-0010: Mastery is a monotonic ratchet over per-skill counters, and review scheduling is a separate axis
 
+## Revision 2026-08-27 — §5's evidence floor did not exist
+
+§5 below describes `MASTERY_MIN_ATTEMPTS_FOR_REPORT` in the present tense —
+"`MASTERY_MIN_ATTEMPTS_FOR_REPORT` uses it" — as a control that keeps a skill
+out of M7's parent report until at least one attempt was graded by the
+deterministic normaliser rather than the model.
+
+**No such constant existed anywhere in the codebase.** It appeared only in this
+ADR and in `docs/plans/m2-m7-implementation.md` §10, which gives its value as 4.
+Found during M2's security review on 2026-08-27, and it is the retro's lesson 11
+in a new costume: a control asserted in a document, referenced by another
+document, and implemented nowhere — with nothing failing, because its consumer
+(the parent report) is not built yet.
+
+It now exists in `lib/config.ts` with the plan's value, ahead of its consumer,
+and says so in its own docstring. **Whoever builds M7 must wire it in.** It is
+not decoration: the same review found that a student's submitted answer reaches
+the grading model as raw prompt text, and this ADR's own ratchet means an
+inflated level can never be corrected downward. See `lib/ai/untrusted.ts`.
+
+§5 is left as originally written, below, for the record.
+
+
 - **Status:** Proposed
 - **Date:** 2026-08-27
 - **Deciders:** Jaysh (pending)

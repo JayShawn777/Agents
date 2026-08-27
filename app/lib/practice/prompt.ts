@@ -1,11 +1,12 @@
 import "server-only";
 
+import { fenceUntrusted, UNTRUSTED_INPUT_RULE } from "@/lib/ai/untrusted";
 import type { Skill } from "@/lib/taxonomy";
 import type { GradeLevel, Subject } from "@/lib/domain/enums";
 import { GRADE_LEVEL_LABELS, SUBJECT_LABELS } from "@/lib/domain/enums";
 
 /** Bump whenever the prompt's rules change in a way that could affect grading or generation quality. Recorded on `PracticeSet.promptVersion`. */
-export const PRACTICE_PROMPT_VERSION = "2026-08-27.1";
+export const PRACTICE_PROMPT_VERSION = "2026-08-27.2";
 
 /**
  * B27 (plan §5.1). Every rule here maps onto an M2 acceptance criterion or a
@@ -51,7 +52,9 @@ source worksheet, a previous attempt, or the student by name — you have not \
 been given a name, and none of this text should imply you have.
 
 Report the result using only the structured fields you have been given. Do \
-not add commentary, explanation, or any text outside those fields.`;
+not add commentary, explanation, or any text outside those fields.
+
+${UNTRUSTED_INPUT_RULE}`;
 
 export type PracticeSourceSlot = {
   /** The (student-corrected, where present) text of the extracted problem this generated slot is modelled on. */
@@ -81,7 +84,7 @@ export function buildPracticeUserPrompt(args: {
   const slots = args.slots
     .map(
       (slot, index) =>
-        `${index + 1}. Source problem (${SUBJECT_LABELS[slot.subject]}): "${slot.sourceText}"\n   Difficulty relative to the source: ${
+        `${index + 1}. Source problem (${SUBJECT_LABELS[slot.subject]}):\n${fenceUntrusted("source_problem", slot.sourceText)}\n   Difficulty relative to the source: ${
           slot.difficultyOffset === 0 ? "same level" : `${slot.difficultyOffset} step(s) harder`
         }`,
     )

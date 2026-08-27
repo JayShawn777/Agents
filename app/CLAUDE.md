@@ -14,7 +14,7 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-27)
 
-**3 of 8 milestones built. 523 tests. All gates green and stable.**
+**3 of 8 milestones built. 531 tests. All gates green and stable.**
 
 A parent can sign up, read the §312.4 notice, give verified consent, add a
 student, upload a worksheet, see its problems extracted and correctable, and
@@ -38,9 +38,20 @@ generate graded practice from them. The retention jobs enforce what
    all came back clean, and the one real finding (an uncapped attempts route
    that could buy Anthropic calls in a loop) is fixed. Still unreviewed: the
    frontend track, `lib/practice/dto.ts`, mastery-ratchet behaviour under real
-   concurrency, and the complete/retry routes. One surface is unexamined and
-   worth a deliberate look — **extracted worksheet text flows into the
-   generation prompt, so a crafted image is a prompt-injection path.**
+   concurrency, and the complete/retry routes.
+
+   The prompt-injection surface was examined on 2026-08-27 and is now fenced
+   (`lib/ai/untrusted.ts`, ADR-0011's revision note). The finding worth
+   remembering is not the injection itself but what it reaches: **a student can
+   address the grader that marks them**, and ADR-0010's ratchet makes a
+   resulting inflated `SkillMastery.level` permanent, under a parent report
+   that presents it as evidence. Exfiltration was never the risk — those
+   requests carry a grade level and a subject and nothing else.
+
+   That review also found `MASTERY_MIN_ATTEMPTS_FOR_REPORT` — ADR-0010 §5's
+   evidence floor — **described in two documents and implemented nowhere.** It
+   now exists in `lib/config.ts` ahead of its consumer. **Whoever builds M7
+   must wire it in.**
 2. **Then M2.5** (checkpoints — the quiz/test surface), spec at
    [docs/specs/m2-5-checkpoints.md](docs/specs/m2-5-checkpoints.md). It extends
    M2's machinery and needs its architecture + two ADRs before any code. It is

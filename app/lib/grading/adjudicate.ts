@@ -5,6 +5,7 @@ import { AnthropicError, APIConnectionTimeoutError } from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
 import { getAnthropicClient, MissingAnthropicApiKeyError } from "@/lib/ai/client";
+import { fenceUntrusted, UNTRUSTED_INPUT_RULE } from "@/lib/ai/untrusted";
 import type { OutboundLearnerFacts } from "@/lib/ai/outbound";
 import { GRADING_EFFORT, GRADING_MODEL, GRADING_TIMEOUT_MS, HINT_MAX_LENGTH } from "@/lib/config";
 import { HINT_FALLBACK } from "@/lib/errors";
@@ -49,7 +50,9 @@ form, verbatim or paraphrased closely enough that writing it down would be
 the answer. For an UNSURE verdict, the hint should ask the student to try
 explaining or rephrasing their answer, without implying it is wrong.
 
-Report the result using only the structured fields you have been given.`;
+Report the result using only the structured fields you have been given.
+
+${UNTRUSTED_INPUT_RULE}`;
 
 /**
  * The mechanical grading route (ADR-0011 §2). `format` and the answer key
@@ -118,12 +121,14 @@ function buildAdjudicationUserPrompt(args: {
 Subject: ${args.facts.subject}
 Answer format: ${args.answerFormat}
 
-Problem: ${args.problemText}
+Problem:
+${fenceUntrusted("problem", args.problemText)}
 
 Canonical answer: ${args.canonicalAnswer}
 Accepted alternate forms: ${args.acceptedForms.length > 0 ? args.acceptedForms.join(", ") : "(none)"}
 
-Student's submitted answer: ${args.submittedAnswer}`;
+Student's submitted answer:
+${fenceUntrusted("student_answer", args.submittedAnswer)}`;
 }
 
 /**
