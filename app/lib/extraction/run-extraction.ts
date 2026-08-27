@@ -1,5 +1,7 @@
 import "server-only";
 
+import { resolveProblemLanguage } from "@/lib/extraction/language";
+
 import Anthropic, { AnthropicError, APIConnectionTimeoutError } from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
@@ -233,6 +235,10 @@ async function finalizeSuccess(extractionId: string, outcome: SuccessOutcome): P
           text: problem.text,
           containsMath: problem.containsMath,
           subject: problem.subject,
+          // ADR-0016. Discarded for every non-foreign-language problem and for
+          // any tag outside SUPPORTED_LANGUAGES, which is empty until the
+          // ACTFL skills land — so this is null for everything today, by design.
+          language: resolveProblemLanguage({ subject: problem.subject, reported: problem.language }),
           problemType: problem.problemType,
           studentAnswerText: problem.studentAnswerText,
           confidence: problem.confidence,

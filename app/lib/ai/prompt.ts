@@ -34,6 +34,10 @@ problem, capture that answer separately in studentAnswerText. Never merge an \
 answer into the problem's own text field — text is always only the question \
 being asked.
 - subject is your best coarse guess at the school subject.
+- language names the language a FOREIGN_LANGUAGE problem is written in, as a \
+short code ("es", "fr", "de", "ja"). Set it to null for every other subject, \
+including an English worksheet — we only record it where a problem is teaching \
+the language itself.
 - problemType is a short, free-text description of the kind of problem (for \
 example "two-step linear equation", "long division", "reading comprehension \
 question"). Do not invent a formal taxonomy — a short phrase is enough.

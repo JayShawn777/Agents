@@ -35,6 +35,14 @@ export const ExtractedProblemSchema = z.object({
   text: z.string().min(1).max(2000), // LaTeX in $…$ / $$…$$
   containsMath: z.boolean(),
   subject: z.enum(Subject),
+  /**
+   * ADR-0016. Only meaningful for a FOREIGN_LANGUAGE problem;
+   * `lib/extraction/language.ts` discards it for every other subject and for
+   * any tag outside `SUPPORTED_LANGUAGES`. Loose here on purpose — the schema
+   * is the model's output contract, and narrowing a model's vocabulary is the
+   * validator's job, not the format's.
+   */
+  language: z.string().max(16).nullable(),
   problemType: z.string().min(1).max(64), // free text, coarse
   studentAnswerText: z.string().max(2000).nullable(), // M1 AC 22
   confidence: z.number().min(0).max(1),
