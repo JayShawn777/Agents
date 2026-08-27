@@ -29,6 +29,7 @@ generate graded practice from them. The retention jobs enforce what
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
 | **M2.5** checkpoints (quizzes) | spec written 2026-08-27, no architecture yet. Not built. |
 | **M3–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
+| **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
 ### Start here, in this order
 
@@ -74,8 +75,29 @@ skills for it exist. See ADR-0009's 2026-08-27 revision note.
 
 `FOREIGN_LANGUAGE` is still uncovered and is the known gap against the promise:
 ACTFL is organised by proficiency rather than grade, so bundling it means
-deciding a mapping ACTFL does not publish. It needs its own ADR. A test asserts it is non-gradable so
+deciding a mapping ACTFL does not publish. It needs its own ADR (proposed
+**ADR-0016**) before any JSON is written. A test asserts it is non-gradable so
 that adding it has to be deliberate.
+
+**Speaking is in scope, and it is not a taxonomy entry.** Confirmed by the owner
+on 2026-08-27: the tutor should help a child practise *speaking* a foreign
+language, not only reading and writing it. Nothing in M0–M7 can hear — M3
+excludes voice by name, M5 is the app talking, M6 records a consenting adult —
+so this is a real capability gap, specced as **M8**
+([docs/specs/m8-spoken-language.md](docs/specs/m8-spoken-language.md)) and
+sequenced after M6 so it inherits M6's consent-gated audio capture.
+
+Two of M8's open questions are **blocking** and no architecture may start until
+they are answered: whether the chosen ASR vendor's terms permit audio from
+children under 13, and whether its retention can be contractually disabled. A
+child's voice is personal information under COPPA. The FTC tolerates audio
+collected as a substitute for text and deleted immediately, which is narrower
+than pronunciation feedback needs — so M8 stands on a separate, independently
+withdrawable voice consent rather than on that allowance. **Never build a
+voiceprint of a child**; that is the milestone's brightest line.
+
+Do the written foreign-language track first. It proves the subject through
+machinery that already exists, and speaking then has somewhere to attach.
 
 **Before shipping anything subject-specific, ask whether it works for an essay
 and a history question, not just an equation.**
