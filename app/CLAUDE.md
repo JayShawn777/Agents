@@ -81,14 +81,19 @@ longer flow in automatically, and that is the accepted trade.
 
 ### Staging while agents are running
 
-Never `git add` a directory while a background agent is writing into it. Stage
-explicit file paths instead.
+Never `git add` a directory. Stage explicit file paths instead — the guard hook
+now blocks directories, `.` and `-A` outright.
 
 A broad `git add app/docs` in commit `0cb4c99` swept up an architect agent's
 in-flight ADR work and committed it under an unrelated message about product
 research. Nothing was lost, but the history now attributes ADR-0008 and three
 ADR revisions to a commit that claims to be about something else — and a commit
 message that lies is worse than no commit message.
+
+It then happened a second time, in `fbc0821`, *after* this rule was written
+here — a frontend commit swallowed the backend track's half-written consent
+routes. Writing a rule down is not enforcement. It is now a check in
+`guard.mjs`, which is where a rule belongs once it has been broken twice.
 
 ### Enforced rules vs. advisory ones
 

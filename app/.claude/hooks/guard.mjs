@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { statSync } from "node:fs";
 // PreToolUse hook: mechanically enforce the CLAUDE.md "Never" list.
 //
 // These rules were previously prose in CLAUDE.md, which means an agent could
@@ -58,6 +59,30 @@ if (tool === "Bash") {
       "CLAUDE_SKIP_GUARD=1 and say so out loud.)"
     );
   }
+  // Staging a directory sweeps in whatever a parallel agent happens to be
+  // writing at that instant, and attributes it to an unrelated commit message.
+  // This has now happened twice in one session, the second time after the rule
+  // was written down — so it stops being a rule and becomes a check.
+  const gitAdd = cmd.match(/\bgit\s+(?:-C\s+\S+\s+)?add\s+([^\n;&|]+)/);
+  if (gitAdd) {
+    const args = gitAdd[1].trim().split(/\s+/).filter((a) => !a.startsWith("-"));
+    const flags = gitAdd[1];
+    const isDir = (a) => {
+      if (a === "." || a.endsWith("/")) return true;
+      try { return statSync(a).isDirectory(); } catch { return false; }
+    };
+    if (/(^|\s)(-A|--all)(\s|$)/.test(flags) || args.some(isDir)) {
+      deny(
+        "Stage explicit file paths, not a directory or -A.\n" +
+        "A directory sweeps in whatever a parallel agent is mid-write on, and " +
+        "files it up under a commit message that does not describe them.\n" +
+        "Use `git status --short` to see what changed, then stage the paths you " +
+        "actually mean.\n" +
+        "(CLAUDE_SKIP_GUARD=1 if you have genuinely checked nothing else is running.)"
+      );
+    }
+  }
+
   if (/prisma\/migrations\//.test(cmd) && WRITES.test(cmd)) {
     deny("That command writes into prisma/migrations/. Applied migrations are immutable — write a new one.");
   }
