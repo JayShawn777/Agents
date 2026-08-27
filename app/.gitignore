@@ -15,6 +15,7 @@
 
 # local filesystem StoragePort adapter (lib/storage/local-fs.ts, ADR-0003)
 /.storage/
+/.scratch/
 
 # next.js
 /.next/
