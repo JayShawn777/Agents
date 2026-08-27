@@ -5,6 +5,8 @@ import { Camera } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { MasteryStrip } from "@/components/practice/mastery-strip";
+import { StartCheckpointButton } from "@/components/checkpoints/start-checkpoint-button";
+import { composeCheckpoint } from "@/lib/checkpoints/compose";
 import { PracticeSetList } from "@/components/practice/practice-set-list";
 import { StudentStatusBadge } from "@/components/students/student-status-badge";
 import { UploadList, type UploadListRow } from "@/components/uploads/upload-list";
@@ -86,6 +88,13 @@ export default async function StudentHomePage({
   });
   const mastery: SkillMasteryDTO[] = masteryRows.map(toSkillMasteryDTO);
 
+  // M2.5 AC 4. Readiness is computed here from rows this page has ALREADY
+  // loaded, through the same pure function the readiness endpoint calls — so
+  // the button and the API can never disagree, and rendering it costs no extra
+  // query and no client round trip. The endpoint still exists for clients that
+  // need to ask without loading a page.
+  const checkpointAvailable = composeCheckpoint(masteryRows).ok;
+
   // M2 AC 22-23 (plan §4, F23): the resumable practice-set list, reusing the
   // SAME `toPracticeSetDTO` the practice page and endpoint 30 use, so this
   // list can never drift from what the runner itself shows.
@@ -164,6 +173,14 @@ export default async function StudentHomePage({
       ) : null}
 
       <MasteryStrip mastery={mastery} />
+
+      <div className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-foreground">Check-in</h2>
+        <p className="text-sm text-muted-foreground">
+          A short mix of questions from things practised a while back, to see what&apos;s stuck.
+        </p>
+        <StartCheckpointButton studentId={studentId} available={checkpointAvailable} />
+      </div>
     </div>
   );
 }

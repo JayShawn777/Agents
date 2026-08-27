@@ -54,22 +54,17 @@ generate graded practice from them. The retention jobs enforce what
    `MASTERY_MIN_ATTEMPTS_FOR_REPORT` now exists in `lib/config.ts` but nothing
    reads it. **Whoever builds M7 must wire it in.**
 
-2. **Finish M2.5 — only slice 6, the frontend, is left.** Everything else in
-   [docs/plans/m2-5-checkpoints-implementation.md](docs/plans/m2-5-checkpoints-implementation.md)
-   §6 is done: schema and CHECK constraint, composition, generation, both
-   routes, the two behavioural deltas, and the foreign-language column. Slice 3
-   needed no work — the shared DTO change landed inside slice 1.
+2. **Review M2.5, then M3.** M2.5 is built end to end — a student can ask for a
+   check-in from their own page, answer one question per problem, and see how
+   they did once, at the end. It has had no code review and no security review.
+   M2's review found three real things in code that looked finished; assume this
+   will too.
 
-   **Slice 6's acceptance test is the one that matters in this milestone**
-   (spec AC 13): no child-facing payload may contain a value lower than one
-   previously rendered — no percentage over time, no delta, no arrow, no "down
-   from". It is the criterion a well-meaning UI violates first. `mastery-strip`
-   is the model to copy: it renders no percentage, score, streak or `n/m`
-   fraction, and says out loud that levels only move up.
-
-   The API contract slice 6 builds against is fixed and shipped:
-   `GET /api/students/[id]/checkpoint-readiness`, `POST /api/students/[id]/checkpoints`,
-   and the existing practice-set GET, which already serves both kinds.
+   Worth a reviewer's attention first: the CHECK constraint is invisible in
+   `schema.prisma` (ADR-0017), `lib/practice/finalize.ts` is now the single
+   answer-key writer for BOTH generators, and spec AC 13 is enforced by
+   `components/checkpoints/checkpoint-result.tsx` being handed one summary with
+   no history — a comparison is unreachable rather than merely absent.
 
 3. **Then M3** (chat tutor). Its contract is fixed in the M2–M7 plan.
    M4–M7 are shape-only until the measurements in that plan's §9 are taken.
