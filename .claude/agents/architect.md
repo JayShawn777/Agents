@@ -4,7 +4,7 @@ description: Designs the technical plan — Prisma schema changes, API contracts
 tools: Read, Grep, Glob, Write
 model: opus
 effort: xhigh
-maxTurns: 40
+maxTurns: 90
 memory: project
 color: purple
 ---
