@@ -4,11 +4,13 @@
 - **Date:** 2026-08-27
 - **Author:** Claude (inline; not the product-spec agent — see "Process note")
 - **Milestone:** **M2.5**, between M2 and M3
-- **ADRs:** n/a — none written yet. The architect must produce ADRs for (a) how a
-  checkpoint set is modelled against `PracticeSet` without weakening M2 AC 3's
-  extraction invariant, and (b) what a checkpoint result is allowed to change,
-  given ADR-0010's monotonic ratchet. Depends on ADR-0009 (taxonomy),
-  ADR-0010 (mastery ratchet), ADR-0011 (two-stage grading).
+- **ADRs:** [0017](../adr/0017-checkpoints-are-a-practiceset-kind-with-a-database-check-constraint.md)
+  (how a checkpoint is modelled against `PracticeSet`) and
+  [0018](../adr/0018-a-checkpoint-raises-mastery-through-the-existing-sole-writer.md)
+  (what a checkpoint result may change), both written 2026-08-27. Implementation
+  plan: [docs/plans/m2-5-checkpoints-implementation.md](../plans/m2-5-checkpoints-implementation.md).
+  Depends on ADR-0009 (taxonomy), ADR-0010 (mastery ratchet), ADR-0011
+  (two-stage grading).
 
 ## Process note — why this is M2.5 and not part of M3
 
@@ -239,13 +241,17 @@ returns the typed error shape.
       goes in `lib/config.ts` with an `ASSUMPTION` comment like its neighbours.
 - [ ] **What is the minimum body of work before a checkpoint is offered?**
       Proposed: three distinct skills with at least one attempt each — **non-blocking**.
-- [ ] **Does a checkpoint result feed `consecutiveCorrect`, and therefore the
-      ratchet upward?** A student who aces a checkpoint arguably deserves to
-      advance. Letting it count means one code path raises mastery from two
-      sources; refusing means a checkpoint can only ever confirm. **Blocking** —
-      the architect must decide this in the ADR, because it determines whether
-      `lib/mastery/apply.ts` stays the sole writer (it currently has a
-      sole-writer guard test).
+- [x] ~~**Does a checkpoint result feed `consecutiveCorrect`, and therefore the
+      ratchet upward?**~~ **RESOLVED 2026-08-27 by
+      [ADR-0018](../adr/0018-a-checkpoint-raises-mastery-through-the-existing-sole-writer.md).**
+      Yes, and the question dissolved rather than being traded off: because
+      ADR-0017 makes a checkpoint a `PracticeSet` kind, its answers go through
+      the existing attempts route and the existing `applyMastery`, so
+      `lib/mastery/apply.ts` stays the sole writer **unchanged** and its guard
+      test needs no amendment. There is no second path to reconcile. The two-set
+      rule then works in a checkpoint's favour, correctly — a checkpoint is by
+      construction a different set, which is what that rule was written to
+      capture.
 - [ ] **What does the account owner see when a checkpoint goes badly?** "Needs
       review" framing is safe; anything resembling a fall is forbidden by AC 13
       even on an adult surface, because adult surfaces get read aloud to

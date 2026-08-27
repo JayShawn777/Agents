@@ -27,7 +27,7 @@ generate graded practice from them. The retention jobs enforce what
 | **M1** upload, extraction | done, reviewed — 36 criteria |
 | **M2** practice, grading, mastery | built, **reviewed** 2026-08-27 — 27 criteria |
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
-| **M2.5** checkpoints (quizzes) | spec written 2026-08-27, no architecture yet. Not built. |
+| **M2.5** checkpoints (quizzes) | spec + plan + ADRs 0017/0018 written 2026-08-27. **Ready to build.** |
 | **M3–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
@@ -54,15 +54,24 @@ generate graded practice from them. The retention jobs enforce what
    `MASTERY_MIN_ATTEMPTS_FOR_REPORT` now exists in `lib/config.ts` but nothing
    reads it. **Whoever builds M7 must wire it in.**
 
-2. **Then M2.5** (checkpoints — the quiz/test surface), spec at
-   [docs/specs/m2-5-checkpoints.md](docs/specs/m2-5-checkpoints.md). It extends
-   M2's machinery and needs its architecture + two ADRs before any code. It is
-   sequenced here, ahead of chat, because the one schema change it needs —
-   `PracticeSet` having a source other than a single extraction — is cheap while
-   M2 is unshipped and expensive once four more milestones build on that model.
-   One question in its spec is **blocking** and belongs to the architect: whether
-   a checkpoint result may raise mastery, which decides whether
-   `lib/mastery/apply.ts` stays the sole writer.
+2. **Then M2.5** (checkpoints — the quiz/test surface). Spec, implementation
+   plan and both ADRs are written; the blocking question is resolved. **Start at
+   slice 1** in [docs/plans/m2-5-checkpoints-implementation.md](docs/plans/m2-5-checkpoints-implementation.md)
+   §6 and do not merge two slices — the plan is sliced to the retro's six-file
+   rule on purpose.
+
+   Two things in that plan are easy to skip and expensive to skip. The migration
+   carries a **hand-written CHECK constraint that Prisma cannot express in
+   `schema.prisma`**, so a reader of the schema alone will not see it (ADR-0017);
+   it needs the integration test that proves the database rejects both forbidden
+   combinations. And **slice 3, the shared DTO change, must land before either
+   engineer starts** — shared files landing first is the whole reason the
+   parallel split is safe.
+
+   That migration also carries `ExtractedProblem.language` from ADR-0016, which
+   has nothing to do with checkpoints and is batched only because M2's schema is
+   still unshipped and applied migrations cannot be edited.
+
 3. **Then M3** (chat tutor). Its contract is fixed in the M2–M7 plan.
    M4–M7 are shape-only until the measurements in that plan's §9 are taken.
 
