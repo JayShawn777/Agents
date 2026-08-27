@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# local filesystem StoragePort adapter (lib/storage/local-fs.ts, ADR-0003)
+/.storage/
+
 # next.js
 /.next/
 /out/

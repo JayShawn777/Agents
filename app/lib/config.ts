@@ -124,6 +124,40 @@ export const CONSENT_PUBLIC_RATE_LIMIT_WINDOW_MINUTES = 15;
 /** Max attempts per IP within the window above, across verify+decline+callback combined per route. */
 export const CONSENT_PUBLIC_RATE_LIMIT_MAX_ATTEMPTS = 20;
 
+// ─────────────────────────── storage ───────────────────────────
+
+/** The `StoragePort` implementations `lib/storage/get-storage.ts` can select between. */
+export const STORAGE_DRIVERS = ["local", "vercel-blob"] as const;
+export type StorageDriver = (typeof STORAGE_DRIVERS)[number];
+
+const storageDriverSchema = z.enum(STORAGE_DRIVERS);
+
+/**
+ * `STORAGE_DRIVER` selects the `StoragePort` implementation
+ * `lib/storage/get-storage.ts` returns (ADR-0003; the local adapter unblocks
+ * M1 while the Vercel Blob account/store does not exist yet). Same
+ * client/server guard as `resolveConsentMethod` above — nothing
+ * client-facing ever branches on which storage driver is configured, and an
+ * unset/empty value defaults to `"local"` rather than throwing, unlike
+ * `CONSENT_METHOD`: `local` is always a safe default to boot with, whereas
+ * there is no safe default consent method.
+ */
+function resolveStorageDriver(): StorageDriver {
+  if (typeof window !== "undefined") {
+    return "local";
+  }
+  const raw = process.env.STORAGE_DRIVER;
+  if (raw === undefined || raw === "") return "local";
+  const parsed = storageDriverSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`Invalid STORAGE_DRIVER environment variable. Must be one of: ${STORAGE_DRIVERS.join(", ")}.`);
+  }
+  return parsed.data;
+}
+
+/** ADR-0003 / M1 unblock. Defaults to `"local"` — see `lib/storage/local-fs.ts`. */
+export const STORAGE_DRIVER: StorageDriver = resolveStorageDriver();
+
 // ─────────────────────────── uploads ───────────────────────────
 
 /** M0 AC 37 (product assumption). */
