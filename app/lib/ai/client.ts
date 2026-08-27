@@ -39,10 +39,21 @@ export function getAnthropicClient(): Anthropic {
     throw new MissingAnthropicApiKeyError();
   }
   if (!cachedClient) {
+    // An identity-linked API key (the kind the Console issues by default for
+    // some orgs) is rejected with a 400 — NOT a 401 — unless every request
+    // names the workspace it acts in: "anthropic-workspace-id is required when
+    // authenticating with an identity-linked API key". The SDK has no built-in
+    // support for it, so it goes on as a default header. Deliberately
+    // OPTIONAL: a classic workspace-scoped key must not send the header, and
+    // every test that constructs this client without one must keep working.
+    const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID;
     cachedClient = new Anthropic({
       apiKey,
       timeout: EXTRACTION_TIMEOUT_MS,
       maxRetries: 0,
+      ...(workspaceId
+        ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } }
+        : {}),
     });
   }
   return cachedClient;
