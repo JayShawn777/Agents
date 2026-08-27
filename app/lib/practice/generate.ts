@@ -83,6 +83,17 @@ export async function runPracticeGeneration(practiceSetId: string): Promise<RunG
     return await finalizeFailed(practiceSetId, "SLATE_EMPTY");
   }
 
+  // ADR-0017: `extraction` is nullable now that a CHECKPOINT holds NULL there,
+  // and the database CHECK constraint guarantees a PRACTICE set never does.
+  // This function only ever runs for PRACTICE, so reaching here with no
+  // extraction means the constraint was bypassed — refused cleanly rather than
+  // asserted away with a non-null operator, which would turn an invariant
+  // violation into a crash inside a background `after()` callback.
+  if (!set.extraction) {
+    console.error(`runPracticeGeneration(${practiceSetId}): PRACTICE set with no extraction — CHECK constraint bypassed?`);
+    return await finalizeFailed(practiceSetId, "SLATE_EMPTY");
+  }
+
   const gradableProblems = set.extraction.problems.filter(
     (problem): problem is typeof problem & { subject: Subject } =>
       problem.subject !== null && isGradableSubject(problem.subject),

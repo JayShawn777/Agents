@@ -20,6 +20,7 @@ import type {
   ExtractionStatus,
   GradeLevel,
   MasteryLevel,
+  PracticeSetKind,
   PracticeSetStatus,
   StudentProfileStatus,
   Subject,
@@ -129,7 +130,10 @@ export type ExtractionDetailResponse = {
 
 export type PracticeSetDTO = {
   id: string;
-  extractionId: string;
+  /** ADR-0017. Which kind of set this is — the client renders a checkpoint differently. */
+  kind: PracticeSetKind;
+  /** ADR-0017. NULL for a CHECKPOINT, which is not built from any single worksheet. */
+  extractionId: string | null;
   status: PracticeSetStatus;
   problemCount: number;
   answeredCount: number;

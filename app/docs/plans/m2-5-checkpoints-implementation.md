@@ -121,13 +121,21 @@ Both at the route layer, neither in the schema (ADR-0017):
 
 Each is one run for one agent. Do not merge two.
 
-1. **Migration + config.** Schema, hand-written CHECK, index, the four
-   constants, the bijection re-check. Verified by an integration test that the
-   database rejects both forbidden `kind`/`extractionId` combinations.
+1. ~~**Migration + config.**~~ **DONE 2026-08-27.** Schema, hand-written CHECK,
+   index, the four constants, six integration tests proving the database
+   rejects both forbidden combinations (and rejects an UPDATE that would break
+   the pairing, which the original plan did not think to ask for).
+
+   **Slice 3 was folded into it, unavoidably.** Making `extractionId` nullable
+   is not a change the DTO can lag behind by one slice — `pnpm typecheck` fails
+   the moment the column moves, because `PracticeSetDTO.extractionId` was
+   `string`. Planning them as separate slices was wrong; a schema change and the
+   DTO that mirrors it are one deliverable. The plan's own rule still held, in
+   the sense that mattered: the shared file landed before any feature work.
+
 2. **`requireFlowMessage` as a function.** `lib/api/handler.ts` only. Re-run
    `tests/unit/lib/api/handler.test.ts`'s ordering assertions.
-3. **Shared DTO.** `kind` on `toPracticeSetDTO`, nullable `extractionId`,
-   `lib/schemas/dto.ts`. Nothing else may start until this lands.
+3. ~~**Shared DTO.**~~ Folded into slice 1 above.
 4. **Composition.** `lib/checkpoints/compose.ts` + tests. Pure, no database,
    heaviest test coverage in the milestone.
 5. **Backend routes.** Readiness, create, and the two `requireFlow` deltas.

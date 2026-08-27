@@ -14,7 +14,7 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-27)
 
-**3 of 8 milestones built. 537 tests. All gates green and stable.**
+**3 of 8 milestones built. 544 tests. All gates green and stable.**
 
 A parent can sign up, read the §312.4 notice, give verified consent, add a
 student, upload a worksheet, see its problems extracted and correctable, and
@@ -27,7 +27,7 @@ generate graded practice from them. The retention jobs enforce what
 | **M1** upload, extraction | done, reviewed — 36 criteria |
 | **M2** practice, grading, mastery | built, **reviewed** 2026-08-27 — 27 criteria |
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
-| **M2.5** checkpoints (quizzes) | spec + plan + ADRs 0017/0018 written 2026-08-27. **Ready to build.** |
+| **M2.5** checkpoints (quizzes) | spec, plan, ADRs 0017/0018. **Slice 1 built** 2026-08-27 (migration, CHECK constraint, config, shared DTO). Slices 2, 4-7 open. |
 | **M3–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
@@ -182,6 +182,32 @@ Overstating it obscures the obligations that are real — see
   run against production.
 - Apply migrations to Neon with `pnpm db:migrate:prod`. `scripts/prisma-prod.mjs`
   refuses `migrate dev` against the cloud — that command can drop the database.
+- **`pnpm db:migrate` does not work as written, and the failure is misleading.**
+  It dies with `type "GradeLevel" already exists`, naming migration 0001, which
+  reads like a corrupt migration history. The real database is fine —
+  `prisma migrate status` says "up to date" throughout. The failure is in the
+  SHADOW database Prisma builds to diff the schema: `DATABASE_URL` points at
+  `template1`, which Postgres uses as the template for every newly created
+  database, so the shadow is born carrying the whole existing schema and then
+  replaying migration 0001 collides with itself. `SHADOW_DATABASE_URL` in `.env`
+  is an empty string, so nothing redirects it.
+
+  `prisma dev` already publishes a dedicated shadow server one port up from the
+  main one. Until `.env` is fixed — the guard hook blocks writing to it, so a
+  human has to — pass it per command:
+
+  ```
+  SHADOW_DATABASE_URL="postgres://postgres:postgres@localhost:51215/template1?sslmode=disable" \
+    pnpm exec prisma migrate dev --create-only --name <name>
+  ```
+
+  Two more things that cost time on 2026-08-27: `prisma migrate dev` HUNG after
+  successfully applying the migration and had to be killed, leaving the client
+  ungenerated — if tests suddenly fail with Prisma *validation* errors on a
+  column you just added, run `pnpm exec prisma generate`. And to hand-edit a
+  migration (ADR-0017 needs a CHECK constraint Prisma cannot express), create it
+  with `--create-only`, edit, then apply — the guard rightly blocks editing a
+  migration that has already run.
 
 ## Project-specific quirks
 

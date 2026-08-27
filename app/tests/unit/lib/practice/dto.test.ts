@@ -185,6 +185,7 @@ describe("toPracticeSetDTO", () => {
   it("computes answeredCount and resumeOrdinal from problems/attempts, never storing them", () => {
     const dto = toPracticeSetDTO({
       id: "set_1",
+      kind: "PRACTICE",
       extractionId: "ext_1",
       status: "READY",
       failureCode: null,
@@ -204,6 +205,7 @@ describe("toPracticeSetDTO", () => {
   it("resumeOrdinal is null once every problem has an attempt", () => {
     const dto = toPracticeSetDTO({
       id: "set_1",
+      kind: "PRACTICE",
       extractionId: "ext_1",
       status: "IN_PROGRESS",
       failureCode: null,
@@ -217,6 +219,7 @@ describe("toPracticeSetDTO", () => {
   it("maps an unrecognized failureCode to the generic internal-error message, never verbatim", () => {
     const dto = toPracticeSetDTO({
       id: "set_1",
+      kind: "PRACTICE",
       extractionId: "ext_1",
       status: "FAILED",
       failureCode: "something-a-future-bug-invented",
@@ -241,4 +244,22 @@ describe("toPracticeSetSummaryDTO (AC 21)", () => {
     // AC 21 / AC 20: no score, no percentage, no mark in the summary shape.
     expect(Object.keys(summary).sort()).toEqual(["message", "skills", "totalAnswered"].sort());
   });
+});
+
+// ─────────────── ADR-0017: the kind discriminator ───────────────
+
+it("carries `kind` through to the DTO — the client renders a checkpoint differently", () => {
+  const dto = toPracticeSetDTO({
+    id: "set_1",
+    kind: "CHECKPOINT",
+    extractionId: null,
+    status: "READY",
+    failureCode: null,
+    createdAt: new Date(),
+    finishedAt: null,
+    problems: [{ ordinal: 1, attempts: [] }],
+  });
+
+  expect(dto.kind).toBe("CHECKPOINT");
+  expect(dto.extractionId).toBeNull();
 });

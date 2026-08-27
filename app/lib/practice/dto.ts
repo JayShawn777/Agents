@@ -42,7 +42,7 @@ import type { GradeLevel } from "@/lib/domain/enums";
 // the ad-hoc `db.practiceSet.findMany` query on the student's own page)
 // return objects that are supersets of this shape, so either satisfies it
 // with no cast.
-type PracticeSetForDTO = Pick<PracticeSet, "id" | "extractionId" | "status" | "failureCode" | "createdAt" | "finishedAt"> & {
+type PracticeSetForDTO = Pick<PracticeSet, "id" | "kind" | "extractionId" | "status" | "failureCode" | "createdAt" | "finishedAt"> & {
   problems: { ordinal: number; attempts: { id: string }[] }[];
 };
 
@@ -53,6 +53,7 @@ export function toPracticeSetDTO(set: PracticeSetForDTO): PracticeSetDTO {
 
   return {
     id: set.id,
+    kind: set.kind,
     extractionId: set.extractionId,
     status: set.status,
     problemCount: set.problems.length,

@@ -323,6 +323,45 @@ export const MAX_ATTEMPTS_PER_PROBLEM = 10;
  */
 export const ATTEMPTS_PER_HOUR = 120;
 
+// ─────────────────────────── M2.5: checkpoints ───────────────────────────
+
+/**
+ * M2.5 AC 3 — ASSUMPTION. How many problems a checkpoint holds. Longer than
+ * `PRACTICE_SET_SIZE` (6) because a checkpoint spans several skills rather
+ * than drilling one, and still short enough to be a single sitting — the
+ * spec's "short, finishable thing" is a requirement, not a nicety.
+ */
+export const CHECKPOINT_SIZE = 8;
+
+/**
+ * M2.5 AC 1 — ASSUMPTION. Below this many distinct practised skills there is
+ * nothing to check ACROSS, and a "checkpoint" over one skill is just more
+ * practice wearing a more intimidating name.
+ */
+export const CHECKPOINT_MIN_SKILLS = 3;
+
+/**
+ * M2.5 AC 6 — ASSUMPTION. Per DAY, deliberately, where practice generation is
+ * capped per hour: a checkpoint is meant to be an occasional event, and a
+ * child who can take six in an afternoon is being drilled, not checked.
+ */
+export const CHECKPOINTS_PER_DAY = 2;
+
+/**
+ * ADR-0016. The allowlist `ExtractedProblem.language` is validated against at
+ * persistence — the same shape as a `skillCode` checked against the bundled
+ * taxonomy, and for the same reason: the supported set is product-driven and
+ * will move more often than a Prisma enum migration should.
+ *
+ * EMPTY ON PURPOSE. The column exists (it rode along in M2.5's migration,
+ * because M2's schema was still unshipped and an applied migration cannot be
+ * edited), but no ACTFL skills are bundled yet, so no language is supported
+ * and every value must be rejected. Adding an entry here without the matching
+ * taxonomy work would recreate the 2026-08-27 coverage defect exactly: a
+ * subject declared workable with nothing behind it.
+ */
+export const SUPPORTED_LANGUAGES: readonly string[] = [];
+
 /**
  * ADR-0010 §5's evidence floor, and the M2-M7 plan §10's value (4).
  *

@@ -467,6 +467,14 @@ model ExtractedProblem {
   text              String
   containsMath      Boolean  @default(false)
   subject           Subject?
+  /// ADR-0016. Which language a foreign-language problem is written in, as the
+  /// extraction model reported it. Validated at persistence against
+  /// `SUPPORTED_LANGUAGES` (`lib/config.ts`) rather than by a Prisma enum —
+  /// the supported set is product-driven and will move more often than a
+  /// migration should, which is the same reason a `skillCode` is a String
+  /// checked against the bundled taxonomy. NULL for every other subject, and
+  /// for every row written before 2026-08-27.
+  language          String?
   problemType       String? // free text; the skill taxonomy is M2's job
   /// M1 AC 22: the student's handwritten answer, structurally separate. Nothing reads it in M1.
   studentAnswerText String?
@@ -485,12 +493,30 @@ model ExtractedProblem {
 
 // ─────────────────────── M2: practice and mastery ───────────────────────
 
+/// ADR-0017. What a `PracticeSet` is for. `PRACTICE` is generated from one
+/// confirmed extraction (M2); `CHECKPOINT` is generated from skills the student
+/// has practised across many, to check what they retained (M2.5).
+enum PracticeSetKind {
+  PRACTICE
+  CHECKPOINT
+}
+
 model PracticeSet {
   id               String            @id @default(cuid())
   studentProfileId String
-  /// AC 3: practice only ever comes from a CONFIRMED extraction. Cascade is
-  /// AC 25: deleting the extraction deletes the practice built from it.
-  extractionId     String
+  /// ADR-0017. Paired with `extractionId` by a CHECK constraint written by hand
+  /// into the migration — Prisma cannot express it here, so it is NOT visible
+  /// in this file. `PRACTICE` requires an extraction; `CHECKPOINT` requires the
+  /// absence of one. `tests/integration/practice-set-kind-constraint.test.ts`
+  /// proves the database enforces both directions.
+  kind             PracticeSetKind   @default(PRACTICE)
+  /// M2 AC 3: PRACTICE only ever comes from a CONFIRMED extraction — now
+  /// enforced by that CHECK rather than by this column's nullability. Cascade
+  /// is M2 AC 25: deleting the extraction deletes the practice built from it.
+  /// A CHECKPOINT holds NULL here, so the cascade cannot reach it; checkpoints
+  /// are removed only with the student profile, exactly as `SkillMastery`
+  /// already behaves (ADR-0010 §6, ADR-0017).
+  extractionId     String?
   status           PracticeSetStatus @default(GENERATING)
 
   /// Provenance of the authoring call. NEVER returned to a client (AC 6).
@@ -514,7 +540,7 @@ model PracticeSet {
   updatedAt   DateTime  @updatedAt
 
   studentProfile StudentProfile    @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
-  extraction     Extraction        @relation(fields: [extractionId], references: [id], onDelete: Cascade)
+  extraction     Extraction?       @relation(fields: [extractionId], references: [id], onDelete: Cascade)
   problems       PracticeProblem[]
 
   /// AC 26's hourly cap counts rows here. The row is written BEFORE the AI call,
