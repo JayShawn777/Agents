@@ -5,6 +5,31 @@
 - **Deciders:** Jaysh (pending)
 - **Spec:** docs/specs/m3-chat-tutor.md, docs/specs/m7-adaptive-loop.md
 
+## Revision 2026-08-27 — §2's renderer input is a sibling type, not a widened `OutboundLearnerFacts`
+
+Revised in place under docs rule 3 (a **Proposed** ADR may be revised with a
+dated note saying what changed and why).
+
+**What changed.** §2 says the renderer's input is "the shared
+`OutboundLearnerFacts` type — grade level, subjects, and a per-skill mastery
+map". When slice 3 was built, that type was `{ gradeLevel, subject }` —
+singular subject, no mastery — because M2's graders describe one problem, not
+one student. The renderer instead takes a new sibling type,
+`OutboundLearnerContext`, declared beside it in `lib/ai/outbound.ts`.
+
+**Why.** Widening `OutboundLearnerFacts` in place would make every M2 grading
+call site construct a `subjects` array and a mastery map to satisfy a consumer
+it does not have, on a type that four reviewed files already depend on. The
+property the ADR actually relies on is not that one type is shared — it is that
+whatever the renderer receives *cannot carry an identifier*. Two types, each
+with no name, id, avatar or email field, hold that just as structurally as one
+does, and neither is padded with fields it does not use.
+
+**What this does not change.** §2's determinism rules, §3's request shape, and
+§4's two-test verification are unaffected. M7 widens `OutboundLearnerContext`
+rather than `OutboundLearnerFacts` and bumps `LEARNER_CONTEXT_VERSION`, exactly
+as §2 describes.
+
 ## Context
 
 Two requirements meet on the same row and are usually treated as unrelated.

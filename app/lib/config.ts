@@ -462,6 +462,93 @@ export const MASTERY_LADDER = [
   requiresMultiplePracticeSets: boolean;
 }[];
 
+// ─────────────────────────── M3: chat tutor ───────────────────────────
+
+/**
+ * M3 AC 6 — ASSUMPTION. The turn half of the session bound; `CHAT_MAX_SESSION_MINUTES`
+ * is the other half and whichever is reached first closes the session.
+ *
+ * Per ADR-0012 §1 this value is STAMPED onto `ChatSession.maxStudentTurns` at
+ * open and read from the row thereafter — never from here, on a live session.
+ * A limit that shifts mid-conversation ends the session earlier or later than
+ * the student was told, with no record of why.
+ */
+export const CHAT_MAX_STUDENT_TURNS = 20;
+
+/**
+ * M3 AC 6 — ASSUMPTION, from `docs/research/tutoring-product-patterns.md` §7:
+ * a deliberately time-boxed 15-20 minute session. Stamped onto
+ * `ChatSession.expiresAt` at open as `openedAt + this`, per ADR-0012 §1.
+ *
+ * ADR-0012's follow-up: decide 20/20 for real after watching one child use it.
+ */
+export const CHAT_MAX_SESSION_MINUTES = 20;
+
+/**
+ * M3 AC 4. A SEPARATE, SMALLER threshold than `CHAT_MAX_STUDENT_TURNS`: after
+ * this many non-converging turns the tutor stops withholding and works the
+ * problem through. It drives a mid-conversation system message (ADR-0012 §1),
+ * NOT a closure.
+ *
+ * Deliberately equal to `ATTEMPTS_BEFORE_REVEAL` — the same pedagogical
+ * judgement in the chat surface as in the practice surface. Kept as its own
+ * constant rather than an alias because the two can diverge: this one counts
+ * conversational turns, that one counts submitted answers.
+ */
+export const CHAT_REVEAL_AFTER_TURNS = 3;
+
+/** M3 AC 10. Bound on one student message, enforced by zod at the route boundary. */
+export const CHAT_MESSAGE_MAX_LENGTH = 2_000;
+
+/** M3 AC 20 — ASSUMPTION. Per-profile Postgres count, like every other cap in the app. */
+export const CHAT_MESSAGES_PER_HOUR = 60;
+
+/**
+ * Not an acceptance criterion — the cost bound on session OPENS specifically.
+ * A session open is cheap on its own but each one licenses `CHAT_MESSAGES_PER_HOUR`
+ * worth of turns, so it needs its own ceiling.
+ */
+export const CHAT_SESSIONS_PER_HOUR = 10;
+
+/**
+ * M3 AC 2 — **PENDING MEASUREMENT (plan §9.1, ADR-0012 follow-up).** This is a
+ * GUESS and is known to be one. It cannot be fixed from a mock: it is the
+ * wall-clock budget for the first streamed token against the real API, and
+ * streaming time counts toward Vercel's `maxDuration`.
+ *
+ * Do not treat a passing test as evidence this number is right.
+ */
+export const CHAT_FIRST_TOKEN_BUDGET_MS = 3_000;
+
+/**
+ * M3 AC 19 — **PENDING MEASUREMENT (plan §9.1).** Same standing as
+ * `CHAT_FIRST_TOKEN_BUDGET_MS`: a guess until one real streaming turn is timed.
+ */
+export const CHAT_IDLE_TIMEOUT_MS = 20_000;
+
+/** M3 AC 13. Ceiling on one tutor reply. */
+export const CHAT_MAX_OUTPUT_TOKENS = 4_000;
+
+/** `docs/research/anthropic-api.md` §1. */
+export const CHAT_MODEL = "claude-opus-5";
+
+/**
+ * ADR-0012 §3. One hour rather than the 5-minute default: a student thinking
+ * about a fraction for six minutes should not pay a cache WRITE to come back.
+ */
+export const CHAT_CACHE_TTL = "1h";
+
+/**
+ * `docs/research/anthropic-api.md` §5 — the minimum cacheable prefix. Below
+ * this, prompt caching SILENTLY NO-OPS: no error, no warning, and M3 AC 8 fails
+ * for a reason no log explains while the bill roughly tenfolds.
+ *
+ * ADR-0012 §3 requires `TUTOR_SYSTEM_PROMPT` to exceed this ON PURPOSE, with a
+ * unit test asserting an approximate token count, so that shortening the prompt
+ * for tidiness fails CI instead of the cost model. Its length is load-bearing.
+ */
+export const CHAT_SYSTEM_PROMPT_MIN_TOKENS = 1_024;
+
 // ─────────────────────────── auth ───────────────────────────
 
 /** M0 AC 4. Auth.js magic-link `maxAge`. */
