@@ -14,7 +14,7 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-27)
 
-**M0, M1, M2 and M2.5 built. 620 tests. All gates green and stable.**
+**M0, M1, M2 and M2.5 built. M3 started. 629 tests. All gates green and stable.**
 
 A parent can sign up, read the §312.4 notice, give verified consent, add a
 student, upload a worksheet, see its problems extracted and correctable, and
@@ -28,7 +28,8 @@ generate graded practice from them. The retention jobs enforce what
 | **M2** practice, grading, mastery | built, **reviewed** 2026-08-27 — 27 criteria |
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
 | **M2.5** checkpoints (quizzes) | **done and reviewed** 2026-08-27 — all 7 slices, spec, plan, ADRs 0016/0017/0018 |
-| **M3–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
+| **M3** chat tutor | **slices 1-2 built** 2026-08-27 — schema + binding CHECK, and the CHAT_TRANSCRIPT retention rule with its job step. Nothing writes a chat row yet. |
+| **M4–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
 ### Start here, in this order
@@ -81,8 +82,39 @@ generate graded practice from them. The retention jobs enforce what
    gate, and `CheckpointResult` is handed one summary with no history so a
    comparison is unreachable rather than merely absent.
 
-3. **Then M3** (chat tutor). Its contract is fixed in the M2–M7 plan.
-   M4–M7 are shape-only until the measurements in that plan's §9 are taken.
+3. **FIRST THING NEXT SESSION: set `ANTHROPIC_API_KEY`.** The owner asked to
+   start here on 2026-08-28. It is the longest-standing gap in the project —
+   four milestones now stand on an assumption nobody has tested — and M3 is the
+   first milestone where it stops being optional.
+
+   `.env.example` already documents the variable. **The guard hook blocks
+   writing to `.env`, deliberately, so a human must paste the key in.** After
+   that:
+
+   - Run one real extraction against a real worksheet photo. That alone
+     validates M1's whole vision path, which every later milestone assumes.
+   - Then take plan §9.1's measurements, which fix M3's remaining constants:
+     first-token latency (`CHAT_FIRST_TOKEN_BUDGET_MS`, currently a guess of
+     3000ms) and the idle timeout. **M3 AC 2 and AC 8 cannot be satisfied by
+     mocks** — AC 8 requires observing `cache_read_input_tokens > 0` across
+     three consecutive real turns, which is the only signal that the cached
+     prefix is byte-stable and therefore that the cost model holds.
+
+4. **Then continue M3 at slice 3.** Slices 1 and 2 are done (schema with its
+   hand-written binding CHECK; the `CHAT_TRANSCRIPT` retention rule and job).
+
+   Slice 3 is the `CHAT_*` tunables from plan §7.1 plus **the context renderer**
+   — ADR-0012's stable prefix, rendered ONCE at session open and stamped on
+   `ChatSession.renderedContext`. It is pure and exhaustively testable, and
+   everything downstream depends on it: the streaming route cannot be built
+   against a prefix that is not fixed. Then the streaming route (§3.4's
+   contract), then the UI — **with the entry point as its own named slice**,
+   per the M2.5 retro.
+
+   Both hand-written CHECK constraints so far live only in migrations and are
+   invisible in `schema.prisma`; each has an integration test that is its real
+   documentation. The plan's §1.2 SQL for the M3 one was snake_case and would
+   not have applied — Prisma generates camelCase.
 
 ### This app is not a math app
 
