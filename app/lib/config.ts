@@ -108,6 +108,22 @@ export const SOURCE_FILE_RETENTION_DAYS_AFTER_EXTRACTION = 14;
 /** M0 AC 47 — ASSUMPTION. How long a `DeletionAudit` row survives after `completedAt`. */
 export const DELETION_AUDIT_RETENTION_DAYS = 365;
 
+/**
+ * ADR-0008 §4/§5, and a finding from the M0 consent-flow review: caps
+ * attempts per caller IP against the public, session-free, token-authenticated
+ * consent routes (`/api/consent/verify`, `/api/consent/decline`,
+ * `/api/consent/callback/[method]`) — the only unauthenticated mutations in
+ * the app. For `EMAIL_PLUS` that token IS parental consent, so these are the
+ * one place in the app where a wrong guess must never be free.
+ * `lib/api/handler.ts`'s `publicRateLimit` hook (step 2b) runs this BEFORE
+ * the token is looked up, precisely so a wrong-but-well-formed token cannot
+ * reach an unthrottled database lookup. ASSUMPTION, in-memory
+ * (`lib/consent/rate-limit.ts`) — no new dependency and no schema change.
+ */
+export const CONSENT_PUBLIC_RATE_LIMIT_WINDOW_MINUTES = 15;
+/** Max attempts per IP within the window above, across verify+decline+callback combined per route. */
+export const CONSENT_PUBLIC_RATE_LIMIT_MAX_ATTEMPTS = 20;
+
 // ─────────────────────────── uploads ───────────────────────────
 
 /** M0 AC 37 (product assumption). */

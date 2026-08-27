@@ -32,6 +32,23 @@ import { verifySession, type SessionInfo } from "@/lib/auth/dal";
  * `requireFlow` is configured without `resolveResource` — see the check at
  * the top of the function body for why silently skipping the gate is the
  * alternative if this is missing.
+ *
+ * **Step 2b — `publicRateLimit`, public mode only, runs BEFORE step 3.**
+ * A finding from the M0 consent-flow review: for a `mode: "public"` route
+ * whose "resource" IS the caller's credential (`/api/consent/verify`,
+ * `/api/consent/decline`, `/api/consent/callback/[method]` — a
+ * single-use, session-free consent-challenge token, which for `EMAIL_PLUS`
+ * *is* parental consent, ADR-0008 §4), an unknown or wrong token resolves
+ * to nothing at step 3 and exits as a 404 *before ever reaching step 7's
+ * `rateLimit`*. That makes the ordinary `rateLimit` hook unreachable by the
+ * exact request an attacker sends when brute-forcing the token space: every
+ * guess is a free, unthrottled 404. `publicRateLimit` closes this by running
+ * immediately after the same-origin check and before ANY lookup keyed on
+ * attacker-controlled input — keyed on the caller's IP rather than on a
+ * resource that may not exist. Throws at the boot if configured without
+ * `mode: "public"` (a session-mode route's step 1 already stops an
+ * unauthenticated caller before resource resolution, so this hook has
+ * nothing to add there — see the check at the top of the function body).
  */
 
 export type WithAuthArgs<TResource, TBody> = {
@@ -51,6 +68,20 @@ export type WithAuthConfig<TResource = undefined, TBody = undefined> = {
    * this task's scope but the mode exists for them per B7's brief).
    */
   mode?: "session" | "public";
+
+  /**
+   * Step 2b. PUBLIC MODE ONLY — see the docstring above. Runs after the
+   * same-origin check and BEFORE `resolveResource` (step 3), so a route
+   * whose resource resolution is itself the sensitive lookup (a consent
+   * challenge token) cannot let a wrong guess skip rate limiting entirely.
+   * Returning `false` is a 429. Has no access to `resource` or `body` —
+   * both are unresolved at this point — only `req`/`params`, which is
+   * enough to key a limiter off the caller's IP.
+   */
+  publicRateLimit?: (args: {
+    req: Request;
+    params: Record<string, string>;
+  }) => Promise<boolean> | boolean;
 
   /**
    * Step 3. Resolves the resource this route acts on, scoped to the
@@ -175,6 +206,21 @@ export function withAuth<TResource = undefined, TBody = undefined>(
     );
   }
 
+  // `publicRateLimit` (step 2b) exists specifically to run ahead of a
+  // public route's resource resolution — a session-mode route's step 1
+  // already rejects an unauthenticated caller before step 3 runs, so this
+  // hook has nothing to add there. Configuring it without `mode: "public"`
+  // is very likely someone reaching for `rateLimit` (step 7) and finding
+  // this one instead; fail loudly rather than silently no-op.
+  if (config.publicRateLimit && config.mode !== "public") {
+    throw new Error(
+      "withAuth(): `publicRateLimit` is configured but `mode` is not \"public\". " +
+        "This hook exists to close the public-mode reachability gap where a wrong " +
+        "token/credential 404s at resource resolution before step 7's `rateLimit` " +
+        "ever runs. Set `mode: \"public\"`, or use `rateLimit` instead.",
+    );
+  }
+
   return async (req: Request, ctx: RouteContext): Promise<Response> => {
     const params = await ctx.params;
     const mode = config.mode ?? "session";
@@ -192,6 +238,13 @@ export function withAuth<TResource = undefined, TBody = undefined>(
     // Step 2 — same-origin check, non-GET only.
     if (!NO_BODY_METHODS.has(req.method) && !isSameOriginRequest(req)) {
       return errorResponse(apiErr("FORBIDDEN"));
+    }
+
+    // Step 2b — public-mode pre-resolution rate limit. MUST run before step 3:
+    // see the docstring above and `publicRateLimit`'s own doc comment.
+    if (mode === "public" && config.publicRateLimit) {
+      const allowed = await config.publicRateLimit({ req, params });
+      if (!allowed) return errorResponse(apiErr("RATE_LIMITED"));
     }
 
     // Step 3 — resource resolution (owner-scoped; 404 hides cross-account existence).

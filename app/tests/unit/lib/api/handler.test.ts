@@ -97,6 +97,96 @@ describe("withAuth() misconfiguration fails the boot, not the request", () => {
       }),
     ).not.toThrow();
   });
+
+  it("throws synchronously when publicRateLimit is configured without mode: \"public\"", () => {
+    expect(() =>
+      withAuth<undefined, unknown>({
+        publicRateLimit: () => false,
+        handler: okHandler,
+      }),
+    ).toThrow(/publicRateLimit/);
+  });
+
+  it("does not throw when publicRateLimit is configured alongside mode: \"public\"", () => {
+    expect(() =>
+      withAuth<undefined, unknown>({
+        mode: "public",
+        publicRateLimit: () => true,
+        handler: okHandler,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("withAuth() public-mode pre-resolution rate limit (step 2b)", () => {
+  it("a wrong/unknown credential — resolveResource returning null (what would otherwise be a free, unthrottled 404) — is 429 when publicRateLimit says no, and resolveResource is never even called", async () => {
+    const resolveResource = vi.fn(async () => null); // would be 404
+    const handler = withAuth<Resource, unknown>({
+      mode: "public",
+      getSession: async () => null,
+      publicRateLimit: () => false, // 429
+      resolveResource,
+      handler: okHandler,
+    });
+
+    const res = await handler(req({ origin: "http://localhost" }), ctx());
+    const { status, code } = await statusAndBody(res);
+    expect(status).toBe(429);
+    expect(code).toBe("RATE_LIMITED");
+    // THE LOAD-BEARING ASSERTION: resolveResource — the DB lookup keyed on
+    // attacker-controlled input (e.g. a hashed token) — must never run once
+    // the rate limit already said no. A regression that reordered these two
+    // checks would still return 429 from a DIFFERENT step, but would let an
+    // attacker's guess reach the lookup before being throttled.
+    expect(resolveResource).not.toHaveBeenCalled();
+  });
+
+  it("runs before resource resolution: a wrong token that would 404 is rate-limited first, proving the ordering rather than just the outcome", async () => {
+    const attempts: string[] = [];
+    const handler = withAuth<Resource, unknown>({
+      mode: "public",
+      getSession: async () => null,
+      publicRateLimit: () => {
+        attempts.push("rateLimit");
+        return false;
+      },
+      resolveResource: async () => {
+        attempts.push("resolveResource"); // would be 404 if reached
+        return null;
+      },
+      handler: okHandler,
+    });
+
+    await handler(req({ origin: "http://localhost" }), ctx());
+    expect(attempts).toEqual(["rateLimit"]);
+  });
+
+  it("passes through to resource resolution (and a normal 404) when publicRateLimit allows it", async () => {
+    const handler = withAuth<Resource, unknown>({
+      mode: "public",
+      getSession: async () => null,
+      publicRateLimit: () => true,
+      resolveResource: async () => null,
+      handler: okHandler,
+    });
+
+    const res = await handler(req({ origin: "http://localhost" }), ctx());
+    expect(res.status).toBe(404);
+  });
+
+  it("is skipped entirely in session mode, even if somehow present (defence in depth — the boot-time guard above is the primary protection)", async () => {
+    // Not constructible through the public API (the boot-time check above
+    // throws first), so this exercises the runtime guard `mode === "public"`
+    // directly via a config object that bypasses the type-level guidance.
+    const config = {
+      getSession: async () => SESSION,
+      resolveResource: async () => ACTIVE_RESOURCE,
+      handler: okHandler,
+    };
+    const handler = withAuth<Resource, unknown>(config);
+    const res = await handler(req({ origin: "http://localhost" }), ctx());
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("withAuth() check ordering (ADR-0006)", () => {
