@@ -205,6 +205,19 @@ export type SkillMasteryDTO = {
 export type PracticeSetSummaryDTO = {
   skills: { skillCode: string; skillDescriptor: string; problemsAnswered: number }[];
   totalAnswered: number;
+  /**
+   * M2.5 AC 12: how many were right, out of `totalAnswered`.
+   *
+   * Allowed, and the distinction matters. Spec AC 13 forbids a value LOWER
+   * than one previously rendered — a percentage that was 80 last month and is
+   * 60 now. "6 of 8" for THIS set is a point-in-time outcome and is explicitly
+   * fine. What must never be built on top of it is a history, a trend or a
+   * comparison to an earlier checkpoint.
+   *
+   * Practice surfaces do not render it (M2 AC 20's "no score" is unchanged);
+   * only the checkpoint result does.
+   */
+  totalCorrect: number;
   /** AC 21: progress framing, from an allowlist. No score, no percentage, no streak. */
   message: string;
 };

@@ -5,6 +5,8 @@ import { FailedSet } from "@/components/practice/failed-set";
 import { GeneratingState } from "@/components/practice/generating-state";
 import { PracticeRunner } from "@/components/practice/practice-runner";
 import { SetSummary } from "@/components/practice/set-summary";
+import { CheckpointResult } from "@/components/checkpoints/checkpoint-result";
+import { CheckpointRunner } from "@/components/checkpoints/checkpoint-runner";
 import { requirePracticeSet } from "@/lib/auth/dal";
 import { toPracticeProblemDTO, toPracticeSetDTO, toPracticeSetSummaryDTO } from "@/lib/practice/dto";
 import type { PracticeProblemDTO } from "@/lib/schemas/dto";
@@ -61,7 +63,15 @@ export default async function PracticeSetPage({
     const summary = toPracticeSetSummaryDTO(setRow.problems);
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6">
-        <SetSummary set={set} summary={summary} studentId={setRow.studentProfileId} />
+        {set.kind === "CHECKPOINT" ? (
+          // ADR-0017: one page serves both kinds, because a checkpoint IS a
+          // PracticeSet. Only the surface differs — `CheckpointResult` is given
+          // this one summary and nothing else, so an earlier checkpoint is not
+          // reachable from it and AC 13 cannot be broken by a later edit.
+          <CheckpointResult summary={summary} />
+        ) : (
+          <SetSummary set={set} summary={summary} studentId={setRow.studentProfileId} />
+        )}
       </div>
     );
   }
@@ -72,7 +82,11 @@ export default async function PracticeSetPage({
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6">
-      <PracticeRunner set={set} problems={problems} />
+      {set.kind === "CHECKPOINT" ? (
+        <CheckpointRunner set={set} problems={problems} />
+      ) : (
+        <PracticeRunner set={set} problems={problems} />
+      )}
     </div>
   );
 }

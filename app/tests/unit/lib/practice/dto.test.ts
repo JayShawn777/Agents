@@ -40,7 +40,7 @@ function baseProblem(overrides: Partial<Parameters<typeof toPracticeProblemDTO>[
     choices: [] as string[],
     difficultyOffset: 0,
     createdAt: new Date(),
-    attempts: [] as { revealed: boolean }[],
+    attempts: [] as { revealed: boolean; result: "CORRECT" | "INCORRECT" | "UNSCORED" }[],
     answerKey: null as { workedSolution: string } | null,
     ...overrides,
   };
@@ -52,7 +52,7 @@ describe("toPracticeProblemDTO — the answer key never reaches the DTO (M2 AC 1
     // answerKey.workedSolution is populated (it always is, once a set is
     // generated), and revealed is false until the reveal gate is passed.
     const row = baseProblem({
-      attempts: [{ revealed: false }, { revealed: false }],
+      attempts: [{ revealed: false, result: "INCORRECT" }, { revealed: false, result: "INCORRECT" }],
       answerKey: { workedSolution: WORKED_SOLUTION },
     });
 
@@ -69,7 +69,7 @@ describe("toPracticeProblemDTO — the answer key never reaches the DTO (M2 AC 1
 
   it("reveals workedSolution only once an attempt on this problem is marked revealed", () => {
     const row = baseProblem({
-      attempts: [{ revealed: false }, { revealed: true }],
+      attempts: [{ revealed: false, result: "INCORRECT" }, { revealed: true, result: "INCORRECT" }],
       answerKey: { workedSolution: WORKED_SOLUTION },
     });
 
@@ -83,7 +83,7 @@ describe("toPracticeProblemDTO — the answer key never reaches the DTO (M2 AC 1
   it("STRUCTURAL: the DTO's key set never includes canonicalAnswer or acceptedForms, in any state", () => {
     const preReveal = toPracticeProblemDTO(baseProblem({ attempts: [], answerKey: null }));
     const postReveal = toPracticeProblemDTO(
-      baseProblem({ attempts: [{ revealed: true }], answerKey: { workedSolution: WORKED_SOLUTION } }),
+      baseProblem({ attempts: [{ revealed: true, result: "INCORRECT" }], answerKey: { workedSolution: WORKED_SOLUTION } }),
     );
 
     for (const dto of [preReveal, postReveal]) {
@@ -234,15 +234,15 @@ describe("toPracticeSetDTO", () => {
 describe("toPracticeSetSummaryDTO (AC 21)", () => {
   it("counts only answered problems, grouped by skill, with a progress-framed message", () => {
     const summary = toPracticeSetSummaryDTO([
-      baseProblem({ ordinal: 1, skillCode: "4.NF.B.3", attempts: [{ revealed: false }] }),
-      baseProblem({ ordinal: 2, skillCode: "4.NF.B.3", attempts: [{ revealed: false }] }),
+      baseProblem({ ordinal: 1, skillCode: "4.NF.B.3", attempts: [{ revealed: false, result: "INCORRECT" }] }),
+      baseProblem({ ordinal: 2, skillCode: "4.NF.B.3", attempts: [{ revealed: false, result: "INCORRECT" }] }),
       baseProblem({ ordinal: 3, skillCode: "4.OA.A.1", attempts: [] }),
     ]);
     expect(summary.totalAnswered).toBe(2);
     expect(summary.skills).toEqual([{ skillCode: "4.NF.B.3", skillDescriptor: expect.any(String), problemsAnswered: 2 }]);
     expect(summary.message.length).toBeGreaterThan(0);
     // AC 21 / AC 20: no score, no percentage, no mark in the summary shape.
-    expect(Object.keys(summary).sort()).toEqual(["message", "skills", "totalAnswered"].sort());
+    expect(Object.keys(summary).sort()).toEqual(["message", "skills", "totalAnswered", "totalCorrect"].sort());
   });
 });
 
@@ -262,4 +262,44 @@ it("carries `kind` through to the DTO — the client renders a checkpoint differ
 
   expect(dto.kind).toBe("CHECKPOINT");
   expect(dto.extractionId).toBeNull();
+});
+
+// ─────────────── M2.5 AC 12: the checkpoint result's numerator ───────────────
+
+it("counts a problem as right when any attempt on it was CORRECT", () => {
+  const summary = toPracticeSetSummaryDTO([
+    baseProblem({ ordinal: 1, attempts: [{ revealed: false, result: "CORRECT" }] }),
+    baseProblem({ ordinal: 2, attempts: [{ revealed: false, result: "INCORRECT" }] }),
+    // Got there on the second try. Counting this as wrong would punish a
+    // student for having tried twice, which practice explicitly invites.
+    baseProblem({
+      ordinal: 3,
+      attempts: [
+        { revealed: false, result: "INCORRECT" },
+        { revealed: false, result: "CORRECT" },
+      ],
+    }),
+  ]);
+
+  expect(summary.totalAnswered).toBe(3);
+  expect(summary.totalCorrect).toBe(2);
+});
+
+it("an UNSCORED attempt is not counted right — it is evidence in neither direction", () => {
+  const summary = toPracticeSetSummaryDTO([
+    baseProblem({ ordinal: 1, attempts: [{ revealed: false, result: "UNSCORED" }] }),
+  ]);
+
+  expect(summary.totalAnswered).toBe(1);
+  expect(summary.totalCorrect).toBe(0);
+});
+
+it("an unanswered problem counts toward neither total", () => {
+  const summary = toPracticeSetSummaryDTO([
+    baseProblem({ ordinal: 1, attempts: [{ revealed: false, result: "CORRECT" }] }),
+    baseProblem({ ordinal: 2, attempts: [] }),
+  ]);
+
+  expect(summary.totalAnswered).toBe(1);
+  expect(summary.totalCorrect).toBe(1);
 });

@@ -82,7 +82,7 @@ function mapGenerationFailureCodeToMessage(failureCode: string | null): string |
 // The exact shape `requirePracticeSet` (`lib/auth/dal.ts`) produces per
 // problem — the ONLY row shape this function is ever called with.
 type PracticeProblemForDTO = PracticeProblem & {
-  attempts: Pick<Attempt, "revealed">[];
+  attempts: Pick<Attempt, "revealed" | "result">[];
   answerKey: Pick<PracticeAnswerKey, "workedSolution"> | null;
 };
 
@@ -193,10 +193,16 @@ export function toFeedbackDTO(args: {
 export function toPracticeSetSummaryDTO(problems: PracticeProblemForDTO[]): PracticeSetSummaryDTO {
   const bySkill = new Map<string, { descriptor: string; count: number }>();
   let totalAnswered = 0;
+  let totalCorrect = 0;
 
   for (const problem of problems) {
     if (problem.attempts.length === 0) continue;
     totalAnswered += 1;
+    // M2.5 AC 12. A problem counts as right if ANY attempt on it was CORRECT —
+    // for a checkpoint there is only ever one, and for practice this reads as
+    // "got there in the end", which is the only reading that does not punish
+    // a student for having tried twice.
+    if (problem.attempts.some((attempt) => attempt.result === "CORRECT")) totalCorrect += 1;
     const existing = bySkill.get(problem.skillCode);
     if (existing) {
       existing.count += 1;
@@ -215,6 +221,7 @@ export function toPracticeSetSummaryDTO(problems: PracticeProblemForDTO[]): Prac
       problemsAnswered: value.count,
     })),
     totalAnswered,
+    totalCorrect,
     // M2 open question — ASSUMPTION: one fixed, allowlisted framing message.
     // AC 21 asks for progress framing, not a specific pool of copy.
     message: "Nice work — here's what you practiced.",
