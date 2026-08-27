@@ -54,20 +54,22 @@ generate graded practice from them. The retention jobs enforce what
    `MASTERY_MIN_ATTEMPTS_FOR_REPORT` now exists in `lib/config.ts` but nothing
    reads it. **Whoever builds M7 must wire it in.**
 
-2. **Finish M2.5.** Slices 1-5 of
+2. **Finish M2.5 — only slice 6, the frontend, is left.** Everything else in
    [docs/plans/m2-5-checkpoints-implementation.md](docs/plans/m2-5-checkpoints-implementation.md)
-   §6 are done and the backend is complete: schema and CHECK constraint,
-   composition, generation, both routes, and the two behavioural deltas. Slice 3
+   §6 is done: schema and CHECK constraint, composition, generation, both
+   routes, the two behavioural deltas, and the foreign-language column. Slice 3
    needed no work — the shared DTO change landed inside slice 1.
 
-   **Slice 6 (frontend) is next.** Its acceptance test is the one that matters
-   in this milestone: no child-facing payload may contain a value lower than one
-   previously rendered (spec AC 13). **Slice 7** — the `ExtractedProblem.language`
-   column from ADR-0016 — is independent of everything else and can go any time;
-   the schema is already migrated, so it is prompt and validation work only.
+   **Slice 6's acceptance test is the one that matters in this milestone**
+   (spec AC 13): no child-facing payload may contain a value lower than one
+   previously rendered — no percentage over time, no delta, no arrow, no "down
+   from". It is the criterion a well-meaning UI violates first. `mastery-strip`
+   is the model to copy: it renders no percentage, score, streak or `n/m`
+   fraction, and says out loud that levels only move up.
 
-   Slice 5 was planned as one unit and shipped as 5a/5b/5c. Seven files with
-   three unrelated concerns is the mis-scoping retro lesson 10 is about.
+   The API contract slice 6 builds against is fixed and shipped:
+   `GET /api/students/[id]/checkpoint-readiness`, `POST /api/students/[id]/checkpoints`,
+   and the existing practice-set GET, which already serves both kinds.
 
 3. **Then M3** (chat tutor). Its contract is fixed in the M2–M7 plan.
    M4–M7 are shape-only until the measurements in that plan's §9 are taken.
@@ -92,7 +94,15 @@ now bundles four frameworks (CCSS math + ELA, NGSS science, C3 social studies),
 derived from that coverage** — a subject cannot be declared gradable unless
 skills for it exist. See ADR-0009's 2026-08-27 revision note.
 
-`FOREIGN_LANGUAGE` is still uncovered and is the known gap against the promise:
+**Foreign language, as of 2026-08-27:** the plumbing is done and inert. The
+extraction model reports a language, `lib/extraction/language.ts` keeps it only
+for a `FOREIGN_LANGUAGE` problem and only if it is in `SUPPORTED_LANGUAGES` —
+which is EMPTY on purpose, so every value resolves to null today. That is the
+intended state. Turning it on is a data-only change once ACTFL skills are
+bundled, and a test asserts the allowlist is still empty so that populating it
+without the taxonomy work cannot pass silently.
+
+The skills themselves are still missing:
 ACTFL is organised by proficiency rather than grade, so bundling it means
 deciding a mapping ACTFL does not publish. It needs its own ADR (proposed
 **ADR-0016**) before any JSON is written. A test asserts it is non-gradable so
