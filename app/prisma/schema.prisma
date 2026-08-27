@@ -287,6 +287,8 @@ model StudentProfile {
   @@index([userId, createdAt])
   /// The pre-consent purge job's query (AC 22). Without it that job seq-scans.
   @@index([status, createdAt])
+  /// M3 AC 16: chat sessions die with the profile.
+  chatSessions      ChatSession[]
 }
 
 /// AC 12–15. The §312.4 direct notice actually served to this account owner for this
@@ -489,6 +491,8 @@ model ExtractedProblem {
 
   @@unique([extractionId, ordinal])
   @@index([extractionId])
+  /// M3 AC 1 / AC 16: a session bound to this problem dies with it.
+  chatSessions      ChatSession[]
 }
 
 // ─────────────────────── M2: practice and mastery ───────────────────────
@@ -632,6 +636,8 @@ model Attempt {
   @@unique([practiceProblemId, attemptNumber])
   @@index([studentProfileId, createdAt])
   @@index([practiceProblemId, createdAt])
+  /// M3 AC 1 / AC 16: a session bound to this attempt dies with it.
+  chatSessions      ChatSession[]
 }
 
 /// AC 18. One record per (profile, skill). `level` is a RATCHET — assigned only a
@@ -707,4 +713,102 @@ model ConsentAuditArtifact {
   purgeAfter         DateTime
 
   @@index([purgeAfter])
+}
+
+
+// ─────────────────────────── M3: the chat tutor ───────────────────────────
+
+/// AC 6: a session that hits a bound is CLOSED, and the reason is kept because
+/// the wrap-up copy and the offered next action differ.
+enum ChatSessionStatus {
+  OPEN
+  CLOSED_TURN_LIMIT
+  CLOSED_TIME_LIMIT
+  CLOSED_BY_STUDENT
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
+model ChatSession {
+  id                 String            @id @default(cuid())
+  studentProfileId   String
+  /// AC 1 / AC 16: bound to exactly ONE of these, and never re-pointed.
+  /// Prisma cannot express "exactly one", so the migration is hand-edited to add
+  ///   CHECK (num_nonnulls("extractedProblemId", "attemptId") = 1)
+  /// — invisible in this file, same as ADR-0017's constraint. The integration
+  /// test `tests/integration/chat-session-binding-constraint.test.ts` is what
+  /// makes it real; that file is the constraint's documentation.
+  extractedProblemId String?
+  attemptId          String?
+
+  status           ChatSessionStatus @default(OPEN)
+  studentTurnCount Int               @default(0)
+  /// Stamped from config AT OPEN, not read per turn (ADR-0012 §1): a limit that
+  /// shifts under a live conversation is a bug nobody can reproduce.
+  maxStudentTurns  Int
+  revealAfterTurns Int
+  expiresAt        DateTime
+
+  /// ADR-0012 §2. The learner context RENDERED ONCE at open. Every turn sends
+  /// these exact bytes, which is what makes AC 8's `cache_read_input_tokens > 0`
+  /// true by construction. NEVER in a DTO.
+  renderedContext       String
+  contextHash           String
+  contextVersion        String
+  /// NULL until M7 exists.
+  learnerProfileVersion Int?
+  systemPromptVersion   String
+  model                 String
+
+  openedAt  DateTime  @default(now())
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  studentProfile   StudentProfile    @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  extractedProblem ExtractedProblem? @relation(fields: [extractedProblemId], references: [id], onDelete: Cascade)
+  attempt          Attempt?          @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  messages         ChatMessage[]
+
+  @@index([studentProfileId, openedAt])
+  /// The lazy-close query on GET (AC 6) and the retention sweep.
+  @@index([status, expiresAt])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      ChatRole
+  /// AC 11: full content in order, never a summary — M7 reads these.
+  content   String
+  sequence  Int
+  /// AC 12: the stream was aborted and this is what had been generated.
+  partial   Boolean  @default(false)
+  /// AC 13: the output token cap was hit.
+  truncated Boolean  @default(false)
+  /// AC 21: this assistant turn is the fixed safety response, not model output.
+  safetyResponse Boolean @default(false)
+  /// ADR-0013 §3: client-supplied idempotency key on USER messages, NULL on
+  /// assistant messages. Postgres treats NULLs as distinct in a unique index, so
+  /// many assistant rows coexist without a partial index. A retried turn is a
+  /// P2002 the handler converts into a replay, never a duplicate.
+  clientTurnId String?
+
+  inputTokens      Int?
+  outputTokens     Int?
+  /// ADR-0012 §4: persisted from day one. Zero across repeated turns is the ONLY
+  /// signal that the cached prefix is varying.
+  cacheReadTokens  Int?
+  cacheWriteTokens Int?
+
+  createdAt DateTime @default(now())
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, sequence])
+  @@unique([sessionId, clientTurnId])
+  @@index([sessionId, createdAt])
 }
