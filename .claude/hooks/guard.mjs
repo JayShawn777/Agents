@@ -58,9 +58,25 @@ if (["Edit", "Write", "NotebookEdit", "MultiEdit"].includes(tool)) {
 // heredoc all reach the same paths the Edit/Write branch above guards. Without
 // this the rules above are advisory again, just one tool over.
 if (tool === "Bash") {
-  const WRITES = /(>>?|\btee\b|\bsed\s+-i|\btruncate\b|\bopen\(|writeFileSync|writeText|\bdd\b)/;
-  const touchesEnv = /(^|[\s'"`\/])\.env(?!\.example)\b/.test(cmd);
-  if (touchesEnv && WRITES.test(cmd)) {
+  // The write operator must be ADJACENT to the path, not merely present somewhere
+  // on the line. Requiring only co-occurrence blocked read-only commands: a
+  // `grep ... prisma/migrations/ 2>&1` was refused because `2>&1` contains `>`.
+  // A path-shaped fragment is allowed between them so `> "$DIR/.env"` still hits.
+  const writesTo = (pathRe) => {
+    // A redirect must sit immediately before the target, so `2>&1` elsewhere on
+    // the line cannot arm it. A path-shaped fragment may intervene, so
+    // `> "$DIR/.env"` still matches.
+    const redirect = new RegExp(`(?:>>?|\\btee\\b(?:\\s+-a)?)\\s*["'\`]?[\\w./$~{}-]*?${pathRe}`);
+    // In-place editors take their own arguments before the filename, so allow
+    // anything up to the next command separator.
+    const inPlace = new RegExp(`\\b(?:sed\\s+-i|truncate|dd)\\b[^|;&\\n]*?${pathRe}`);
+    // Scripting languages opening the path for writing.
+    const scripted = new RegExp(`(?:open\\(|writeFileSync\\(|writeText\\()[^)]*${pathRe}`);
+    return redirect.test(cmd) || inPlace.test(cmd) || scripted.test(cmd);
+  };
+
+  const ENV_PATH = "\\.env(?!\\.example)\\b";
+  if (writesTo(ENV_PATH)) {
     deny(
       "This command looks like it writes to `.env`, which is the human's file " +
       "and holds real secrets.\nAdd the variable to `.env.example` with a " +
@@ -94,7 +110,7 @@ if (tool === "Bash") {
     }
   }
 
-  if (/prisma\/migrations\//.test(cmd) && WRITES.test(cmd)) {
+  if (writesTo("prisma/migrations/")) {
     deny("That command writes into prisma/migrations/. Applied migrations are immutable — write a new one.");
   }
 
