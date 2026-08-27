@@ -14,7 +14,7 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-27)
 
-**3 of 8 milestones built. 531 tests. All gates green and stable.**
+**3 of 8 milestones built. 537 tests. All gates green and stable.**
 
 A parent can sign up, read the §312.4 notice, give verified consent, add a
 student, upload a worksheet, see its problems extracted and correctable, and
@@ -25,7 +25,7 @@ generate graded practice from them. The retention jobs enforce what
 |---|---|
 | **M0** accounts, consent, deletion | done, reviewed — 52 criteria |
 | **M1** upload, extraction | done, reviewed — 36 criteria |
-| **M2** practice, grading, mastery | built; **routes/auth/retention reviewed** 2026-08-27, frontend + `lib/practice/dto.ts` + ratchet concurrency still unreviewed — 27 criteria |
+| **M2** practice, grading, mastery | built, **reviewed** 2026-08-27 — 27 criteria |
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
 | **M2.5** checkpoints (quizzes) | spec written 2026-08-27, no architecture yet. Not built. |
 | **M3–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
@@ -33,25 +33,27 @@ generate graded practice from them. The retention jobs enforce what
 
 ### Start here, in this order
 
-1. **Finish reviewing M2.** The security surface was reviewed on 2026-08-27:
-   ownership scoping, `withAuth`, answer-key separation and retention coverage
-   all came back clean, and the one real finding (an uncapped attempts route
-   that could buy Anthropic calls in a loop) is fixed. Still unreviewed: the
-   frontend track, `lib/practice/dto.ts`, mastery-ratchet behaviour under real
-   concurrency, and the complete/retry routes.
+1. **M2 is reviewed** (2026-08-27). Three findings, all fixed: an uncapped
+   attempts route that could buy Anthropic calls in a loop (21b72f9), two
+   prompts that let a student address the grader marking them (dcd8f7d), and
+   the retry route missing the Owner+ACTIVE consent gate every other M2
+   mutation had — it could generate new practice for a profile whose parent had
+   withdrawn consent, and it had no test file at all, which is why nobody
+   noticed.
 
-   The prompt-injection surface was examined on 2026-08-27 and is now fenced
-   (`lib/ai/untrusted.ts`, ADR-0011's revision note). The finding worth
-   remembering is not the injection itself but what it reaches: **a student can
-   address the grader that marks them**, and ADR-0010's ratchet makes a
-   resulting inflated `SkillMastery.level` permanent, under a parent report
-   that presents it as evidence. Exfiltration was never the risk — those
-   requests carry a grade level and a subject and nothing else.
+   Verified clean, so nobody re-derives it: ownership scoping on every DAL
+   helper (no IDOR); `withAuth`'s boot-time throw that kills the previous
+   fail-open class; answer-key separation end-to-end — DAL select, the
+   `revealed` gate in `lib/practice/dto.ts`, and the practice page mapping
+   through DTOs before anything crosses to a client component; the mastery
+   ratchet's guarded `updateMany`, whose one race under-counts rather than
+   inflates; and `mastery-strip`, which renders no percentage, score, streak or
+   `n/m` fraction. The carried-forward worry about `mastery-strip` on the
+   student page was unfounded.
 
-   That review also found `MASTERY_MIN_ATTEMPTS_FOR_REPORT` — ADR-0010 §5's
-   evidence floor — **described in two documents and implemented nowhere.** It
-   now exists in `lib/config.ts` ahead of its consumer. **Whoever builds M7
-   must wire it in.**
+   `MASTERY_MIN_ATTEMPTS_FOR_REPORT` now exists in `lib/config.ts` but nothing
+   reads it. **Whoever builds M7 must wire it in.**
+
 2. **Then M2.5** (checkpoints — the quiz/test surface), spec at
    [docs/specs/m2-5-checkpoints.md](docs/specs/m2-5-checkpoints.md). It extends
    M2's machinery and needs its architecture + two ADRs before any code. It is
@@ -125,8 +127,15 @@ and a history question, not just an equation.**
   renders on the student page.
 - **`renderMathText` exists twice**, identically, in `components/uploads/` and
   `lib/math/`. Delete one once both tracks are stable.
-- Four `RETENTION_POLICY` rows and one deletion story per M2 model were added;
-  verify the bijection test still covers every windowed row.
+- Review findings left unfixed, deliberately batched rather than one commit
+  each: the generation hourly cap is per student profile, not per account (an
+  account with five profiles gets five times the spend); `resolveSkill(...)
+  ?.subject ?? "MATH"` and `gradeLevel ?? "GRADE_4"` in the attempts route
+  silently feed the grader wrong context if a skill code ever leaves the
+  taxonomy (unreachable today — all 76 pre-2026-08-27 codes survive in the
+  128-skill bundle — but `TAXONOMY_VERSION` bumping is exactly what makes it
+  reachable); and the reveal route returns 200 with empty strings when an
+  answer key is missing, masking an invariant violation as success.
 
 ### The one thing that is not verified
 

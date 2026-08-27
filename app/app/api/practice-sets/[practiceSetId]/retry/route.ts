@@ -33,6 +33,14 @@ async function resolveOwnedPracticeSet({
  */
 export const POST = withAuth({
   resolveResource: resolveOwnedPracticeSet,
+  // Step 4, the Owner+ACTIVE consent gate. Every other M2 mutation had this
+  // and only retry did not — an omission, not a decision, found in M2's
+  // review on 2026-08-27. It matters more here than almost anywhere: retry
+  // schedules `runPracticeGeneration`, which is an outbound Anthropic call
+  // carrying a child's learner facts, and `runPracticeGeneration` performs no
+  // status check of its own. Without this line a profile whose parent had
+  // WITHDRAWN consent could still have new practice generated for it.
+  requireState: (set) => set.studentProfile.status === "ACTIVE",
   requireFlow: ({ resource }) => resource.status === "FAILED",
   requireFlowMessage: "This practice set isn't in a state that can be retried.",
   bodySchema: practiceSetRetryInputSchema,
