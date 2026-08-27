@@ -1,0 +1,2 @@
+- [Tutor app milestones](project_tutor_milestones.md) — the M0–M7 map and the product constraints every later spec inherits.
+- [Spec calibration](feedback_spec_calibration.md) — 15–25 AC, aggressive non-goals, no legal questions, product vs technical open questions.

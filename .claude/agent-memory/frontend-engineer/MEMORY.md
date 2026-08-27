@@ -1,3 +1,6 @@
 - [Shadcn hidden deps](feedback_shadcn_hidden_deps.md) — `shadcn add` can silently install real npm packages (e.g. sonner+next-themes); diff package.json after every add.
 - [Server action adapters](feedback_server_action_adapters.md) — wrap mismatched backend server-action signatures in a small frontend-owned "use server" adapter instead of editing the backend file.
 - [Parallel track workflow](project_parallel_track_workflow.md) — this repo runs frontend/backend engineers concurrently against a fixed contract; backend files land mid-session, poll briefly rather than blocking.
+- [DTO file off-limits](feedback_dto_off_limits.md) — if lib/schemas/* is scoped out for a task, type a route response locally next to its one consumer instead of adding it to dto.ts.
+- [M1 upload local-dev protocol](project_m1_upload_local_dev_protocol.md) — production vs local-dev upload wire protocols differ; client branches on the token response's `local-inert-token:` prefix, never an env var.
+- [Verify bundle-splitting claims](feedback_verify_bundle_splitting_claims.md) — prove a lazy import is excluded from the initial bundle via `pnpm build` + manifest grep, not just guarded source structure.

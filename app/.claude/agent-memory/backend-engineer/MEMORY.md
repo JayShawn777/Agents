@@ -1,6 +1,0 @@
-- [COPPA ConsentMethod enum research override](coppa-consent-method-enum.md) — research doc superseded plan's TOLL_FREE_CALL/VIDEO_CALL labels
-- [CONSENT_METHODS single source of truth](consent-methods-single-source.md) — port.ts now derives from generated Prisma enum, not a duplicate array
-- [zod v4 accepts Prisma enum objects directly](zod-v4-prisma-enum-pattern.md) — use z.enum(PrismaEnumObject), never z.nativeEnum or a hand-copied array
-- [Prisma 7 auth-adapter silent any](prisma7-auth-adapter-silent-any.md) — @auth/prisma-adapter erases to unchecked any against custom-output Prisma 7 client; hand-write the Adapter
-- [Vitest server-only shim](vitest-server-only-shim.md) — server-only needs a Vitest alias shim; route-file tests must mock lib/auth/dal and lib/db
-- [Vitest local DB integration tests](vitest-local-db-integration-tests.md) — .env's DATABASE_URL is the wrong protocol for lib/db.ts; Vitest needs dotenv + a URL-decode helper

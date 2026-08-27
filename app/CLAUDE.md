@@ -12,8 +12,36 @@ app reads it, generates similar practice, tutors them through it in chat,
 explains with interactive whiteboard lessons narrated by a chosen voice, and
 adapts to that student over time.
 
-No features have been built yet — `app/page.tsx` is still the starter page.
-Planning and research live in `docs/`; start at [docs/README.md](docs/README.md).
+## Where the build is (2026-08-27)
+
+**M0 and M1 are built, reviewed and green. 377 tests. 2 of 8 milestones.**
+
+A parent can sign up, read the §312.4 notice, give verified consent, add a
+student, upload a worksheet, and see its problems extracted and correctable.
+The retention jobs enforce what `/retention` publishes.
+
+| | |
+|---|---|
+| **M0** accounts, consent, deletion | done — 52 criteria |
+| **M1** upload, extraction | done — 36 criteria |
+| **M2–M7** | specs written (137 criteria), architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. **Not built.** |
+
+**Next:** build M2 (practice and mastery). Its contract is fixed in the M2–M7
+plan; M4–M7 are shape-only until the measurements in that plan's §9 are taken.
+
+### The one thing that is not verified
+
+**No worksheet has ever been put in front of the model.** Every extraction test
+mocks it. `ANTHROPIC_API_KEY` is unset. Two milestones now stand on an
+assumption nobody has tested, and M2's grading plus M7's parent report stack on
+top of it. Setting that key and running one real extraction is the highest-value
+hour available in this project.
+
+Storage runs on a local filesystem adapter (`STORAGE_DRIVER=local`); the Vercel
+Blob implementation is unbuilt and its placeholder throws.
+
+Start at [docs/README.md](docs/README.md); read
+[docs/retros/m0-m1.md](docs/retros/m0-m1.md) before running the pipeline.
 
 Because the app tutors minors, anything touching student data carries **COPPA**
 consent and retention obligations. Treat uploaded schoolwork as sensitive
