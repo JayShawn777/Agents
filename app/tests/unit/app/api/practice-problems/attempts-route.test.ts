@@ -45,7 +45,7 @@ function problem(overrides: Record<string, unknown> = {}) {
     text: "What is 1/4 + 1/4?",
     answerFormat: "FRACTION",
     attempts: [] as { revealed: boolean; result: string }[],
-    practiceSet: { id: "set_1", status: "READY", studentProfileId: "sp_1", studentProfile: { status: "ACTIVE", gradeLevel: "GRADE_4" } },
+    practiceSet: { id: "set_1", kind: "PRACTICE", status: "READY", studentProfileId: "sp_1", studentProfile: { status: "ACTIVE", gradeLevel: "GRADE_4" } },
     ...overrides,
   };
 }
@@ -80,7 +80,7 @@ it("404s cross-account / nonexistent problem", async () => {
 
 it("403s a non-ACTIVE profile, before the body would even matter", async () => {
   dalMock.requirePracticeProblem.mockResolvedValue(
-    problem({ practiceSet: { id: "set_1", status: "READY", studentProfileId: "sp_1", studentProfile: { status: "CONSENT_WITHDRAWN", gradeLevel: "GRADE_4" } } }),
+    problem({ practiceSet: { id: "set_1", kind: "PRACTICE", status: "READY", studentProfileId: "sp_1", studentProfile: { status: "CONSENT_WITHDRAWN", gradeLevel: "GRADE_4" } } }),
   );
   const res = await POST(req({ answer: "1/2" }), ctx());
   expect(res.status).toBe(403);
@@ -89,7 +89,7 @@ it("403s a non-ACTIVE profile, before the body would even matter", async () => {
 
 it("409s against a GENERATING or FAILED set", async () => {
   dalMock.requirePracticeProblem.mockResolvedValue(
-    problem({ practiceSet: { id: "set_1", status: "FAILED", studentProfileId: "sp_1", studentProfile: { status: "ACTIVE", gradeLevel: "GRADE_4" } } }),
+    problem({ practiceSet: { id: "set_1", kind: "PRACTICE", status: "FAILED", studentProfileId: "sp_1", studentProfile: { status: "ACTIVE", gradeLevel: "GRADE_4" } } }),
   );
   const res = await POST(req({ answer: "1/2" }), ctx());
   expect(res.status).toBe(409);
@@ -193,4 +193,73 @@ it("an unparseable answer submitted in a loop cannot outrun the cap — the abus
 
   expect(res.status).toBe(429);
   expect(dbMock.attempt.create).not.toHaveBeenCalled();
+});
+
+// ─────────── M2.5 AC 11: a checkpoint takes one answer per problem ───────────
+
+function checkpointProblem(attempts: { revealed: boolean; result: string }[] = []) {
+  return problem({
+    attempts,
+    practiceSet: {
+      id: "set_1",
+      kind: "CHECKPOINT",
+      status: "IN_PROGRESS",
+      studentProfileId: "sp_1",
+      studentProfile: { status: "ACTIVE", gradeLevel: "GRADE_4" },
+    },
+  });
+}
+
+it("accepts the FIRST answer to a checkpoint problem", async () => {
+  dalMock.requirePracticeProblem.mockResolvedValue(checkpointProblem());
+  const res = await POST(req({ answer: "0.5" }), ctx());
+
+  expect(res.status).toBe(201);
+  expect(dbMock.attempt.create).toHaveBeenCalledOnce();
+});
+
+it("refuses the SECOND answer to a checkpoint problem — one try each", async () => {
+  dalMock.requirePracticeProblem.mockResolvedValue(
+    checkpointProblem([{ revealed: false, result: "INCORRECT" }]),
+  );
+  const res = await POST(req({ answer: "0.5" }), ctx());
+
+  expect(res.status).toBe(409);
+  expect(dbMock.attempt.create).not.toHaveBeenCalled();
+});
+
+it("a practice problem still gets its full run of attempts — the cap is checkpoint-only", async () => {
+  dalMock.requirePracticeProblem.mockResolvedValue(
+    problem({ attempts: [{ revealed: false, result: "INCORRECT" }] }),
+  );
+  expect((await POST(req({ answer: "0.5" }), ctx())).status).toBe(201);
+});
+
+it("the checkpoint refusal explains the checkpoint, and never says the child has had plenty of tries", async () => {
+  dalMock.requirePracticeProblem.mockResolvedValue(
+    checkpointProblem([{ revealed: false, result: "CORRECT" }]),
+  );
+  const body = (await (await POST(req({ answer: "0.5" }), ctx())).json()) as { error: { message: string } };
+
+  expect(body.error.message).toMatch(/one try each/i);
+  expect(body.error.message).not.toMatch(/good go|plenty|fail|wrong/i);
+});
+
+it("a set that is still GENERATING gets its own reason, not the attempt-cap copy", async () => {
+  dalMock.requirePracticeProblem.mockResolvedValue(
+    problem({
+      practiceSet: {
+        id: "set_1",
+        kind: "PRACTICE",
+        status: "GENERATING",
+        studentProfileId: "sp_1",
+        studentProfile: { status: "ACTIVE", gradeLevel: "GRADE_4" },
+      },
+    }),
+  );
+  const res = await POST(req({ answer: "0.5" }), ctx());
+  const body = (await res.json()) as { error: { message: string } };
+
+  expect(res.status).toBe(409);
+  expect(body.error.message).toMatch(/isn't ready yet/i);
 });

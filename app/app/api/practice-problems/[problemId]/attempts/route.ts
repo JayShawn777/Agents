@@ -44,26 +44,38 @@ async function resolveOwnedProblem({
 export const POST = withAuth({
   resolveResource: resolveOwnedProblem,
   requireState: (problem) => problem.practiceSet.studentProfile.status === "ACTIVE",
-  // Step 5, two preconditions sharing one 409.
+  // Step 5, three preconditions, each with its own reason.
   //
   //   a) A set still generating, or failed, has nothing to submit against.
-  //   b) `MAX_ATTEMPTS_PER_PROBLEM` — the ceiling `ATTEMPTS_BEFORE_REVEAL`
+  //   b) A CHECKPOINT problem takes exactly ONE answer (M2.5 AC 11). That is
+  //      the single behavioural difference between a checkpoint and practice,
+  //      and it lives here rather than in the schema (ADR-0017).
+  //   c) `MAX_ATTEMPTS_PER_PROBLEM` — the ceiling `ATTEMPTS_BEFORE_REVEAL`
   //      never was. Without it a problem accepts answers forever, which is
   //      both the spec's named product failure (a child grinding one problem
   //      "stuck in a loop feeling stupid") and an unbounded bill, since any
   //      answer the normalizer cannot decide reaches Anthropic (ADR-0011 §2).
   //
-  // They share `requireFlowMessage` because `withAuth` takes one static
-  // string per gate. The copy is written for (b), which is the only one a
-  // child can actually reach: (a) needs a set that the practice page will not
-  // render an answer input for at all, so it is a race or a hand-rolled
-  // request, not a path through the UI.
+  // Until 2026-08-27 these shared one static string written for (c), which was
+  // tolerable while (a) was unreachable through the UI. (b) makes it
+  // untenable: telling a child they have given it "a good go" after one answer
+  // is worse than unhelpful. `requireFlowMessage` takes a function of the
+  // resource now — the branches below must stay in the same order as the
+  // predicate above, or a child gets the wrong explanation.
   requireFlow: ({ resource }) =>
     resource.practiceSet.status !== "FAILED" &&
     resource.practiceSet.status !== "GENERATING" &&
+    !(resource.practiceSet.kind === "CHECKPOINT" && resource.attempts.length >= 1) &&
     resource.attempts.length < MAX_ATTEMPTS_PER_PROBLEM,
-  requireFlowMessage:
-    "You've given this one a good go. Take a look at how it's done, then try the next problem.",
+  requireFlowMessage: (problem) => {
+    if (problem.practiceSet.status === "FAILED" || problem.practiceSet.status === "GENERATING") {
+      return "This isn't ready yet — give it a moment and refresh.";
+    }
+    if (problem.practiceSet.kind === "CHECKPOINT") {
+      return "That's your answer for this one. A checkpoint takes one try each — on to the next.";
+    }
+    return "You've given this one a good go. Take a look at how it's done, then try the next problem.";
+  },
   bodySchema: submitAttemptInputSchema,
   // Step 7: the hourly attempt cap, counted per student profile against the
   // existing `@@index([studentProfileId, createdAt])`. This route reaches

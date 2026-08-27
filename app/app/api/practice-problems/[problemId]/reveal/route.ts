@@ -42,10 +42,18 @@ export const POST = withAuth({
   resolveResource: resolveOwnedProblem,
   requireState: (problem) => problem.practiceSet.studentProfile.status === "ACTIVE",
   requireFlow: ({ resource }) => {
+    // M2.5 AC 11 / ADR-0017. A checkpoint has no reveal at all — it takes one
+    // answer per problem and shows how it went at the end. Checked BEFORE the
+    // attempt threshold so the refusal explains what a checkpoint is rather
+    // than telling a child to keep trying at something that will never open.
+    if (resource.practiceSet.kind === "CHECKPOINT") return false;
     const incorrectCount = resource.attempts.filter((attempt) => attempt.result === "INCORRECT").length;
     return incorrectCount >= ATTEMPTS_BEFORE_REVEAL;
   },
-  requireFlowMessage: "Keep trying a little longer before we show you how it's done.",
+  requireFlowMessage: (problem) =>
+    problem.practiceSet.kind === "CHECKPOINT"
+      ? "A checkpoint doesn't show worked answers — it's just a check. You'll see how you did at the end."
+      : "Keep trying a little longer before we show you how it's done.",
   bodySchema: revealPracticeProblemInputSchema,
   handler: async ({ resource: problem }) => {
     const key = await requirePracticeAnswerKey(problem.id);

@@ -29,7 +29,7 @@ function problem(overrides: Record<string, unknown> = {}) {
   return {
     id: "prob_1",
     attempts: [] as { id: string; result: string; revealed: boolean }[],
-    practiceSet: { studentProfile: { status: "ACTIVE" } },
+    practiceSet: { kind: "PRACTICE", studentProfile: { status: "ACTIVE" } },
     ...overrides,
   };
 }
@@ -95,4 +95,32 @@ it("is idempotent — calling it again once already revealed still succeeds and 
   const res = await POST(req(), ctx());
   expect(res.status).toBe(200);
   expect(dbMock.attempt.update).not.toHaveBeenCalled();
+});
+
+// ─────────── M2.5 AC 11: a checkpoint has no reveal ───────────
+
+it("409s a checkpoint problem however many times it was answered wrong", async () => {
+  dalMock.requirePracticeProblem.mockResolvedValue(
+    problem({
+      attempts: Array.from({ length: 5 }, () => ({ revealed: false, result: "INCORRECT" })),
+      practiceSet: { kind: "CHECKPOINT", studentProfile: { status: "ACTIVE" } },
+    }),
+  );
+  const res = await POST(req(), ctx());
+
+  expect(res.status).toBe(409);
+  expect(dalMock.requirePracticeAnswerKey).not.toHaveBeenCalled();
+});
+
+it("the checkpoint refusal says what a checkpoint is, rather than telling a child to keep trying", async () => {
+  dalMock.requirePracticeProblem.mockResolvedValue(
+    problem({
+      attempts: Array.from({ length: 5 }, () => ({ revealed: false, result: "INCORRECT" })),
+      practiceSet: { kind: "CHECKPOINT", studentProfile: { status: "ACTIVE" } },
+    }),
+  );
+  const body = (await (await POST(req(), ctx())).json()) as { error: { message: string } };
+
+  expect(body.error.message).toMatch(/just a check/i);
+  expect(body.error.message).not.toMatch(/keep trying/i);
 });
