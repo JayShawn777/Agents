@@ -6,7 +6,11 @@ import { statSync } from "node:fs";
 // break them by simply not reading carefully. Exit 2 blocks the tool call and
 // feeds stderr back to the agent so it can choose a different approach.
 //
-// Escape hatch: CLAUDE_SKIP_GUARD=1 (for deliberate, human-driven exceptions).
+// Escape hatch: CLAUDE_SKIP_GUARD=1 in the ENVIRONMENT of the Claude Code
+// process — NOT as an inline prefix on the blocked command. The hook runs in a
+// separate process and never sees an inline assignment, so `CLAUDE_SKIP_GUARD=1
+// <command>` is blocked exactly like the bare command. That was wrong in this
+// file's own error message for a while, which sent the reader in a circle.
 
 const read = async () => {
   let raw = "";
@@ -20,7 +24,13 @@ if (process.env.CLAUDE_SKIP_GUARD === "1") process.exit(0);
 const tool = payload?.tool_name ?? "";
 const input = payload?.tool_input ?? {};
 const file = input.file_path ?? "";
-const cmd = input.command ?? "";
+const rawCmd = input.command ?? "";
+
+// Only the command itself is a command. A heredoc body is DATA — a commit
+// message, or a file being written — and scanning it produced a false block on
+// a message that merely mentioned a filename next to a write verb. Everything
+// from the first heredoc operator onward is stripped before any pattern runs.
+const cmd = rawCmd.split(/<<-?\s*['"]?[A-Za-z_][A-Za-z0-9_]*['"]?/)[0];
 
 const deny = (why) => {
   console.error(`Blocked by .claude/hooks/guard.mjs\n\n${why}`);
@@ -55,8 +65,9 @@ if (tool === "Bash") {
       "This command looks like it writes to `.env`, which is the human's file " +
       "and holds real secrets.\nAdd the variable to `.env.example` with a " +
       "placeholder and ask them to fill it in.\n" +
-      "(If this is deliberate setup the human asked for, re-run with " +
-      "CLAUDE_SKIP_GUARD=1 and say so out loud.)"
+      "(Deliberate setup? Use the Edit or Write tool on the specific file, or " +
+      "ask the human to export CLAUDE_SKIP_GUARD=1 — an inline prefix does not " +
+      "reach this hook's process.)"
     );
   }
   // Staging a directory sweeps in whatever a parallel agent happens to be

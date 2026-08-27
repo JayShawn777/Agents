@@ -68,16 +68,27 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 
 ### ADRs
 - [ADR-0001](adr/0001-record-architecture-decisions.md) — Record architecture decisions (Accepted)
-- [ADR-0002](adr/0002-passwordless-auth-with-authjs-and-database-sessions.md) — Passwordless email sign-in with Auth.js v5 and database sessions (Proposed, references revised 2026-08-26)
-- [ADR-0003](adr/0003-private-vercel-blob-with-client-direct-upload.md) — Private Vercel Blob store with client-direct upload behind a storage port (Proposed, references revised 2026-08-26)
+- [ADR-0002](adr/0002-passwordless-auth-with-authjs-and-database-sessions.md) — Passwordless email sign-in with Auth.js v5 and database sessions (Proposed)
+- [ADR-0003](adr/0003-private-vercel-blob-with-client-direct-upload.md) — Private Vercel Blob store with client-direct upload behind a storage port (Proposed)
 - [ADR-0004](adr/0004-client-side-heic-conversion-with-lazy-loaded-heic-to.md) — Convert HEIC to JPEG in the browser, with a lazily loaded `heic-to` (Proposed)
 - [ADR-0005](adr/0005-extracted-problem-model-and-structured-output-contract.md) — Extracted problems are a zod-validated structured output storing LaTeX (Proposed)
-- [ADR-0006](adr/0006-route-handlers-for-mutations-not-server-actions.md) — All mutations are route handlers; server actions are used only for Auth.js (Proposed, revised 2026-08-26 — adds the check-order contract)
-- [ADR-0007](adr/0007-deletion-order-append-only-consent-and-store-enumerating-reconciliation.md) — Blob-first deletion, append-only consent, and a store-enumerating reconciler (Proposed, **revised 2026-08-26 — three-way deletion split and the new consent statuses**)
+- [ADR-0006](adr/0006-route-handlers-for-mutations-not-server-actions.md) — All mutations are route handlers; server actions are used only for Auth.js (Proposed)
+- [ADR-0007](adr/0007-deletion-order-append-only-consent-and-store-enumerating-reconciliation.md) — Blob-first deletion, append-only consent, and a store-enumerating reconciler (Proposed)
 - [ADR-0008](adr/0008-swappable-verifiable-parental-consent-method.md) — Verifiable parental consent is a swappable, recorded method behind one interface (Proposed)
+- [ADR-0009](adr/0009-bundled-common-core-taxonomy-with-closed-slate-skill-selection.md) — A bundled Common Core subset, and the model picks from a closed slate (Proposed)
+- [ADR-0010](adr/0010-mastery-as-a-monotonic-ratchet-over-per-skill-counters.md) — Mastery is a monotonic ratchet over per-skill counters, and review scheduling is a separate axis (Proposed)
+- [ADR-0011](adr/0011-two-stage-answer-grading-with-server-only-answer-keys.md) — Grade with a deterministic normaliser first and the model second, and keep answer keys in their own table (Proposed)
+- [ADR-0012](adr/0012-bounded-chat-sessions-with-a-snapshotted-learner-context.md) — Chat sessions are bounded at open, and the learner context is snapshotted onto the session row (Proposed)
+- [ADR-0013](adr/0013-ndjson-chat-streaming-with-client-supplied-turn-keys.md) — Chat streams as NDJSON from a route handler, and a turn is idempotent on a client-supplied key (Proposed)
+- [ADR-0014](adr/0014-lessonscript-as-one-versioned-validated-json-document.md) — A LessonScript is one validated JSON document on a version row, over a closed primitive vocabulary and a normalised canvas (Proposed)
+- [ADR-0015](adr/0015-per-profile-narration-cache-instead-of-a-global-content-address.md) — Narration audio is cached per student profile, not globally content-addressed (Proposed)
 
 ### Plans
-- [m0-m1-implementation.md](plans/m0-m1-implementation.md) — Schema, API contract, component tree, build order, and the storage spike (revised 2026-08-26 against the 52-AC M0 spec)
+- [m0-m1-implementation.md](plans/m0-m1-implementation.md) — Schema, API contract, component tree, build order, and the storage spike
+- [m2-m7-implementation.md](plans/m2-m7-implementation.md) — Schema for all six remaining milestones; full contract for M2-M3, shape only beyond (revised 2026-08-26 against the 52-AC M0 spec)
+
+### Retros
+- [m0-m1.md](retros/m0-m1.md) — What the pipeline got wrong across the first two milestones, and what changed
 
 ### Research
 - [anthropic-api.md](research/anthropic-api.md) — Claude API: vision, PDF, structured output, streaming, caching, pricing
