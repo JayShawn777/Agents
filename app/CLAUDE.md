@@ -14,20 +14,43 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-27)
 
-**M0 and M1 are built, reviewed and green. 377 tests. 2 of 8 milestones.**
+**3 of 8 milestones built. 501 tests. All gates green and stable.**
 
 A parent can sign up, read the §312.4 notice, give verified consent, add a
-student, upload a worksheet, and see its problems extracted and correctable.
-The retention jobs enforce what `/retention` publishes.
+student, upload a worksheet, see its problems extracted and correctable, and
+generate graded practice from them. The retention jobs enforce what
+`/retention` publishes.
 
 | | |
 |---|---|
-| **M0** accounts, consent, deletion | done — 52 criteria |
-| **M1** upload, extraction | done — 36 criteria |
-| **M2–M7** | specs written (137 criteria), architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. **Not built.** |
+| **M0** accounts, consent, deletion | done, reviewed — 52 criteria |
+| **M1** upload, extraction | done, reviewed — 36 criteria |
+| **M2** practice, grading, mastery | **built, NOT reviewed** — 27 criteria |
+| **M3–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
 
-**Next:** build M2 (practice and mastery). Its contract is fixed in the M2–M7
-plan; M4–M7 are shape-only until the measurements in that plan's §9 are taken.
+### Start here, in this order
+
+1. **Review M2.** It has had no code review and no security review. Both
+   previous reviews returned blockers in code that looked finished — an
+   authorization helper that failed open, and a route that destroyed consent
+   evidence. Assume this one will too.
+2. **Then M3** (chat tutor). Its contract is fixed in the M2–M7 plan.
+   M4–M7 are shape-only until the measurements in that plan's §9 are taken.
+
+### Known gaps, carried forward
+
+- **A student cannot report a bad question.** No endpoint, no control. Extraction
+  accuracy is unmeasured and generation quality unproven; a child saying "this
+  makes no sense" is the fastest signal available, and there is nowhere to put
+  it.
+- **There is no child/parent separation in auth** — M0 deliberately has no
+  student login. So "a child never sees a score that can fall" is enforced by
+  which screen renders what, not by permissions. `mastery-strip` currently
+  renders on the student page.
+- **`renderMathText` exists twice**, identically, in `components/uploads/` and
+  `lib/math/`. Delete one once both tracks are stable.
+- Four `RETENTION_POLICY` rows and one deletion story per M2 model were added;
+  verify the bijection test still covers every windowed row.
 
 ### The one thing that is not verified
 
