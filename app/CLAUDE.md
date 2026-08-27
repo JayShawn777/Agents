@@ -54,23 +54,20 @@ generate graded practice from them. The retention jobs enforce what
    `MASTERY_MIN_ATTEMPTS_FOR_REPORT` now exists in `lib/config.ts` but nothing
    reads it. **Whoever builds M7 must wire it in.**
 
-2. **Then M2.5** (checkpoints — the quiz/test surface). Spec, implementation
-   plan and both ADRs are written; the blocking question is resolved. **Start at
-   slice 1** in [docs/plans/m2-5-checkpoints-implementation.md](docs/plans/m2-5-checkpoints-implementation.md)
-   §6 and do not merge two slices — the plan is sliced to the retro's six-file
-   rule on purpose.
+2. **Finish M2.5.** Slices 1-5 of
+   [docs/plans/m2-5-checkpoints-implementation.md](docs/plans/m2-5-checkpoints-implementation.md)
+   §6 are done and the backend is complete: schema and CHECK constraint,
+   composition, generation, both routes, and the two behavioural deltas. Slice 3
+   needed no work — the shared DTO change landed inside slice 1.
 
-   Two things in that plan are easy to skip and expensive to skip. The migration
-   carries a **hand-written CHECK constraint that Prisma cannot express in
-   `schema.prisma`**, so a reader of the schema alone will not see it (ADR-0017);
-   it needs the integration test that proves the database rejects both forbidden
-   combinations. And **slice 3, the shared DTO change, must land before either
-   engineer starts** — shared files landing first is the whole reason the
-   parallel split is safe.
+   **Slice 6 (frontend) is next.** Its acceptance test is the one that matters
+   in this milestone: no child-facing payload may contain a value lower than one
+   previously rendered (spec AC 13). **Slice 7** — the `ExtractedProblem.language`
+   column from ADR-0016 — is independent of everything else and can go any time;
+   the schema is already migrated, so it is prompt and validation work only.
 
-   That migration also carries `ExtractedProblem.language` from ADR-0016, which
-   has nothing to do with checkpoints and is batched only because M2's schema is
-   still unshipped and applied migrations cannot be edited.
+   Slice 5 was planned as one unit and shipped as 5a/5b/5c. Seven files with
+   three unrelated concerns is the mis-scoping retro lesson 10 is about.
 
 3. **Then M3** (chat tutor). Its contract is fixed in the M2–M7 plan.
    M4–M7 are shape-only until the measurements in that plan's §9 are taken.
