@@ -14,12 +14,22 @@ const dbMock = {
     findMany: vi.fn(async () => [] as unknown[]),
     deleteMany: vi.fn(),
   },
+  // `DELETE` now runs through `deleteStudentData` (`lib/deletion/service.ts`,
+  // B13), which reads `Upload` rows before anything else (ADR-0007 §1,
+  // blobs-first). Defaults to no uploads, matching every test below: none
+  // of them exercise the blob-deletion half, which
+  // `tests/unit/lib/deletion/service.test.ts` covers directly against a
+  // fake `StoragePort`.
+  upload: {
+    findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
+    updateMany: vi.fn(),
+  },
   user: { findMany: vi.fn(async () => [] as unknown[]) },
   consentAuditArtifact: { createMany: vi.fn() },
   deletionAudit: { create: vi.fn() },
-  // `DELETE` (`app/api/students/[studentId]/route.ts`) uses the interactive
-  // form, `db.$transaction(async (tx) => {...})` — `tx` is just `dbMock`
-  // itself here, since every model method above is already a `vi.fn()`.
+  // `deleteStudentData`'s row-destroying phase uses the interactive form,
+  // `db.$transaction(async (tx) => {...})` — `tx` is just `dbMock` itself
+  // here, since every model method above is already a `vi.fn()`.
   $transaction: vi.fn(async (arg: unknown) => {
     if (typeof arg === "function") {
       return (arg as (tx: typeof dbMock) => Promise<unknown>)(dbMock);
