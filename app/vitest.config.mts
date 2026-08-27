@@ -22,21 +22,55 @@ import { resolve } from "node:path";
  * the `jsdom` dependency and the `react()` plugin stay configured for when
  * one is added.
  */
+const shared = {
+  environment: "node" as const,
+  globals: true,
+  setupFiles: ["./vitest.setup.ts"],
+  exclude: ["tests/e2e/**", "node_modules/**"],
+};
+
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: "node",
-    globals: true,
-    setupFiles: ["./vitest.setup.ts"],
-    include: ["tests/unit/**/*.{test,spec}.{ts,tsx}", "tests/integration/**/*.{test,spec}.{ts,tsx}"],
-    exclude: ["tests/e2e/**", "node_modules/**"],
+    projects: [
+      {
+        plugins: [react()],
+        test: {
+          ...shared,
+          name: "unit",
+          include: ["tests/unit/**/*.{test,spec}.{ts,tsx}"],
+        },
+        resolve: { alias: sharedAlias() },
+      },
+      {
+        plugins: [react()],
+        test: {
+          ...shared,
+          name: "integration",
+          include: ["tests/integration/**/*.{test,spec}.{ts,tsx}"],
+          // Integration tests share ONE local Postgres. Run in parallel they
+          // corrupt each other's connection state — Postgres returns
+          // `08P01: bind message supplies N parameters, but prepared statement
+          // "" requires 0`, which reads like a client bug and is not one.
+          //
+          // This was dismissed twice as a transient timeout "under load"
+          // before the Stop hook caught it as a hard failure. It was never
+          // transient; it was two files reaching the same connection at once.
+          fileParallelism: false,
+          maxConcurrency: 1,
+        },
+        resolve: { alias: sharedAlias() },
+      },
+    ],
   },
-  resolve: {
-    alias: {
-      "@": resolve(import.meta.dirname, "."),
-      // `server-only` throws when imported outside Next's RSC compilation
-      // step (see tests/unit/mocks/server-only.ts for why this exists).
-      "server-only": resolve(import.meta.dirname, "./tests/unit/mocks/server-only.ts"),
-    },
-  },
+  resolve: { alias: sharedAlias() },
 });
+
+function sharedAlias() {
+  return {
+    "@": resolve(import.meta.dirname, "."),
+    // `server-only` throws when imported outside Next's RSC compilation
+    // step (see tests/unit/mocks/server-only.ts for why this exists).
+    "server-only": resolve(import.meta.dirname, "./tests/unit/mocks/server-only.ts"),
+  };
+}
