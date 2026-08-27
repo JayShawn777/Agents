@@ -19,6 +19,7 @@ const JOB_STEP_BY_RETENTION_KEY: Record<string, string> = {
   CONSENT_PSEUDONYM: "enforce-retention.ts — ConsentAuditArtifact.purgeAfter",
   CLOSED_ACCOUNT: "purge-closed-accounts.ts — deleteStudentData per profile, then the User row",
   DELETION_AUDIT: "enforce-retention.ts — DeletionAudit.completedAt",
+  CHAT_TRANSCRIPT: "enforce-retention.ts — ChatSession.openedAt; ChatMessage cascades",
 };
 
 /**

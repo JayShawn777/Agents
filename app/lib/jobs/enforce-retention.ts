@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import type { StoragePort } from "@/lib/storage/port";
 import type { Clock } from "@/lib/jobs/clock";
 import {
+  CHAT_TRANSCRIPT_RETENTION_DAYS,
   SOURCE_FILE_RETENTION_DAYS_AFTER_EXTRACTION,
   DELETION_AUDIT_RETENTION_DAYS,
   RETENTION_POLICY,
@@ -127,6 +128,17 @@ export async function enforceRetention(storage: StoragePort, clock: Clock): Prom
     where: { completedAt: { not: null, lte: auditCutoff } },
   });
 
+  // ── CHAT_TRANSCRIPT ── whole sessions past their window; ChatMessage rows
+  // cascade from ChatSession, so deleting the session is the whole step.
+  //
+  // Anchored on `openedAt` rather than `closedAt`: a session abandoned mid
+  // conversation may never be closed at all, and anchoring on a column that can
+  // stay null forever is how a retention window quietly becomes infinite.
+  const chatCutoff = new Date(now.getTime() - CHAT_TRANSCRIPT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const chatResult = await db.chatSession.deleteMany({
+    where: { openedAt: { lte: chatCutoff } },
+  });
+
   // ── Unconsumed consent challenges (endpoint 27's extra scope, not a
   // RETENTION_POLICY entry — see docstring). ──
   const challengeResult = await db.consentVerificationChallenge.deleteMany({
@@ -140,6 +152,7 @@ export async function enforceRetention(storage: StoragePort, clock: Clock): Prom
       DIRECT_NOTICE: 0,
       CONSENT_PSEUDONYM: pseudonymResult.count,
       DELETION_AUDIT: auditResult.count,
+      CHAT_TRANSCRIPT: chatResult.count,
       CONSENT_CHALLENGE_EXPIRED: challengeResult.count,
     },
   };

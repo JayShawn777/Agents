@@ -36,12 +36,17 @@ const dbMock = {
   consentVerificationChallenge: {
     deleteMany: vi.fn(async () => ({ count: 0 })),
   },
+  chatSession: {
+    deleteMany:
+      vi.fn<(args: { where: { openedAt: { lte: Date } } }) => Promise<{ count: number }>>(async () => ({ count: 0 })),
+  },
 };
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 
 const { enforceRetention } = await import("@/lib/jobs/enforce-retention");
-const { SOURCE_FILE_RETENTION_DAYS_AFTER_EXTRACTION, DELETION_AUDIT_RETENTION_DAYS } = await import("@/lib/config");
+const { SOURCE_FILE_RETENTION_DAYS_AFTER_EXTRACTION, DELETION_AUDIT_RETENTION_DAYS, CHAT_TRANSCRIPT_RETENTION_DAYS } =
+  await import("@/lib/config");
 
 const NOW = new Date("2026-08-27T12:00:00.000Z");
 const clock = () => NOW;
@@ -57,6 +62,7 @@ beforeEach(() => {
   dbMock.consentAuditArtifact.deleteMany.mockResolvedValue({ count: 0 });
   dbMock.deletionAudit.deleteMany.mockResolvedValue({ count: 0 });
   dbMock.consentVerificationChallenge.deleteMany.mockResolvedValue({ count: 0 });
+  dbMock.chatSession.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 describe("enforceRetention — SOURCE_FILE, extractedAt anchor (plan §7: never createdAt)", () => {
@@ -216,4 +222,38 @@ describe("enforceRetention — DIRECT_NOTICE plan gap", () => {
     const result = await enforceRetention(createFakeStorage([]), clock);
     expect(result.byCategory.DIRECT_NOTICE).toBe(0);
   });
+});
+
+// ─────────────── M3: CHAT_TRANSCRIPT ───────────────
+
+describe("CHAT_TRANSCRIPT", () => {
+  it("deletes sessions past the window and reports how many", async () => {
+    dbMock.chatSession.deleteMany.mockResolvedValue({ count: 4 });
+
+    const result = await enforceRetention(createFakeStorage([]), clock);
+
+    expect(result.byCategory.CHAT_TRANSCRIPT).toBe(4);
+  });
+
+  it("anchors on openedAt, not closedAt — a session abandoned mid-conversation may never close", async () => {
+    // Anchoring on a column that can stay null forever is how a retention
+    // window quietly becomes infinite.
+    await enforceRetention(createFakeStorage([]), clock);
+
+    const where = dbMock.chatSession.deleteMany.mock.calls[0][0].where as {
+      openedAt: { lte: Date };
+      closedAt?: unknown;
+    };
+    expect(where.openedAt.lte).toBeInstanceOf(Date);
+    expect(where.closedAt).toBeUndefined();
+  });
+
+  it("cuts off exactly CHAT_TRANSCRIPT_RETENTION_DAYS before now", async () => {
+    await enforceRetention(createFakeStorage([]), clock);
+
+    const where = dbMock.chatSession.deleteMany.mock.calls[0][0].where as { openedAt: { lte: Date } };
+    const expected = NOW.getTime() - CHAT_TRANSCRIPT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    expect(where.openedAt.lte.getTime()).toBe(expected);
+  });
+
 });

@@ -109,6 +109,20 @@ export const ACCOUNT_CLOSURE_RECOVERY_DAYS = 30;
  */
 export const SOURCE_FILE_RETENTION_DAYS_AFTER_EXTRACTION = 14;
 
+/**
+ * M3 AC 16 / plan §7.2 — ASSUMPTION. How long a chat transcript survives its
+ * session's `openedAt`.
+ *
+ * Deliberately WINDOWED rather than "life of the ACTIVE profile", which is what
+ * every other M2/M2.5 student-data key uses. A transcript is a verbatim record
+ * of a child talking, including whatever they typed while confused or upset,
+ * and its usefulness decays fast — M7 reads mastery counters and summaries, not
+ * two-month-old chat logs. Keeping it for the life of the profile would mean
+ * keeping the most sensitive thing the app stores for the longest time, for the
+ * least benefit.
+ */
+export const CHAT_TRANSCRIPT_RETENTION_DAYS = 180;
+
 /** M0 AC 47 — ASSUMPTION. How long a `DeletionAudit` row survives after `completedAt`. */
 export const DELETION_AUDIT_RETENTION_DAYS = 365;
 
@@ -625,5 +639,13 @@ export const RETENTION_POLICY = [
       "The durable record of what a student can and cannot yet do, which is the whole product's value; kept for as long as the profile is active. Removed only on profile deletion, never when the extraction it was practised from is deleted (ADR-0010 §6).",
     windowDays: null,
     note: "life of the ACTIVE profile",
+  },
+  {
+    key: "CHAT_TRANSCRIPT",
+    purpose: "The full text of a tutoring conversation — everything the student typed and everything the tutor replied (ChatSession, ChatMessage).",
+    businessNeed:
+      "Lets an account owner read what their child was told, which is the only way to check the tutoring is any good. Windowed rather than kept for the life of the profile: it is the most sensitive record the app holds and the one whose usefulness fades fastest.",
+    windowDays: CHAT_TRANSCRIPT_RETENTION_DAYS,
+    anchor: "openedAt",
   },
 ] as const satisfies readonly RetentionPolicyEntry[];

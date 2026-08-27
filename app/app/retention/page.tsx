@@ -64,6 +64,10 @@ const CATEGORY_LABELS: Record<RetentionCategoryKey, string> = {
   PRACTICE_CONTENT: "Generated practice problems and answer keys",
   ATTEMPT_HISTORY: "Practice answer history",
   MASTERY_RECORD: "Per-skill mastery progress",
+  // M3. Named for a parent reading this page, not for the schema: "tutoring
+  // conversation" is what they will recognise, and this is the row most likely
+  // to be the reason someone opened the page at all.
+  CHAT_TRANSCRIPT: "Tutoring conversations",
 };
 
 /**
@@ -77,6 +81,7 @@ const ANCHOR_LABELS: Record<RetentionAnchorKey, string> = {
   purgeAfter: "the scheduled purge date",
   closureRequestedAt: "the account closure request",
   completedAt: "the deletion completing",
+  openedAt: "when the conversation started",
 };
 
 function formatTimeframe(entry: RetentionEntry): string {
