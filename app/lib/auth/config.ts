@@ -5,7 +5,9 @@ import { db } from "@/lib/db";
 import { buildPrismaAdapter } from "@/lib/auth/prisma-adapter";
 import { normalizeEmail } from "@/lib/auth/normalize-email";
 import { sendMagicLinkEmail } from "@/lib/email/send-magic-link";
-import { MAGIC_LINK_TTL_SECONDS, ACCOUNT_CLOSURE_RECOVERY_DAYS } from "@/lib/config";
+import { MAGIC_LINK_TTL_SECONDS } from "@/lib/config";
+import { toPublicSession } from "@/lib/auth/session-shape";
+import { isInClosureRecoveryWindow } from "@/lib/auth/closure";
 
 /**
  * Auth.js v5, database session strategy, a single custom passwordless email
@@ -31,23 +33,6 @@ const emailProvider: EmailConfig = {
     await sendMagicLinkEmail({ to: identifier, url, expiresAt: expires });
   },
 };
-
-/**
- * AC 47 / ADR-0007 §4: refusal is keyed on `closureRequestedAt` ONLY, and
- * only while the recovery window is still live. A §312.6 parental deletion
- * request never sets this field, so it can never trigger this refusal
- * (ADR-0002 revision note).
- */
-function isInClosureRecoveryWindow(closureRequestedAt: unknown): boolean {
-  if (!(closureRequestedAt instanceof Date) && typeof closureRequestedAt !== "string") {
-    return false;
-  }
-  const requestedAt = new Date(closureRequestedAt);
-  if (Number.isNaN(requestedAt.getTime())) return false;
-  const recoveryEndsAt =
-    requestedAt.getTime() + ACCOUNT_CLOSURE_RECOVERY_DAYS * 24 * 60 * 60 * 1000;
-  return recoveryEndsAt > Date.now();
-}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: buildPrismaAdapter(db),
@@ -105,6 +90,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (isInClosureRecoveryWindow(closureRequestedAt)) return false;
 
       return true;
+    },
+
+    /**
+     * Delegates to `toPublicSession()` (`lib/auth/session-shape.ts`), which
+     * carries the full explanation of why this exists — extracted to its
+     * own module so it's unit-testable without importing `NextAuth(...)`'s
+     * own module-load side effects.
+     */
+    async session({ session, user }) {
+      return toPublicSession(user, session);
     },
   },
 });

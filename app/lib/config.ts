@@ -178,6 +178,29 @@ export const MAX_EXTRACTION_ATTEMPTS = 3;
 /** M0 AC 4. Auth.js magic-link `maxAge`. */
 export const MAGIC_LINK_TTL_SECONDS = 900;
 
+/**
+ * `signInWithEmail` (`lib/auth/actions.ts`) is public and unauthenticated —
+ * it is the only way to write an `AdultAttestation` row and to trigger a
+ * real dispatched email, so it is also the app's one open email-bombing
+ * primitive. Rate limited by a Postgres `count()` over this rolling window
+ * (no Redis, no new dependency), by BOTH the normalised email and the
+ * request IP, so a distributed flood against one address and a single
+ * client flooding many addresses are both bounded.
+ */
+export const SIGN_IN_RATE_LIMIT_WINDOW_MINUTES = 15;
+/** Max `signInWithEmail` attempts per normalised email within the window above. */
+export const SIGN_IN_RATE_LIMIT_MAX_PER_EMAIL = 3;
+/** Max `signInWithEmail` attempts per request IP within the window above. */
+export const SIGN_IN_RATE_LIMIT_MAX_PER_IP = 10;
+/**
+ * A rapid double-submit (double click, a retried fetch) for the SAME
+ * email+IP within this cooldown reuses the existing live `AdultAttestation`
+ * row instead of writing another one. `AdultAttestation` has no unique key
+ * for Prisma's own `upsert()` to target, so this is the manual equivalent
+ * ("prefer upsert-with-cooldown over a blind create").
+ */
+export const SIGN_IN_ATTESTATION_COOLDOWN_SECONDS = 60;
+
 // ─────────────────────────── HEIC conversion ───────────────────────────
 
 /** ADR-0004. */

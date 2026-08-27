@@ -1,9 +1,8 @@
 import "server-only";
 
 import type { ZodType } from "zod";
-import { z } from "zod";
 
-import { apiErr, errorResponse, type ApiResult } from "@/lib/errors";
+import { apiErr, errorResponse, toFieldErrors, type ApiResult } from "@/lib/errors";
 import { verifySession, type SessionInfo } from "@/lib/auth/dal";
 
 /**
@@ -28,6 +27,11 @@ import { verifySession, type SessionInfo } from "@/lib/auth/dal";
  * This is the ONLY place any route handler resolves a session or checks
  * consent state. A handler's `run` callback receives already-validated,
  * already-authorized inputs and does nothing but the mutation/read itself.
+ *
+ * `withAuth()` itself throws synchronously if `requireState` or
+ * `requireFlow` is configured without `resolveResource` — see the check at
+ * the top of the function body for why silently skipping the gate is the
+ * alternative if this is missing.
  */
 
 export type WithAuthArgs<TResource, TBody> = {
@@ -146,36 +150,31 @@ function isSameOriginRequest(req: Request): boolean {
   }
 }
 
-/**
- * `z.flattenError().fieldErrors` types each key as `string[] | undefined`
- * (a key with no issues is simply absent at runtime, but the generic
- * mapped type can't express that). Filters those out so the result matches
- * `ApiError.fieldErrors: Record<string, string[]>` (`lib/errors.ts`)
- * exactly, with no cast.
- */
-function toFieldErrors(error: z.ZodError): Record<string, string[]> {
-  // zod's own `_FlattenedError<T>.fieldErrors` type is
-  // `{ [P in keyof T]?: string[] }` (node_modules/zod/v4/core/errors.d.ts).
-  // Called here with a plain `z.ZodError` (this function serves every
-  // route's `bodySchema`, whatever its output type), that mapped type
-  // resolves to a shape TypeScript can no longer type `Object.entries`
-  // over as `[string, string[] | undefined][]`. The runtime value is
-  // always a plain string-keyed object mapping to `string[]`, per zod's
-  // own implementation — this cast documents that fact rather than hiding
-  // an `any`.
-  const fieldErrors = z.flattenError(error).fieldErrors as Record<string, string[] | undefined>;
-  const result: Record<string, string[]> = {};
-  for (const [key, value] of Object.entries(fieldErrors)) {
-    if (value) result[key] = value;
-  }
-  return result;
-}
-
 const NO_BODY_METHODS = new Set(["GET", "HEAD"]);
 
 export function withAuth<TResource = undefined, TBody = undefined>(
   config: WithAuthConfig<TResource, TBody>,
 ) {
+  // Fail the BOOT, not the request. `requireState`/`requireFlow` (steps 4/5)
+  // are only ever consulted when `resolveResource` (step 3) actually ran and
+  // resolved something — see the `resource !== undefined` guards below. A
+  // route that configures one of these gates without `resolveResource` would
+  // have `resource` permanently `undefined`, so the guard would short-circuit
+  // and the gate would be skipped on every request, silently. That is
+  // unreachable today, but becomes reachable the moment a route resolves its
+  // subject from the request body rather than the URL (e.g. a consent-submit
+  // or upload-token endpoint) instead of a path param. Throwing here — at
+  // module load, when the route file's `export const POST = withAuth({...})`
+  // runs — means a misconfigured route fails to build/boot instead of
+  // serving every request with its consent gate disabled.
+  if ((config.requireState || config.requireFlow) && !config.resolveResource) {
+    throw new Error(
+      "withAuth(): `requireState`/`requireFlow` configured without `resolveResource`. " +
+        "Both gates only run when a resource has been resolved (ADR-0006 steps 3-5); " +
+        "without `resolveResource` they would silently never execute. Add `resolveResource`.",
+    );
+  }
+
   return async (req: Request, ctx: RouteContext): Promise<Response> => {
     const params = await ctx.params;
     const mode = config.mode ?? "session";
@@ -235,9 +234,8 @@ export function withAuth<TResource = undefined, TBody = undefined>(
       }
       const parsed = config.bodySchema.safeParse(json);
       if (!parsed.success) {
-        return errorResponse(
-          apiErr("VALIDATION_ERROR", { fieldErrors: toFieldErrors(parsed.error) }),
-        );
+        const { fieldErrors, formErrors } = toFieldErrors(parsed.error);
+        return errorResponse(apiErr("VALIDATION_ERROR", { fieldErrors, formErrors }));
       }
       body = parsed.data;
     }

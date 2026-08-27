@@ -37,3 +37,20 @@ route file needs to `vi.mock` `@/lib/auth/dal` and `@/lib/db` before
 importing the route module (dynamic `await import(...)` after the
 `vi.mock` calls, since `vi.mock` is hoisted but the route file's top-level
 imports still need the mocks in place first).
+
+**Update (2026-08-27, security/code-review fixup):** the `next/server`
+resolution failure isn't limited to `lib/auth/dal.ts` — importing
+`lib/auth/config.ts` directly in a test (even just for a small pure helper
+it defines) fails the same way, because `NextAuth(...)` runs at module load
+and that reaches into `next/server`. Mocking `@/lib/auth/config` avoids the
+crash but then you can't test whatever pure logic actually lives inside
+that file's callbacks. **Pattern that works:** extract the pure,
+callback-internal logic into its own small module with no `next-auth`
+import (e.g. `lib/auth/session-shape.ts` for the `callbacks.session`
+reshaping logic, `lib/auth/closure.ts` for the closure-recovery-window
+check shared between `signIn`'s callback and `lib/auth/dal.ts`), have
+`lib/auth/config.ts` import and delegate to it, and unit-test the extracted
+module directly. Also applies to anything importing `AuthError` from the
+bare `"next-auth"` package — mock it too (`vi.mock("next-auth", () => ({
+AuthError: class extends Error {} }))`) if a test needs to exercise code
+that imports it (e.g. `lib/auth/actions.ts`).

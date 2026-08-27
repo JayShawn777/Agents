@@ -9,9 +9,23 @@ const dbMock = {
     delete: vi.fn(),
   },
   directNotice: { findFirst: vi.fn() },
-  parentalConsent: { findFirst: vi.fn() },
+  parentalConsent: {
+    findFirst: vi.fn(),
+    findMany: vi.fn(async () => [] as unknown[]),
+    deleteMany: vi.fn(),
+  },
+  user: { findMany: vi.fn(async () => [] as unknown[]) },
+  consentAuditArtifact: { createMany: vi.fn() },
   deletionAudit: { create: vi.fn() },
-  $transaction: vi.fn(async (ops: unknown[]) => ops),
+  // `DELETE` (`app/api/students/[studentId]/route.ts`) uses the interactive
+  // form, `db.$transaction(async (tx) => {...})` — `tx` is just `dbMock`
+  // itself here, since every model method above is already a `vi.fn()`.
+  $transaction: vi.fn(async (arg: unknown) => {
+    if (typeof arg === "function") {
+      return (arg as (tx: typeof dbMock) => Promise<unknown>)(dbMock);
+    }
+    return arg;
+  }),
 };
 
 const dalMock = {
@@ -43,15 +57,23 @@ beforeEach(() => {
 });
 
 describe("POST /api/students (endpoint 2)", () => {
-  it("rejects a body carrying a display name at the age gate (AC 8/9) — 400, nothing created", async () => {
+  it("rejects a body carrying a display name at the age gate (AC 8/9) — 400, nothing created, and a non-empty explanation", async () => {
     const res = await POST(
       req({ method: "POST", body: { ageBand: "UNDER_13", displayName: "Sam" } }),
       ctx(),
     );
-    const body = (await res.json()) as { ok: false; error: { code: string } };
+    const body = (await res.json()) as {
+      ok: false;
+      error: { code: string; fieldErrors?: Record<string, string[]>; formErrors?: string[] };
+    };
     expect(res.status).toBe(400);
     expect(body.error.code).toBe("VALIDATION_ERROR");
     expect(dbMock.studentProfile.create).not.toHaveBeenCalled();
+    // A .strict() schema's "unrecognized key" violation lands in
+    // `formErrors`, not `fieldErrors` — `fieldErrors` alone would be `{}`
+    // here, an empty explanation for the single most legally important
+    // validation in the app.
+    expect(body.error.formErrors?.length).toBeGreaterThan(0);
   });
 
   it("an ADULT age band activates immediately with no notice/consent step (AC 10)", async () => {
@@ -160,15 +182,85 @@ describe("GET/PATCH/DELETE /api/students/[studentId] (endpoints 3-5)", () => {
     expect(dbMock.$transaction).not.toHaveBeenCalled();
   });
 
-  it("DELETE on an owned profile writes a DeletionAudit and deletes the row", async () => {
+  it("DELETE on an owned profile with no consent history writes a DeletionAudit and deletes the row", async () => {
     dalMock.requireStudentProfile.mockResolvedValue({ id: "abc", status: "ACTIVE" });
+    dbMock.parentalConsent.findMany.mockResolvedValue([]);
+
     const res = await studentIdRoute.DELETE(req({ method: "DELETE" }), ctx());
     const body = (await res.json()) as { ok: true; data: { deleted: true } };
+
     expect(res.status).toBe(200);
     expect(body.data.deleted).toBe(true);
     expect(dbMock.$transaction).toHaveBeenCalled();
     expect(dbMock.deletionAudit.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ kind: "PROFILE_DELETED", subjectRef: "abc" }) }),
     );
+    // Nothing to pseudonymise or delete when there was never a consent row.
+    expect(dbMock.consentAuditArtifact.createMany).not.toHaveBeenCalled();
+    expect(dbMock.parentalConsent.deleteMany).not.toHaveBeenCalled();
+    expect(dbMock.studentProfile.delete).toHaveBeenCalledWith({ where: { id: "abc" } });
+  });
+
+  it("DELETE on a CONSENTED profile (blocker 3, ADR-0007 §6/AC 50) pseudonymises every ParentalConsent row into a ConsentAuditArtifact and deletes the consent rows BEFORE the profile cascade", async () => {
+    dalMock.requireStudentProfile.mockResolvedValue({ id: "abc", status: "ACTIVE" });
+    const submittedAt = new Date("2026-01-01T00:00:00.000Z");
+    const verifiedAt = new Date("2026-01-02T00:00:00.000Z");
+    dbMock.parentalConsent.findMany.mockResolvedValue([
+      {
+        id: "consent_1",
+        userId: "user_1",
+        studentProfileId: "abc",
+        consentTextVersion: "2026-08-26.1",
+        noticeVersion: "2026-08-26.1",
+        method: "EMAIL_PLUS",
+        submittedAt,
+        verifiedAt,
+        withdrawnAt: null,
+      },
+    ]);
+    dbMock.user.findMany.mockResolvedValue([{ id: "user_1", email: "parent@example.com" }]);
+
+    const res = await studentIdRoute.DELETE(req({ method: "DELETE" }), ctx());
+    const body = (await res.json()) as { ok: true; data: { deleted: true } };
+
+    expect(res.status).toBe(200);
+    expect(body.data.deleted).toBe(true);
+
+    // One artifact per consent row, carrying only the ADR-0007 §6 allowlist
+    // — no name, no relationship, no IP, no user agent, no foreign key.
+    expect(dbMock.consentAuditArtifact.createMany).toHaveBeenCalledTimes(1);
+    const createManyArgs = dbMock.consentAuditArtifact.createMany.mock.calls[0][0] as {
+      data: Array<Record<string, unknown>>;
+    };
+    expect(createManyArgs.data).toHaveLength(1);
+    const artifact = createManyArgs.data[0];
+    expect(artifact).toMatchObject({
+      consentTextVersion: "2026-08-26.1",
+      noticeVersion: "2026-08-26.1",
+      method: "EMAIL_PLUS",
+      submittedAt,
+      verifiedAt,
+      withdrawnAt: null,
+    });
+    expect(artifact).not.toHaveProperty("studentProfileId");
+    expect(artifact).not.toHaveProperty("consentingAdultName");
+    expect(artifact).not.toHaveProperty("relationship");
+    expect(artifact).not.toHaveProperty("ipAddress");
+    expect(artifact).not.toHaveProperty("userAgent");
+    expect(typeof artifact.adultIdentityHash).toBe("string");
+    expect(artifact.adultIdentityHash).not.toBe("parent@example.com");
+    expect(artifact.purgeAfter).toBeInstanceOf(Date);
+
+    // The consent rows are destroyed explicitly, and — because this mock
+    // resolves synchronously in the order the handler calls it — BEFORE the
+    // studentProfile cascade delete.
+    expect(dbMock.parentalConsent.deleteMany).toHaveBeenCalledWith({
+      where: { studentProfileId: "abc" },
+    });
+    const createManyOrder = dbMock.consentAuditArtifact.createMany.mock.invocationCallOrder[0];
+    const deleteManyOrder = dbMock.parentalConsent.deleteMany.mock.invocationCallOrder[0];
+    const profileDeleteOrder = dbMock.studentProfile.delete.mock.invocationCallOrder[0];
+    expect(createManyOrder).toBeLessThan(deleteManyOrder);
+    expect(deleteManyOrder).toBeLessThan(profileDeleteOrder);
   });
 });

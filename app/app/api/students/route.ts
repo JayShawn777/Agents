@@ -37,6 +37,11 @@ export const POST = withAuth({
       },
     });
 
-    return successResponse({ student: toStudentProfileDTO(profile) }, { status: 201 });
+    // A freshly created profile can never already have a DirectNotice row —
+    // `hasNotice: false` is correct by construction here, not a default.
+    return successResponse(
+      { student: toStudentProfileDTO(profile, { hasNotice: false }) },
+      { status: 201 },
+    );
   },
 });

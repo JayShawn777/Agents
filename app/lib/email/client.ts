@@ -10,8 +10,20 @@ export type SendEmailInput = {
 };
 
 export type SendEmailResult = {
+  /**
+   * True ONLY when a real transport (Resend) accepted the message for
+   * delivery. Never true for the console transport — a caller that stamps
+   * a compliance timestamp from this (e.g. `DirectNotice.sentAt`, AC 14)
+   * must never be told a message was delivered when it was only logged.
+   */
   delivered: boolean;
-  /** Provider message id, when known. Never a token, never a secret. */
+  /**
+   * An opaque reference. For a real transport, Resend's own message id.
+   * For the console transport, a `console:`-prefixed placeholder — callers
+   * MUST NOT treat a non-null `deliveryRef` as proof of delivery; check
+   * `delivered` instead. Never a token, never a secret, never the message
+   * body.
+   */
   deliveryRef: string | null;
 };
 
@@ -19,26 +31,34 @@ export type SendEmailResult = {
  * The one function in the app that talks to Resend — a plain `fetch` to its
  * HTTP API (ADR-0002: no mail SDK, no SMTP client).
  *
- * In any non-production environment the message is written to the server
- * console instead of sent, so local development, CI and Vitest never need a
- * real `AUTH_RESEND_KEY` (plan §5.1, B2). `send-magic-link.ts`,
- * `send-direct-notice.ts` and `send-consent-confirmation.ts` are the three
- * distinct callers — three distinct message types, three distinct token
- * spaces (ADR-0002 revision note) — and none of them talk to Resend
- * directly.
+ * The console transport is opt-in via the EXPLICIT `EMAIL_TRANSPORT=console`
+ * env var (`.env.example`) — not inferred from `NODE_ENV`. `NODE_ENV` is set
+ * by the framework/build tooling for reasons that have nothing to do with
+ * whether an operator wants real email sent (a `next build` in a CI
+ * pipeline that happens to run with `NODE_ENV=production` unset is not a
+ * declaration "this run should actually email people"), and a prior
+ * version of this gate also logged `input.text` in full — which for the
+ * sign-in magic link IS the full magic-link URL, a live credential landing
+ * in whatever aggregates server logs.
  */
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
-  if (process.env.NODE_ENV !== "production") {
-    console.log(
-      `[email:dev] to=${input.to} subject=${JSON.stringify(input.subject)}\n${input.text}`,
-    );
-    return { delivered: true, deliveryRef: `dev-console-${Date.now()}` };
+  if (process.env.EMAIL_TRANSPORT === "console") {
+    // Recipient and subject only — never `input.text`/`input.html`, which
+    // for the sign-in magic link and the EMAIL_PLUS consent-confirmation
+    // message both carry a live, single-use token URL.
+    console.log(`[email:console] to=${input.to} subject=${JSON.stringify(input.subject)}`);
+    // `delivered: false` is deliberate, not a bug: nothing left this
+    // process. A caller must never stamp a compliance timestamp (e.g.
+    // AC 14's `DirectNotice.sentAt`) off this result.
+    return { delivered: false, deliveryRef: `console:${Date.now()}` };
   }
 
   const apiKey = process.env.AUTH_RESEND_KEY;
   const from = process.env.EMAIL_FROM;
   if (!apiKey || !from) {
-    console.error("AUTH_RESEND_KEY or EMAIL_FROM is not set; cannot send email in production.");
+    console.error(
+      "AUTH_RESEND_KEY or EMAIL_FROM is not set, and EMAIL_TRANSPORT is not \"console\" — cannot send email.",
+    );
     return { delivered: false, deliveryRef: null };
   }
 

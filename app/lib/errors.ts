@@ -12,6 +12,8 @@
  * that may ever reach `message` are the ones in the allowlists below.
  */
 
+import { z } from "zod";
+
 // ─────────────────────────── error codes ───────────────────────────
 
 export const ERROR_CODES = [
@@ -55,6 +57,16 @@ export type ApiError = {
   message: string;
   /** Present only for VALIDATION_ERROR. Keys are input field paths. */
   fieldErrors?: Record<string, string[]>;
+  /**
+   * Present only for VALIDATION_ERROR, and only when zod attached
+   * form-level (not field-level) issues — `z.flattenError().formErrors`.
+   * This is where a `.strict()` schema's "unrecognized key" violation
+   * lands: a body carrying a key the schema doesn't declare (e.g. a
+   * child's name submitted alongside the age-gate's `ageBand`, AC 8/AC 9)
+   * produces an EMPTY `fieldErrors` and a non-empty `formErrors`. A caller
+   * that reads only `fieldErrors` sees `{}` and no explanation at all.
+   */
+  formErrors?: string[];
 };
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
@@ -118,20 +130,67 @@ export function apiOk<T>(data: T): ApiResult<T> {
  */
 export function apiErr(
   code: ErrorCode,
-  overrides?: { message?: string; fieldErrors?: Record<string, string[]> },
+  overrides?: { message?: string; fieldErrors?: Record<string, string[]>; formErrors?: string[] },
 ): ApiError {
   return {
     code,
     message: overrides?.message ?? ERROR_MESSAGES[code],
     ...(overrides?.fieldErrors !== undefined ? { fieldErrors: overrides.fieldErrors } : {}),
+    ...(overrides?.formErrors !== undefined && overrides.formErrors.length > 0
+      ? { formErrors: overrides.formErrors }
+      : {}),
   };
 }
 
 export function apiErrResult(
   code: ErrorCode,
-  overrides?: { message?: string; fieldErrors?: Record<string, string[]> },
+  overrides?: { message?: string; fieldErrors?: Record<string, string[]>; formErrors?: string[] },
 ): ApiResult<never> {
   return { ok: false, error: apiErr(code, overrides) };
+}
+
+// ─────────────────────────── zod error mapping ───────────────────────────
+
+/**
+ * Maps a zod validation failure to the `{ fieldErrors, formErrors }` shape
+ * `ApiError` carries. The ONE place this mapping happens — `lib/api/handler.ts`
+ * (every route handler's body parse) and `lib/auth/actions.ts` (the two
+ * server actions, ADR-0006) both call this rather than each re-deriving it
+ * from `z.flattenError()` — a prior version reimplemented this inline in
+ * both places and only one of them read `formErrors`.
+ *
+ * `z.flattenError().fieldErrors` types each key as `string[] | undefined`
+ * (a key with no issues is simply absent at runtime, but the generic mapped
+ * type can't express that). Filtered below so the result matches
+ * `ApiError.fieldErrors: Record<string, string[]>` exactly, with no cast
+ * needed for the filtered value.
+ *
+ * `formErrors` is where a `.strict()` schema's "unrecognized key" violation
+ * lands — NOT in `fieldErrors` — which is why a caller that reads only
+ * `fieldErrors` for a body like `{ ageBand, displayName }` against a
+ * `.strict()` age-gate schema sees an empty `{}` and no explanation (the
+ * bug this function exists to close).
+ */
+export function toFieldErrors(error: z.ZodError): {
+  fieldErrors: Record<string, string[]>;
+  formErrors: string[];
+} {
+  const flattened = z.flattenError(error);
+  // zod's own `_FlattenedError<T>.fieldErrors` type is
+  // `{ [P in keyof T]?: string[] }` (node_modules/zod/v4/core/errors.d.ts).
+  // Called here with a plain `z.ZodError` (this function serves every
+  // route's `bodySchema`, whatever its output type), that mapped type
+  // resolves to a shape TypeScript can no longer type `Object.entries`
+  // over as `[string, string[] | undefined][]`. The runtime value is
+  // always a plain string-keyed object mapping to `string[]`, per zod's
+  // own implementation — this cast documents that fact rather than hiding
+  // an `any`.
+  const rawFieldErrors = flattened.fieldErrors as Record<string, string[] | undefined>;
+  const fieldErrors: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(rawFieldErrors)) {
+    if (value) fieldErrors[key] = value;
+  }
+  return { fieldErrors, formErrors: flattened.formErrors };
 }
 
 // ─────────────────────────── Response helpers ───────────────────────────

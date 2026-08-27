@@ -21,15 +21,20 @@ import type { ConsentDTO, DirectNoticeDTO, StudentProfileDTO } from "@/lib/schem
  *   - `CONSENT_WITHDRAWN`                        -> "NONE" (collects
  *     nothing further, AC 24)
  *
- * `hasNotice` defaults to `false`, which is always correct for a
- * newly-created profile (endpoint 2) and must be passed explicitly by any
- * caller that has actually checked for a `DirectNotice` row (endpoint 3).
+ * `hasNotice` is REQUIRED, not defaulted: a caller that forgets to check
+ * for a `DirectNotice` row and omits it would previously fall back to
+ * `false`, which is only correct for a newly-created profile (endpoint 2).
+ * For an existing `NOTICE_PENDING` profile that already has a notice
+ * (endpoint 3), a silent `false` default emits `nextStep: 'NOTICE'` for a
+ * profile that should show `'CONSENT'` — sending the parent back to a
+ * screen that would create a duplicate notice record. Every call site must
+ * say explicitly whether it checked.
  */
 export function toStudentProfileDTO(
   profile: StudentProfile,
-  opts: { hasNotice?: boolean } = {},
+  opts: { hasNotice: boolean },
 ): StudentProfileDTO {
-  const hasNotice = opts.hasNotice ?? false;
+  const { hasNotice } = opts;
   return {
     id: profile.id,
     ageBand: profile.ageBand,

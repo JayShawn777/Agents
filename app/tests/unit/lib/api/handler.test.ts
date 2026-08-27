@@ -68,6 +68,37 @@ async function statusAndBody(res: Response) {
 
 const okHandler = async () => new Response(JSON.stringify({ ok: true, data: { handled: true } }), { status: 200 });
 
+describe("withAuth() misconfiguration fails the boot, not the request", () => {
+  it("throws synchronously when requireState is configured without resolveResource", () => {
+    expect(() =>
+      withAuth<Resource, unknown>({
+        requireState: () => false,
+        handler: okHandler,
+      }),
+    ).toThrow(/resolveResource/);
+  });
+
+  it("throws synchronously when requireFlow is configured without resolveResource", () => {
+    expect(() =>
+      withAuth<Resource, unknown>({
+        requireFlow: async () => false,
+        handler: okHandler,
+      }),
+    ).toThrow(/resolveResource/);
+  });
+
+  it("does not throw when resolveResource is present alongside requireState/requireFlow", () => {
+    expect(() =>
+      withAuth<Resource, unknown>({
+        resolveResource: async () => ACTIVE_RESOURCE,
+        requireState: () => true,
+        requireFlow: async () => true,
+        handler: okHandler,
+      }),
+    ).not.toThrow();
+  });
+});
+
 describe("withAuth() check ordering (ADR-0006)", () => {
   it("1) 401 when there is no session, even though every later check would also fail", async () => {
     const handler = withAuth<Resource, unknown>({
@@ -191,6 +222,44 @@ describe("withAuth() check ordering (ADR-0006)", () => {
     expect(res.status).toBe(400);
     expect(body.error.code).toBe("VALIDATION_ERROR");
     expect(body.error.fieldErrors).toBeTruthy();
+  });
+
+  it("4 vs 5) consent-state 403 beats flow-precondition 409 when both would fail — pins step 4 above step 5 (a reordered handler that ran 5 before 4 goes red here)", async () => {
+    const handler = withAuth<Resource, unknown>({
+      getSession: async () => SESSION,
+      resolveResource: async () => PENDING_RESOURCE,
+      requireState: () => false, // would be 403
+      requireFlow: async () => false, // would be 409
+      handler: okHandler,
+    });
+
+    const res = await handler(req({ origin: "http://localhost" }), ctx());
+    const { status, code } = await statusAndBody(res);
+    // 403 (permanent bar: this profile is not consented) must win over 409
+    // (retryable: "you skipped a step") — collapsing them the other way
+    // turns "this child is not consented" into "you skipped a step".
+    expect(status).toBe(403);
+    expect(code).toBe("FORBIDDEN");
+  });
+
+  it("6 vs 7) body-validation 400 beats rate-limit 429 when both would fail — pins step 6 above step 7 (a reordered handler that ran 7 before 6 goes red here)", async () => {
+    const handler = withAuth<Resource, { mustNotMatch: "never" }>({
+      getSession: async () => SESSION,
+      resolveResource: async () => ACTIVE_RESOURCE,
+      requireState: () => true,
+      requireFlow: async () => true,
+      bodySchema: rejectingBodySchema, // would be 400
+      rateLimit: async () => false, // would be 429
+      handler: okHandler,
+    });
+
+    const res = await handler(
+      req({ origin: "http://localhost", body: { totallyInvalid: "yes" } }),
+      ctx(),
+    );
+    const { status, code } = await statusAndBody(res);
+    expect(status).toBe(400);
+    expect(code).toBe("VALIDATION_ERROR");
   });
 
   it("7) 429 (rate limit) beats a successful body parse's own result — evaluated only after the body is valid", async () => {

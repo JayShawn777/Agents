@@ -4,6 +4,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth/config";
+import { isInClosureRecoveryWindow } from "@/lib/auth/closure";
 import { db } from "@/lib/db";
 import type { StudentProfile } from "@/lib/generated/prisma/client";
 
@@ -32,11 +33,32 @@ import type { StudentProfile } from "@/lib/generated/prisma/client";
 
 export type SessionInfo = { userId: string };
 
-/** The session, or `null` if the caller has no valid session. Never redirects. */
+/**
+ * The session, or `null` if the caller has no valid session. Never
+ * redirects.
+ *
+ * Also refuses a session belonging to an account inside its closure
+ * recovery window (AC 47 / ADR-0007 §4). `lib/auth/config.ts`'s `signIn`
+ * callback already refuses REDEMPTION of a new magic link for a closed
+ * account, but the database session strategy means a `Session` row (and
+ * its cookie) issued before closure was requested keeps resolving to a
+ * valid session on every subsequent request — closure must also be
+ * checked HERE, on every read, not just at the moment a new link is
+ * opened. `toPublicSession()` deliberately strips `closureRequestedAt`
+ * from `auth()`'s return value (it must never reach the client), so this
+ * function queries it directly rather than reading it off `session.user`.
+ */
 export const verifySession = cache(async (): Promise<SessionInfo | null> => {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return null;
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { closureRequestedAt: true },
+  });
+  if (!user || isInClosureRecoveryWindow(user.closureRequestedAt)) return null;
+
   return { userId };
 });
 
