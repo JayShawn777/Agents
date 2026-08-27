@@ -1,12 +1,17 @@
 import "server-only";
 
-import { AnthropicError, APIConnectionTimeoutError } from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
 import { db } from "@/lib/db";
 import type { PracticeSet } from "@/lib/generated/prisma/client";
-import { getAnthropicClient, MissingAnthropicApiKeyError } from "@/lib/ai/client";
-import { buildPracticeGenerationSchema, type GeneratedPracticeProblem } from "@/lib/ai/practice-schema";
+import { getAnthropicClient } from "@/lib/ai/client";
+import {
+  classifyGenerationFailure,
+  finalizeSetFailed,
+  finalizeSetSuccess,
+  type RunGenerationResult,
+} from "@/lib/practice/finalize";
+import { buildPracticeGenerationSchema } from "@/lib/ai/practice-schema";
 import { PRACTICE_PROMPT_VERSION, PRACTICE_SYSTEM_PROMPT, buildPracticeUserPrompt, type PracticeSourceSlot } from "@/lib/practice/prompt";
 import { candidateSlate, isGradableSubject, resolveSkill, type Skill } from "@/lib/taxonomy";
 import type { Subject } from "@/lib/domain/enums";
@@ -18,7 +23,6 @@ import {
   PRACTICE_SET_SIZE,
   SKILL_GRADE_BAND,
 } from "@/lib/config";
-import type { GenerationFailureCode } from "@/lib/errors";
 
 /**
  * B28 (plan §5.1). The status machine — deliberately mirroring
@@ -44,11 +48,7 @@ import type { GenerationFailureCode } from "@/lib/errors";
  * fails cleanly with `SLATE_EMPTY` and zero AI calls, per ADR-0009 §4.
  */
 
-export type RunGenerationResult =
-  | { status: "READY"; problemCount: number }
-  | { status: "FAILED"; failureCode: GenerationFailureCode }
-  /** Mirrors `run-extraction.ts`'s `SKIPPED` — invoked against a row no longer `GENERATING` (a racing trigger, or already terminal). */
-  | { status: "SKIPPED" };
+export type { RunGenerationResult };
 
 export async function runPracticeGeneration(practiceSetId: string): Promise<RunGenerationResult> {
   const set = await db.practiceSet.findUnique({
@@ -80,7 +80,7 @@ export async function runPracticeGeneration(practiceSetId: string): Promise<RunG
   if (!gradeLevel) {
     // No grade level yet (a profile that hasn't completed its detail step) —
     // there is no band to build a slate from. Refused cleanly, zero AI calls.
-    return await finalizeFailed(practiceSetId, "SLATE_EMPTY");
+    return await finalizeSetFailed(practiceSetId, "SLATE_EMPTY");
   }
 
   // ADR-0017: `extraction` is nullable now that a CHECKPOINT holds NULL there,
@@ -91,7 +91,7 @@ export async function runPracticeGeneration(practiceSetId: string): Promise<RunG
   // violation into a crash inside a background `after()` callback.
   if (!set.extraction) {
     console.error(`runPracticeGeneration(${practiceSetId}): PRACTICE set with no extraction — CHECK constraint bypassed?`);
-    return await finalizeFailed(practiceSetId, "SLATE_EMPTY");
+    return await finalizeSetFailed(practiceSetId, "SLATE_EMPTY");
   }
 
   const gradableProblems = set.extraction.problems.filter(
@@ -99,7 +99,7 @@ export async function runPracticeGeneration(practiceSetId: string): Promise<RunG
       problem.subject !== null && isGradableSubject(problem.subject),
   );
   if (gradableProblems.length === 0) {
-    return await finalizeFailed(practiceSetId, "SLATE_EMPTY");
+    return await finalizeSetFailed(practiceSetId, "SLATE_EMPTY");
   }
 
   const distinctSubjects = [...new Set(gradableProblems.map((problem) => problem.subject))];
@@ -107,7 +107,7 @@ export async function runPracticeGeneration(practiceSetId: string): Promise<RunG
     distinctSubjects.flatMap((subject) => candidateSlate({ subjects: [subject], gradeLevel, bandGrades: SKILL_GRADE_BAND })),
   );
   if (slate.length === 0) {
-    return await finalizeFailed(practiceSetId, "SLATE_EMPTY");
+    return await finalizeSetFailed(practiceSetId, "SLATE_EMPTY");
   }
   const codes = slate.map((skill) => skill.code) as [string, ...string[]];
 
@@ -142,12 +142,12 @@ export async function runPracticeGeneration(practiceSetId: string): Promise<RunG
     // refusal is a 200 with `stop_reason: 'refusal'`, checked before
     // `parsed_output` is ever read.
     if (response.stop_reason === "refusal") {
-      return await finalizeFailed(practiceSetId, "REFUSED");
+      return await finalizeSetFailed(practiceSetId, "REFUSED");
     }
 
     const parsed = response.parsed_output;
     if (parsed === null) {
-      return await finalizeFailed(practiceSetId, "PARSE_FAILED");
+      return await finalizeSetFailed(practiceSetId, "PARSE_FAILED");
     }
 
     // M2 AC 2 + ADR-0009 §2's "second line" belt-and-braces re-check: a
@@ -159,22 +159,23 @@ export async function runPracticeGeneration(practiceSetId: string): Promise<RunG
     for (const [index, problem] of parsed.problems.entries()) {
       const slot = slots[index];
       if (textsAreEffectivelyIdentical(problem.text, slot.sourceText)) {
-        return await finalizeFailed(practiceSetId, "PARSE_FAILED");
+        return await finalizeSetFailed(practiceSetId, "PARSE_FAILED");
       }
       if (!resolveSkill(problem.skillCode)) {
-        return await finalizeFailed(practiceSetId, "PARSE_FAILED");
+        return await finalizeSetFailed(practiceSetId, "PARSE_FAILED");
       }
     }
 
-    return await finalizeSuccess(practiceSetId, {
+    return await finalizeSetSuccess(practiceSetId, {
       problems: parsed.problems,
       slots,
+      promptVersion: PRACTICE_PROMPT_VERSION,
       usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens },
     });
   } catch (err) {
-    const failureCode = classifyFailure(err);
+    const failureCode = classifyGenerationFailure(err);
     console.error(`runPracticeGeneration(${practiceSetId}) failed`, err);
-    return await finalizeFailed(practiceSetId, failureCode);
+    return await finalizeSetFailed(practiceSetId, failureCode);
   }
 }
 
@@ -226,73 +227,3 @@ function textsAreEffectivelyIdentical(a: string, b: string): boolean {
   return normalize(a) === normalize(b);
 }
 
-/** Checked most specific first (research §8): a timeout is a subclass of a connection error, which is a subclass of `APIError`, which is a subclass of `AnthropicError`. */
-function classifyFailure(err: unknown): GenerationFailureCode {
-  if (err instanceof MissingAnthropicApiKeyError) return "INTERNAL";
-  if (err instanceof APIConnectionTimeoutError) return "TIMEOUT";
-  if (err instanceof AnthropicError) return "UPSTREAM";
-  return "INTERNAL";
-}
-
-async function finalizeFailed(practiceSetId: string, failureCode: GenerationFailureCode): Promise<RunGenerationResult> {
-  // AC 5: a FAILED set never has a partial row — this path never touches
-  // PracticeProblem/PracticeAnswerKey.
-  await db.practiceSet.update({
-    where: { id: practiceSetId },
-    data: { status: "FAILED", failureCode, completedAt: new Date() },
-  });
-  return { status: "FAILED", failureCode };
-}
-
-type FinalizeSuccessArgs = {
-  problems: readonly GeneratedPracticeProblem[];
-  slots: readonly (PracticeSourceSlot & { sourceExtractedProblemId: string })[];
-  usage: { inputTokens: number; outputTokens: number };
-};
-
-async function finalizeSuccess(practiceSetId: string, outcome: FinalizeSuccessArgs): Promise<RunGenerationResult> {
-  const now = new Date();
-
-  // AC 5's "no partial set is written": the terminal write, the
-  // PracticeProblem inserts and the PracticeAnswerKey inserts are ONE
-  // transaction — there is no code path that writes problems outside it.
-  await db.$transaction(async (tx) => {
-    await tx.practiceSet.update({
-      where: { id: practiceSetId },
-      data: {
-        status: "READY",
-        completedAt: now,
-        promptVersion: PRACTICE_PROMPT_VERSION,
-        inputTokens: outcome.usage.inputTokens,
-        outputTokens: outcome.usage.outputTokens,
-      },
-    });
-
-    const createdProblems = await tx.practiceProblem.createManyAndReturn({
-      data: outcome.problems.map((problem, index) => ({
-        practiceSetId,
-        ordinal: index + 1,
-        sourceExtractedProblemId: outcome.slots[index].sourceExtractedProblemId,
-        skillCode: problem.skillCode,
-        text: problem.text,
-        containsMath: problem.containsMath,
-        answerFormat: problem.answerFormat,
-        choices: problem.choices,
-        difficultyOffset: outcome.slots[index].difficultyOffset,
-      })),
-    });
-
-    // `createManyAndReturn` preserves input order (Prisma 7), so index
-    // alignment with `outcome.problems` is exact.
-    await tx.practiceAnswerKey.createMany({
-      data: createdProblems.map((created, index) => ({
-        practiceProblemId: created.id,
-        canonicalAnswer: outcome.problems[index].canonicalAnswer,
-        acceptedForms: outcome.problems[index].acceptedForms,
-        workedSolution: outcome.problems[index].workedSolution,
-      })),
-    });
-  });
-
-  return { status: "READY", problemCount: outcome.problems.length };
-}
