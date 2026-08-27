@@ -178,7 +178,8 @@ Storage runs on a local filesystem adapter (`STORAGE_DRIVER=local`); the Vercel
 Blob implementation is unbuilt and its placeholder throws.
 
 Start at [docs/README.md](docs/README.md); read
-[docs/retros/m0-m1.md](docs/retros/m0-m1.md) before running the pipeline.
+[docs/retros/m0-m2.md](docs/retros/m0-m2.md) before running the pipeline —
+it now runs through M2.5.
 
 Because the app tutors minors, anything touching student data carries **COPPA**
 consent and retention obligations. Treat uploaded schoolwork as sensitive

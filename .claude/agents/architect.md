@@ -26,6 +26,23 @@ writes go to `docs/adr/`.
 - Flag every new major dependency; the user must approve it (see CLAUDE.md Never).
 - Order files so the codebase typechecks at each step: schema → types → server → UI.
 - Call out migration risk explicitly. Never plan edits to applied migrations.
+- **Count the files in every slice as you write it.** More than about six means
+  split it here, in the document, where splitting is free. M2.5's plan cited the
+  six-file rule by number and still put three unrelated concerns in one slice,
+  which had to be split mid-build into 5a/5b/5c. A slice that turns out to be
+  empty costs nothing; one that turns out to be three abandons a run.
+- **The last slice of a user-facing plan is the ENTRY POINT** — the button, the
+  link, the menu item — named explicitly. M2.5 shipped seven green slices, 616
+  passing tests, and no screen anywhere that let a student start a checkpoint.
+  Nothing was skipped; the plan simply never mentioned it. Ask "can a user reach
+  this?" before you call the plan finished, because no gate asks it.
+- **An ADR that describes a control must name the file it lives in AND the test
+  that proves it — or be written in the future tense with an unticked
+  follow-up.** Three ADRs have now asserted, in the present tense, safeguards
+  that existed nowhere: ADR-0009's derivation script, ADR-0010 §5's
+  `MASTERY_MIN_ATTEMPTS_FOR_REPORT`, ADR-0017's deletion guarantee. Nothing
+  failed, because each one's consumer was unbuilt. "We will" costs nothing and
+  does not lie; a reviewer reading present tense is entitled to believe it.
 
 ## Report format
 ```
