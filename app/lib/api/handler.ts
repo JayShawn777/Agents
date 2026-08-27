@@ -14,6 +14,8 @@ import { verifySession, type SessionInfo } from "@/lib/auth/dal";
  *   3. Resource resolves under `userId`                   -> 404
  *   4. Consent-state gate (e.g. `status === 'ACTIVE'`)    -> 403
  *   5. Flow-order precondition                            -> 409
+ *      (its message may be a function of the resource — see
+ *      `requireFlowMessage`, added 2026-08-27 for M2.5)
  *   6. zod parse of the body                               -> 400 + fieldErrors
  *   7. Rate limit                                          -> 429
  *
@@ -118,7 +120,25 @@ export type WithAuthConfig<TResource = undefined, TBody = undefined> = {
     session: SessionInfo | null;
     resource: TResource;
   }) => Promise<boolean> | boolean;
-  requireFlowMessage?: string;
+  /**
+   * Overrides the default CONFLICT message. Must still be an allowlisted,
+   * user-safe string (`lib/errors.ts`) — that has not changed.
+   *
+   * A FUNCTION of the resource, as well as a plain string, because one gate
+   * routinely guards several unrelated preconditions and a single static
+   * string then has to serve all of them. The attempts route already carries
+   * that compromise in a comment: "You've given this one a good go" is written
+   * for the attempt cap and is merely tolerable for a set that is still
+   * generating. M2.5 makes it untenable rather than untidy — a checkpoint
+   * takes exactly one answer per problem (AC 11), and telling a child they
+   * have had plenty of tries when they have had one is worse than unhelpful.
+   *
+   * The function receives the resource ONLY — not the body, which has not been
+   * parsed at step 5, and not the session. It must be synchronous and must not
+   * reach the database: it runs on the failure path of a check that has
+   * already decided, and a message is not worth a query.
+   */
+  requireFlowMessage?: string | ((resource: TResource) => string);
 
   /**
    * Step 6. Parses and validates the JSON body. Omit for routes with no
@@ -270,9 +290,9 @@ export function withAuth<TResource = undefined, TBody = undefined>(
     if (config.requireFlow && resource !== undefined) {
       const ok = await config.requireFlow({ req, params, session, resource });
       if (!ok) {
-        return errorResponse(
-          apiErr("CONFLICT", config.requireFlowMessage ? { message: config.requireFlowMessage } : undefined),
-        );
+        const configured = config.requireFlowMessage;
+        const message = typeof configured === "function" ? configured(resource) : configured;
+        return errorResponse(apiErr("CONFLICT", message ? { message } : undefined));
       }
     }
 

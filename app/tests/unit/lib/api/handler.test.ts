@@ -62,8 +62,14 @@ function ctx(params: Record<string, string> = { studentId: "abc" }) {
 }
 
 async function statusAndBody(res: Response) {
-  const body = (await res.json()) as { ok: boolean; error?: { code: string } };
-  return { status: res.status, code: body.ok ? null : body.error?.code };
+  const body = (await res.json()) as { ok: boolean; error?: { code: string; message: string } };
+  return {
+    status: res.status,
+    code: body.ok ? null : body.error?.code,
+    // Added 2026-08-27 for the `requireFlowMessage`-as-a-function tests.
+    // Additive: every earlier caller destructures only `status`/`code`.
+    message: body.ok ? "" : (body.error?.message ?? ""),
+  };
 }
 
 const okHandler = async () => new Response(JSON.stringify({ ok: true, data: { handled: true } }), { status: 200 });
@@ -427,5 +433,90 @@ describe("withAuth() check ordering (ADR-0006)", () => {
     });
     const res = await handler(req(), ctx());
     expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+});
+
+// ─── requireFlowMessage as a function of the resource (M2.5 slice 2) ───
+
+describe("withAuth() requireFlowMessage may be a function of the resource", () => {
+  it("still accepts a plain string — every existing route is unchanged", async () => {
+    const handler = withAuth<Resource, undefined>({
+      getSession: async () => SESSION,
+      resolveResource: async () => ACTIVE_RESOURCE,
+      requireFlow: () => false,
+      requireFlowMessage: "A fixed sentence.",
+      handler: okHandler,
+    });
+
+    const { status, message } = await statusAndBody(
+      await handler(req({ origin: "http://localhost" }), ctx()),
+    );
+    expect(status).toBe(409);
+    expect(message).toBe("A fixed sentence.");
+  });
+
+  it("calls the function with the resolved resource, so one gate can explain several preconditions", async () => {
+    // The M2.5 case: one requireFlow guards both "this set is still
+    // generating" and "a checkpoint takes one answer", and a child must not be
+    // told they have had plenty of tries when they have had one.
+    const handler = withAuth<Resource, undefined>({
+      getSession: async () => SESSION,
+      resolveResource: async () => ({ status: "NOTICE_PENDING" }) as Resource,
+      requireFlow: () => false,
+      requireFlowMessage: (resource) => `resource said ${resource.status}`,
+      handler: okHandler,
+    });
+
+    const { status, message } = await statusAndBody(
+      await handler(req({ origin: "http://localhost" }), ctx()),
+    );
+    expect(status).toBe(409);
+    expect(message).toBe("resource said NOTICE_PENDING");
+  });
+
+  it("is never called when the flow check passes — it is failure-path only", async () => {
+    const messageFn = vi.fn(() => "should not be reached");
+    const handler = withAuth<Resource, undefined>({
+      getSession: async () => SESSION,
+      resolveResource: async () => ACTIVE_RESOURCE,
+      requireFlow: () => true,
+      requireFlowMessage: messageFn,
+      handler: okHandler,
+    });
+
+    expect((await handler(req({ origin: "http://localhost" }), ctx())).status).toBe(200);
+    expect(messageFn).not.toHaveBeenCalled();
+  });
+
+  it("omitting it still yields the default CONFLICT message, not undefined", async () => {
+    const handler = withAuth<Resource, undefined>({
+      getSession: async () => SESSION,
+      resolveResource: async () => ACTIVE_RESOURCE,
+      requireFlow: () => false,
+      handler: okHandler,
+    });
+
+    const { status, message } = await statusAndBody(
+      await handler(req({ origin: "http://localhost" }), ctx()),
+    );
+    expect(status).toBe(409);
+    expect(typeof message).toBe("string");
+    expect(message.length).toBeGreaterThan(0);
+  });
+
+  it("a function returning an empty string falls back to the default rather than sending a blank message", async () => {
+    const handler = withAuth<Resource, undefined>({
+      getSession: async () => SESSION,
+      resolveResource: async () => ACTIVE_RESOURCE,
+      requireFlow: () => false,
+      requireFlowMessage: () => "",
+      handler: okHandler,
+    });
+
+    const { status, message } = await statusAndBody(
+      await handler(req({ origin: "http://localhost" }), ctx()),
+    );
+    expect(status).toBe(409);
+    expect(message.length).toBeGreaterThan(0);
   });
 });
