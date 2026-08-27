@@ -14,8 +14,9 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-28)
 
-**M0, M1, M2 and M2.5 built. M3 half built. 655 tests, 2 live tests skipped by
-default. All gates green and stable.**
+**M0, M1, M2, M2.5 and M3 are DONE AND REVIEWED, and the chat path is verified
+against the real API. 825 tests, 3 live tests skipped by default. All gates
+green. The M3 retro is next.**
 
 **The vision path is verified.** On 2026-08-28 a real worksheet went to the real
 model for the first time: 35 of 35 problems, every addend pair correct, labels
@@ -33,7 +34,7 @@ generate graded practice from them. The retention jobs enforce what
 | **M2** practice, grading, mastery | built, **reviewed** 2026-08-27 — 27 criteria |
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
 | **M2.5** checkpoints (quizzes) | **done and reviewed** 2026-08-27 — all 7 slices, spec, plan, ADRs 0016/0017/0018 |
-| **M3** chat tutor | **slices 1-3 + the system prompt built** 2026-08-28 — schema and binding CHECK, the CHAT_TRANSCRIPT retention rule and job, the twelve CHAT_* tunables, ADR-0012's context renderer, and TUTOR_SYSTEM_PROMPT. **Nothing writes a chat row yet** — the streaming route is next. |
+| **M3** chat tutor | **done and REVIEWED** 2026-08-28 — all five endpoints (35-39), the NDJSON transport, `lib/chat/safety.ts` (AC 21), the whole UI with both entry points wired, and the chat path verified against the real API. Three review findings, all fixed. |
 | **M4–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
@@ -102,42 +103,229 @@ generate graded practice from them. The retention jobs enforce what
    inputs — currently a copyrighted third-party worksheet, which must stay out
    of the history.
 
-4. **NEXT: M3's streaming route** (plan §3.4's contract, ADR-0013). It is the
-   biggest single piece left in the milestone and everything else waits on it:
-   NDJSON framing, client-supplied turn keys for idempotency, abort-time partial
-   persistence (AC 12 — persist the partial and mark it, or persist nothing;
-   one of the two, consistently, never a duplicate turn on reconnect), the
-   `stop_reason` handling AC 13 and AC 18 need, and AC 19's idle timeout.
+4. **M3's streaming route is BUILT** (endpoint 37, plan §3.4, ADR-0013), with
+   64 new tests. `POST /api/chat/sessions/[sessionId]/messages` returns NDJSON:
+   one `turn`, then `delta`s, then exactly one `done` or `error`, never both.
 
-   It is also the first place **§9.1's measurements become takeable** — you
-   cannot time a first token without a stream. `CHAT_FIRST_TOKEN_BUDGET_MS`
-   (3000) and `CHAT_IDLE_TIMEOUT_MS` (20000) are still guesses and say so in
-   their own doc comments.
+   What it does, so nobody re-derives it: two rows are written **before** the
+   model is called, so a turn exists whether or not a reply arrives; the turn is
+   idempotent on a client-supplied `clientTurnId` enforced by a unique index;
+   abort persists the partial through `after()` and actually cancels generation,
+   so a closed tab stops costing output tokens; `max_tokens` sets `truncated`
+   and still delivers the reply as a SUCCESS; a refusal or a typed SDK error
+   becomes a terminal `error` event carrying an allowlisted string, with no
+   `stop_details`, model id or exception text on the wire; and an idle gap past
+   `CHAT_IDLE_TIMEOUT_MS` aborts, persists the partial and emits `TIMEOUT`.
 
-   Then the UI, **with the entry point as its own named slice**, per the M2.5
-   retro.
+   **Two things in ADR-0013 were wrong and are revised in place** (its
+   2026-08-28 note). §3's "resumes streaming into the same row" is not
+   implementable — **assistant prefill returns a 400 on Opus 5**, so a truncated
+   reply cannot be continued. A STALE partial is regenerated into the same row
+   instead; a FRESH partial is replayed rather than regenerated, because
+   otherwise two concurrent requests carrying one `clientTurnId` both generate
+   into the same row. And §6's `apiStream` yields a terminal error event rather
+   than throwing, which is §2's own client rule moved into the signature.
 
-   Already built for it: `lib/chat/context.ts` (ADR-0012's pure, byte-stable
-   renderer plus `hashContext`), `lib/chat/prompt.ts` (`TUTOR_SYSTEM_PROMPT` at
-   a measured 1,742 tokens against a 1,024 minimum, `buildProblemContextBlock`,
-   `REVEAL_OPERATOR_INSTRUCTION`, `DISTRESS_SAFETY_MESSAGE`), and the twelve
-   `CHAT_*` tunables. The request shape they assemble into is ADR-0012 §3.
+   `CHAT_EFFORT` is new and is `low`, unlike `EXTRACTION_EFFORT`'s `high`.
+   Thinking runs before the first text delta, so effort — not the prompt — is
+   what spends AC 2's three-second first-token budget. Thinking stays ON:
+   disabling it is the documented way to leak `<thinking>` tags, and a
+   nine-year-old reads this output. **Plan §9.1's measurement now has somewhere
+   to land** — the route logs time-to-first-token when it exceeds budget — and
+   that measurement should fix `CHAT_EFFORT`, `CHAT_FIRST_TOKEN_BUDGET_MS` and
+   `CHAT_IDLE_TIMEOUT_MS`, all three still guesses.
+
+   **The session-open routes are BUILT too** (endpoints 35/36, +27 tests).
+   `POST /api/extracted-problems/[problemId]/chat-sessions` and
+   `POST /api/attempts/[attemptId]/chat-sessions` both call one
+   `openChatSession`, so the two entry points cannot drift. Opening is FREE and
+   deterministic: no model call, a templated opener quoting the problem (AC 1),
+   the bounds stamped from config, and the learner context rendered exactly once
+   and snapshotted with its hash (ADR-0012 §2) — which is what makes AC 8 true
+   by construction rather than by discipline.
+
+   **One gate there is mine, not the plan's: a profile with no `gradeLevel`
+   gets a 409.** The alternative was `gradeLevel ?? "GRADE_4"`, which this file
+   already carries as a known smell in the attempts route — and here it would
+   mean guessing a child's reading level for a whole session and then
+   snapshotting the guess onto a row cached for an hour. ADR-0009 §4's "refuse
+   cleanly rather than do it badly", applied. If that turns out to be too strict
+   in practice, the fix is to make grade level required at profile creation, not
+   to reinstate the default.
+
+   **Endpoints 38 and 39 are built too.** `GET /api/chat/sessions/[sessionId]`
+   serves reconnect, AC 19's retry and AC 14's parent transcript read, and
+   lazily closes a session past its bounds (the `reapIfStale` shape — M3 needs
+   no cron job). Its auth is **Owner, not Owner+ACTIVE, deliberately**: a parent
+   who has just withdrawn consent must still be able to read what the tutor said
+   to their child, which is exactly when they are most likely to want to.
+   `POST .../close` is idempotent for a session the student already closed and
+   409s for one closed by a bound — the plan's row says both "idempotent" and
+   "409 if already closed", and that is the reading that makes both true.
+
+   **The UI is built too** (F24-F27), and both entry points are WIRED, not just
+   written: "Ask about this one" on every problem of a CONFIRMED extraction, and
+   "Ask the tutor why" after a wrong or unscored answer in the practice runner —
+   M2 AC 10's join point and the user story the milestone exists for. The
+   parent's transcript list is linked from the student page. The M2.5 retro's
+   lesson was that an entry point buried in a bigger slice never gets built, so
+   it was kept separate and then actually connected.
+
+   **One improvement over plan §4 worth knowing.** The plan accepts a departure
+   from ADR-0005 — a lazy KaTeX chunk on the chat route, because a partial
+   reply's LaTeX cannot be server-rendered mid-`\frac`. That turns out to be
+   unnecessary: the terminal `done` event carries a full `ChatMessageDTO` whose
+   `contentHtml` was ALREADY rendered server-side before it went on the wire. So
+   the streaming bubble shows plain text while streaming and is replaced by the
+   server's HTML the instant the reply lands. **No KaTeX JavaScript ships to the
+   browser anywhere in this app**, and ADR-0005 holds with no exception.
+
+   Two smaller deviations, both deliberate: no `ScrollArea` on the chat page
+   (the transcript is server-rendered and scrolls with the document, which keeps
+   the composer reachable on a phone where two scroll regions would fight), and
+   the component tests use `fireEvent` rather than `@testing-library/user-event`
+   — the latter is not a dependency and the Never list forbids adding one
+   without asking.
+
+   **AC 21 (distress) IS built** — `lib/chat/safety.ts` (plan B38), which an
+   earlier note in this file wrongly called unspecified. A deterministic,
+   local phrase check runs on the student's message before the stream is
+   constructed; on a hit the fixed `DISTRESS_SAFETY_MESSAGE` is written with
+   `safetyResponse: true` and **no request reaches Anthropic** — placed above
+   the client construction so that is structural rather than a branch someone
+   can reorder past.
+
+   It is deliberately not a classifier: the reply a distressed child reads must
+   be text a person chose, it has to work when the API is down, and a child who
+   has just typed something hard should not watch a spinner. The patterns key on
+   SELF-REFERENCE (*myself*, *me*, *my life*), not vocabulary — a keyword bag on
+   "kill"/"die"/"hurt" fires on every history and reading fixture in the test
+   file, and this app is not a maths app. **The plan says plainly that its false
+   positives and false negatives are not measurable in CI**; the fixtures pin
+   behaviour, they do not measure safety.
 
    Both hand-written CHECK constraints so far live only in migrations and are
    invisible in `schema.prisma`; each has an integration test that is its real
    documentation. The plan's §1.2 SQL for the M3 one was snake_case and would
    not have applied — Prisma generates camelCase.
 
+   **M3 is reviewed** (2026-08-28). Three findings, all fixed.
+
+   **The one that mattered: AC 12's partial persist never ran.**
+   `lib/chat/stream.ts` called `after()` from inside the `AbortSignal` listener.
+   `after()` reads Next's request context out of `AsyncLocalStorage` and THROWS
+   without one — and that context propagates through the stream's own `await`s
+   but **NOT into an abort listener**, which runs in the context of whoever
+   called `abort()`. So the abort path threw inside an event listener, nothing
+   was persisted, and nothing reported it. Confirmed empirically before fixing
+   (`AsyncLocalStorage.getStore()` is `undefined` in that listener) rather than
+   argued from the docs. `after()` is now registered EAGERLY, once per turn, in
+   context; the listener only hands it the accumulated text.
+
+   **The test could not have caught it, and that is the second lesson.** It
+   mocked `after` and asserted the mock was called — which proves nothing about
+   whether the real function would have worked, and the mock ALSO ran its
+   callback immediately, which production never does. The mock is now faithful
+   (it defers until the test says the response finished), and there is a
+   regression test asserting `after` is registered *before* any abort. **When
+   the thing in doubt is whether an API is callable at all, mocking it is how
+   the doubt survives the test suite.**
+
+   **Second: AC 16's cascade had no test** — the third appearance of this exact
+   gap (ADR-0017's checkpoint cascade was half-tested; the M2.5 review added the
+   other half). `tests/integration/chat-deletion-cascade.test.ts` now covers all
+   three paths against real Postgres: deleting the extracted problem, deleting
+   the ATTEMPT (the binding any routine walking uploads and extractions misses
+   by construction), and `deleteStudentData`. The cascades did work — but
+   nothing had ever checked, and chat messages are the most sensitive category
+   in the product.
+
+   **Third: a read path wrote to a withdrawn profile.** `GET .../[sessionId]`
+   and the chat page both called `closeIfPastBounds`, which writes a status
+   transition and a wrap-up message — on a path a parent reaches *after*
+   withdrawing consent. Now gated on `ACTIVE`.
+
+   Verified clean, so nobody re-derives it: every chat MUTATION carries the
+   Owner+ACTIVE gate (the exact hole the M2 review found in the retry route);
+   both new caps exist, so neither route can buy model calls in a loop;
+   `renderedContext` cannot reach a client (`toChatSessionDetail` plus the
+   exact-key-set DTO test); the Anthropic SDK's `APIError` carries only the
+   RESPONSE body, so `console.error(err)` cannot log a child's message — the
+   leak the spec names by hand; and `renderMathText` escapes every non-math span
+   and runs KaTeX with `trust: false`, so `dangerouslySetInnerHTML` is safe on
+   model output.
+
+   Known and accepted, not fixed: two concurrent turns can overshoot
+   `maxStudentTurns` by one (the bound is checked at step 5, incremented in the
+   transaction); a distress turn consumes one of the session's turns; and
+   `CHAT_SESSIONS_PER_HOUR` is per profile, not per account — the same shape as
+   the generation cap already listed under "Known gaps".
+
+   **The M3 retro is done** (2026-08-28, appended to
+   [docs/retros/m0-m3.md](docs/retros/m0-m3.md) — a running document, renamed
+   per milestone). Three lessons, two of which changed an agent definition:
+
+   - **17 — a mock stands in for exactly the thing in doubt.** Twice now (M1's
+     vision path, M3's `after()`). Asserting a mock was called answers a
+     different question than "would this work", and a mock whose timing is more
+     forgiving than production's invents a passing path. → `qa-tester`.
+   - **18 — an ADR's claims about a vendor are hypotheses, not decisions.**
+     M3's ADRs asserted three false things about the outside world, all
+     falsified within hours of implementation starting. → `architect`.
+   - **19 — a declared cascade is invisible to the unit suite.** Third
+     occurrence, and the second *after* lesson 13 was written. Now a checklist
+     item rather than a habit. → `qa-tester`.
+
+   Agent edits are mirrored into `~/.claude/agents/` per the convention below,
+   and belong in their OWN commit, separate from the feature work.
+
+   **NEXT: M4, the whiteboard renderer.** Nothing in M3 is outstanding except
+   the two owner decisions in item 5.
+
+   **The chat path is VERIFIED against the real API** (2026-08-28,
+   `tests/unit/live/chat.live.test.ts`, three real streamed turns). Three
+   assumptions became facts:
+
+   - **AC 8's cache actually engages.** Turn 1 paid a **1967-token** cache write
+     at `ttl: '1h'`; turns 2 and 3 each READ 1967 and wrote none, billing only
+     the new messages as fresh input (94 and 212 tokens). Both breakpoints are
+     covered. **Every mocked test in the suite passes identically whether or not
+     Anthropic ever cached anything** — the only symptom would have been a bill
+     roughly ten times the cost model, silently. This is the one assertion that
+     could not be made any other way.
+   - **Latency.** First token at **2072 / 1732 / 1749 ms** (turn 1 is slowest —
+     it pays the cache write); a whole turn in **2.2-2.9s**. So
+     `CHAT_FIRST_TOKEN_BUDGET_MS` (3000) has ~45% headroom and is right;
+     `CHAT_IDLE_TIMEOUT_MS` (20000) is ~7x a whole turn and is deliberately
+     generous, because killing a slow-but-live reply is worse than spinning a
+     few extra seconds on a dead socket; and a ~3s turn against
+     `maxDuration = 300` **kills the polling-fallback question outright**.
+   - **AC 3 holds live.** Asked "just tell me the answer", the tutor declined
+     without scolding, gave a pizza model, and asked a question back. Given a
+     child who answered `2/8` by adding both numerators and denominators, it
+     found the step where the thinking went sideways and asked about THAT,
+     rather than marking it wrong. Replies ran 87-105 output tokens.
+
+   **The caveat, so nobody overstates it:** measured from a development machine,
+   NOT from a deployed Vercel function. ADR-0013's follow-up asks for a preview
+   deployment and that is still open — the model time will not change, the
+   network path might. Nothing here says anything about handwriting, a non-math
+   subject, or a session that runs to its bounds.
+
 5. **Two things need the owner, not an engineer.**
-   - **`DISTRESS_SAFETY_MESSAGE` (AC 21) is an engineer-written DRAFT.** It is
-     what a child in distress actually reads. ADR-0012's follow-up says this
-     copy needs someone qualified, and the owner still has to answer **whether
-     the account holder is notified when it fires** — notifying has real value
-     and real risk, since a child who learns the tutor reports them stops
-     telling it anything true.
-   - **ADR-0012 is still `Status: Proposed`.** M3's session bounds, the
-     snapshotted context and the whole cache design rest on it, and the
-     streaming route is about to sit on top.
+   - **`DISTRESS_SAFETY_MESSAGE` (AC 21) is an engineer-written DRAFT, and it
+     is now on a LIVE PATH.** As of 2026-08-28 `lib/chat/safety.ts` actually
+     shows it to a child; it is no longer an unused constant. ADR-0012's
+     follow-up says this copy needs someone qualified, and the owner still has
+     to answer **whether the account holder is notified when it fires** —
+     notifying has real value and real risk, since a child who learns the tutor
+     reports them stops telling it anything true. This is the single highest
+     priority item on this list.
+   - **ADR-0012 and ADR-0013 are both still `Status: Proposed`**, with
+     "Deciders: Jaysh (pending)". M3's session bounds, the snapshotted context,
+     the cache design and now the shipped streaming route all sit on them. The
+     code was built against them as written, so flipping them to Accepted is
+     paperwork the owner has to sign rather than a design question still open.
 
 ### This app is not a math app
 
@@ -252,8 +440,8 @@ Storage runs on a local filesystem adapter (`STORAGE_DRIVER=local`); the Vercel
 Blob implementation is unbuilt and its placeholder throws.
 
 Start at [docs/README.md](docs/README.md); read
-[docs/retros/m0-m2.md](docs/retros/m0-m2.md) before running the pipeline —
-it now runs through M2.5.
+[docs/retros/m0-m3.md](docs/retros/m0-m3.md) before running the pipeline —
+it now runs through M3.
 
 Because the app tutors minors, anything touching student data carries **COPPA**
 consent and retention obligations. Treat uploaded schoolwork as sensitive
