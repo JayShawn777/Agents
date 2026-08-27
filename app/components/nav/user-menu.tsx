@@ -6,9 +6,15 @@
  * itself does not — it is a plain `<form action={submitSignOut}>` that
  * works with JavaScript disabled; only the surrounding menu chrome is why
  * this file needs "use client".
+ *
+ * The "Settings" item (F17) is the only nav entry point into
+ * `/settings` — without it that page existed but was reachable only by
+ * typing the URL, the same reachability gap this milestone closes for the
+ * per-student privacy page.
  */
 
-import { LogOut, UserRound } from "lucide-react";
+import Link from "next/link";
+import { LogOut, Settings, UserRound } from "lucide-react";
 
 import { submitSignOut } from "@/lib/auth/actions";
 import { buttonVariants } from "@/components/ui/button";
@@ -41,6 +47,13 @@ export function UserMenu({ email }: { email?: string | null }) {
             <DropdownMenuSeparator />
           </>
         ) : null}
+        <DropdownMenuItem render={<Link href="/settings" />}>
+          <span className="flex w-full min-h-11 items-center gap-1.5">
+            <Settings className="size-4" />
+            Settings
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"
           closeOnClick={false}

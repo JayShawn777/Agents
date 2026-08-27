@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GraduationCap } from "lucide-react";
+import { GraduationCap, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +18,17 @@ import type { StudentProfileDTO } from "@/lib/schemas/dto";
  * pre-consent profile (`NOTICE_PENDING`/`CONSENT_PENDING`), which never has
  * one. Both are rendered as their own explicit label rather than blank
  * space or a raw `null`.
+ *
+ * **Reachability fix (F17, closing a gap the previous round left):** every
+ * card, regardless of `status`, now also links to `/students/[id]/privacy`
+ * — the §312.6 deletion surface. Before this, that link only appeared for
+ * `CONSENT_WITHDRAWN` (folded into `primaryAction` below); an `ACTIVE`
+ * profile's privacy page existed but was reachable only by typing the URL.
+ * Endpoint 6 (`/api/students/[id]/data-deletion`) has no status
+ * precondition — Owner only — so the page is meaningful at every status,
+ * and AC 49 requires it reachable without going through account closure.
+ * `students/[studentId]/page.tsx` (F13) isn't built yet, so this icon link
+ * — not that future page — is where a parent finds it today.
  */
 
 function displayTitle(student: StudentProfileDTO): string {
@@ -95,7 +106,18 @@ export function StudentCard({ student }: { student: StudentProfileDTO }) {
         >
           {action.label}
         </Button>
-        <DeleteStudentDialog studentId={student.id} studentLabel={label} />
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-11 text-muted-foreground hover:text-foreground"
+            aria-label={`${label}'s privacy and data`}
+            render={<Link href={`/students/${student.id}/privacy`} />}
+          >
+            <ShieldCheck className="size-4" />
+          </Button>
+          <DeleteStudentDialog studentId={student.id} studentLabel={label} />
+        </div>
       </CardContent>
     </Card>
   );
