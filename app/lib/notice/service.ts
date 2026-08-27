@@ -83,7 +83,17 @@ export async function submitNotice(args: {
   return { ok: true, notice };
 }
 
-function renderNoticeText(): string {
+/**
+ * Exported so `lib/jobs/retry-notice-emails.ts` (B22) can re-render the
+ * SAME content this route sends on first attempt. There is only one
+ * implemented notice version today (`DIRECT_NOTICE_VERSION`), so a retry
+ * always resends the CURRENT copy regardless of the stale row's own
+ * `noticeVersion` — there is no archived-by-version copy store to render an
+ * older version from. If a second notice version ever ships, this becomes
+ * incorrect for old rows and needs a real per-version copy lookup; flagged
+ * here rather than silently assumed.
+ */
+export function renderNoticeText(): string {
   const c = DIRECT_NOTICE_COPY;
   const lines = [
     "This is a notice about the personal information we collect from your child.",
@@ -106,7 +116,7 @@ function renderNoticeText(): string {
   return lines.join("\n");
 }
 
-function renderNoticeHtml(): string {
+export function renderNoticeHtml(): string {
   const c = DIRECT_NOTICE_COPY;
   const list = (items: readonly string[]) => `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
   return [

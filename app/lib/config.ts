@@ -169,6 +169,15 @@ export const PDF_PAGE_LIMIT = 20;
 /** M1 AC 17 — ASSUMPTION. Caps `POST /api/blob/upload` token issuance per student profile. */
 export const UPLOADS_PER_HOUR = 10;
 
+/**
+ * ADR-0007 §2. How stale an `UploadTokenGrant` row must be before
+ * `lib/jobs/reconcile-blobs.ts` prunes it. A grant this old was either
+ * confirmed (and is no longer needed to rate-limit anything) or abandoned
+ * entirely — either way it has stopped doing the one thing it exists for
+ * (bounding `POST /api/blob/upload` token issuance, M1 AC 17).
+ */
+export const GRANT_PRUNE_AFTER_HOURS = 24;
+
 // ─────────────────────────── extraction ───────────────────────────
 
 /** M1 AC 26 — ASSUMPTION. Below this, `ExtractedProblemDTO.lowConfidence` is `true`. */
