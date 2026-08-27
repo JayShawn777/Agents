@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { auth } from "@/lib/auth/config";
 import { UserMenu } from "@/components/nav/user-menu";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 /**
  * The in-app nav shell (plan §4, F4). Wraps every route under
@@ -33,18 +34,23 @@ export default async function AppLayout({
   const session = await auth();
 
   return (
-    <div className="flex min-h-full flex-1 flex-col">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4 sm:px-6">
-        {/* Placeholder brand text — no product name has been decided yet. */}
-        <Link
-          href="/dashboard"
-          className="text-sm font-semibold tracking-tight text-foreground"
-        >
-          Homework Helper
-        </Link>
-        <UserMenu email={session?.user?.email ?? null} />
-      </header>
-      <main className="flex flex-1 flex-col">{children}</main>
-    </div>
+    // M2's mastery-level badge (`components/practice/mastery-strip.tsx`) is
+    // the first consumer of a `Tooltip` — `TooltipProvider` has to wrap
+    // every route under this segment, not just that one page.
+    <TooltipProvider>
+      <div className="flex min-h-full flex-1 flex-col">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4 sm:px-6">
+          {/* Placeholder brand text — no product name has been decided yet. */}
+          <Link
+            href="/dashboard"
+            className="text-sm font-semibold tracking-tight text-foreground"
+          >
+            Homework Helper
+          </Link>
+          <UserMenu email={session?.user?.email ?? null} />
+        </header>
+        <main className="flex flex-1 flex-col">{children}</main>
+      </div>
+    </TooltipProvider>
   );
 }

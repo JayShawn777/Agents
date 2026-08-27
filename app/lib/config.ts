@@ -26,6 +26,10 @@
 
 import { z } from "zod";
 import { CONSENT_METHODS, type ConsentMethod } from "@/lib/consent/methods/port";
+// Type-only — erased at compile time, so this carries no runtime coupling to
+// the generated Prisma client and does not compromise this module's
+// client-bundle safety (see the module docstring above).
+import type { MasteryLevel } from "@/lib/generated/prisma/enums";
 
 export type { ConsentMethod };
 export { CONSENT_METHODS };
@@ -232,6 +236,125 @@ export const EXTRACTION_EFFORT = "high";
 /** M1 AC 23/27. */
 export const MAX_EXTRACTION_ATTEMPTS = 3;
 
+// ─────────────────────────── M2: practice and mastery ───────────────────────────
+
+/**
+ * ADR-0009 §1. Bumped whenever `lib/taxonomy/ccss-k8.json` changes; recorded
+ * verbatim on `PracticeSet.taxonomyVersion` so a later version bump is legible
+ * in the data rather than inferred.
+ */
+export const TAXONOMY_VERSION = "ccss-2010.k8.1";
+
+/**
+ * M2 AC 8 — ASSUMPTION, per ADR-0009's own follow-up ("decide from the first
+ * fixture run"). How many grade levels on either side of a student's own
+ * `gradeLevel` the candidate skill slate (`lib/taxonomy/index.ts`'s
+ * `candidateSlate`) is widened by.
+ */
+export const SKILL_GRADE_BAND = 1;
+
+/**
+ * M2 open question — ASSUMPTION. Which `Subject`s practice can be generated
+ * and auto-graded for. ADR-0009 §4: NGSS is not bundled, so `SCIENCE` leans on
+ * the same math-shaped taxonomy only where a real overlap exists, and a
+ * request against any other subject is refused cleanly (`SLATE_EMPTY`) rather
+ * than graded badly.
+ */
+export const GRADABLE_SUBJECTS = ["MATH", "SCIENCE"] as const;
+
+/** M2 AC 23 — ASSUMPTION. A practice set's size is bounded and never grows. */
+export const PRACTICE_SET_SIZE = 6;
+
+/**
+ * M2 open question — ASSUMPTION: a generated set matches the source
+ * problem's level, with the last problem one step harder. One entry per
+ * generated problem (`PRACTICE_SET_SIZE` long); each value becomes that
+ * problem's `PracticeProblem.difficultyOffset`.
+ */
+export const PRACTICE_SET_DIFFICULTY_LADDER = [0, 0, 0, 0, 0, 1] as const;
+
+/**
+ * M2 AC 12 — ASSUMPTION, and a pedagogical choice, not just a technical one:
+ * how many wrong attempts a child gets before the app shows them the worked
+ * answer. Too low reads as the app giving up on a child who made one careless
+ * slip; too high is the spec's own named failure mode — "stuck in a loop
+ * feeling stupid" (see the user stories in docs/specs/m2-practice-and-mastery.md).
+ * Three attempts is enough to rule out a typo or a momentary slip without
+ * leaving a genuinely stuck child staring at the same wrong answer for long;
+ * it is also the value the wider plan reuses for M3's `CHAT_REVEAL_AFTER_TURNS`,
+ * so a child does not learn two different thresholds for "the app will help me
+ * now" across two different surfaces.
+ */
+export const ATTEMPTS_BEFORE_REVEAL = 3;
+
+/** M2 AC 16. Caps a submitted answer's length at the API boundary. */
+export const PRACTICE_ANSWER_MAX_LENGTH = 500;
+
+/** Bounds a client-supplied `elapsedMs` on an attempt — one hour is generous for a single practice problem. */
+export const ATTEMPT_MAX_ELAPSED_MS = 3_600_000;
+
+/**
+ * M2 AC 26 — ASSUMPTION. Counts `PracticeSet` rows created in the rolling
+ * window, INCLUDING `FAILED` ones — the row is written before the AI call
+ * specifically so it doubles as the rate-limit grant (the same reason
+ * `UploadTokenGrant` exists, M1 AC 17).
+ */
+export const PRACTICE_SETS_PER_HOUR = 5;
+
+/**
+ * M2 open question — pending a real latency measurement (the plan's §9.1
+ * measures M3's equivalent; M2 generation has no analogous spike yet). Mirrors
+ * `EXTRACTION_TIMEOUT_MS`'s "measure before treating as final" status.
+ */
+export const PRACTICE_GENERATION_TIMEOUT_MS = 120_000;
+
+/** Research §1, §6 — same mechanism as `EXTRACTION_MODEL`/`EXTRACTION_EFFORT` (ADR-0005). */
+export const PRACTICE_MODEL = "claude-opus-5";
+/** Research §6: `effort: 'high'` for authoring/generation routes. */
+export const PRACTICE_EFFORT = "high";
+
+/** Mirrors `MAX_EXTRACTION_ATTEMPTS`. */
+export const MAX_PRACTICE_GENERATION_ATTEMPTS = 3;
+
+/** ADR-0011 §2 — the mechanical grading route: research §6, `effort: 'low'` for a route that is deciding a fact, not composing prose. */
+export const GRADING_MODEL = "claude-opus-5";
+export const GRADING_EFFORT = "low";
+
+/** ADR-0011 — the interactive path. A submitted answer must be graded fast enough to feel immediate. */
+export const GRADING_TIMEOUT_MS = 15_000;
+
+/** ADR-0011 §2 — ASSUMPTION. Caps the model-adjudicated hint's length. */
+export const HINT_MAX_LENGTH = 240;
+
+/**
+ * ADR-0010 §2 — ASSUMPTION, to be re-set from the first real fixture run
+ * rather than shipped as final (ADR-0010's own accepted trade-off). Ordered
+ * low to high; `levelFor()` (`lib/mastery/apply.ts`) picks the HIGHEST entry
+ * whose `threshold` is `<= consecutiveCorrect`.
+ *
+ * `requiresMultiplePracticeSets` is the owner's correction to ADR-0010,
+ * decided for this milestone and recorded as a revision note on the ADR: the
+ * architect's original ladder let five consecutive correct answers within
+ * ONE six-problem practice set carry a skill straight from nothing to
+ * `SECURE`, and because `level` is a ratchet (never falls) that mistake would
+ * have been permanent for that skill. Only the TOP rung carries the flag —
+ * lower rungs are unaffected, and the counters underneath (`attemptCount`,
+ * `correctCount`, `consecutiveCorrect`) still accumulate exactly as ADR-0010
+ * §1 describes. See `lib/mastery/apply.ts` for how the flag is enforced
+ * (`SkillMastery.streakStartPracticeSetId`) and
+ * `tests/unit/lib/mastery/apply.test.ts` for the boundary case this exists
+ * to fix: five consecutive correct within one set must NOT promote to SECURE.
+ */
+export const MASTERY_LADDER = [
+  { level: "BEGINNING", threshold: 1, requiresMultiplePracticeSets: false },
+  { level: "DEVELOPING", threshold: 3, requiresMultiplePracticeSets: false },
+  { level: "SECURE", threshold: 5, requiresMultiplePracticeSets: true },
+] as const satisfies readonly {
+  level: MasteryLevel;
+  threshold: number;
+  requiresMultiplePracticeSets: boolean;
+}[];
+
 // ─────────────────────────── auth ───────────────────────────
 
 /** M0 AC 4. Auth.js magic-link `maxAge`. */
@@ -385,5 +508,29 @@ export const RETENTION_POLICY = [
     businessNeed: "Evidence that deletion requests were honoured, without retaining any of the deleted data itself.",
     windowDays: DELETION_AUDIT_RETENTION_DAYS,
     anchor: "completedAt",
+  },
+  {
+    key: "PRACTICE_CONTENT",
+    purpose: "Generated practice problems and their answer keys (PracticeSet, PracticeProblem, PracticeAnswerKey).",
+    businessNeed:
+      "This is the practice material itself — needed for as long as the profile is active so a student can resume a set and a parent can see what was practised.",
+    windowDays: null,
+    note: "life of the ACTIVE profile",
+  },
+  {
+    key: "ATTEMPT_HISTORY",
+    purpose: "A student's submitted answers and grading results for each practice problem (Attempt).",
+    businessNeed:
+      "The evidence the mastery record is built from, and the join point a later chat session opens against; kept for as long as the profile is active.",
+    windowDays: null,
+    note: "life of the ACTIVE profile",
+  },
+  {
+    key: "MASTERY_RECORD",
+    purpose: "Per-skill progress counters and the mastery level derived from them (SkillMastery).",
+    businessNeed:
+      "The durable record of what a student can and cannot yet do, which is the whole product's value; kept for as long as the profile is active. Removed only on profile deletion, never when the extraction it was practised from is deleted (ADR-0010 §6).",
+    windowDays: null,
+    note: "life of the ACTIVE profile",
   },
 ] as const satisfies readonly RetentionPolicyEntry[];

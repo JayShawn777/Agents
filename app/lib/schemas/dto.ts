@@ -13,10 +13,14 @@
 
 import type {
   AgeBand,
+  AnswerFormat,
+  AttemptResult,
   ConsentMethod,
   ConsentRelationship,
   ExtractionStatus,
   GradeLevel,
+  MasteryLevel,
+  PracticeSetStatus,
   StudentProfileStatus,
   Subject,
   UploadStatus,
@@ -112,4 +116,103 @@ export type UploadDetailResponse = {
 export type ExtractionDetailResponse = {
   extraction: ExtractionDTO;
   problems: ExtractedProblemDTO[];
+};
+
+// ─────────────────────────── M2: practice and mastery ───────────────────────────
+// ADR-0011 §5 / M2 AC 17: NONE of these types carry a canonical answer or an
+// accepted form, in any state. `workedSolution`/`workedSolutionHtml` are
+// non-null ONLY once `revealed` is true, and the reveal gate itself is a
+// server-side 409 (`lib/practice/generate.ts`'s sibling reveal route), not a
+// client-trusted flag. `tests/unit/lib/practice/dto.test.ts` asserts every
+// one of these key sets exactly, so a future convenience cannot add a
+// server-only field to a DTO without failing a test.
+
+export type PracticeSetDTO = {
+  id: string;
+  extractionId: string;
+  status: PracticeSetStatus;
+  problemCount: number;
+  answeredCount: number;
+  /** AC 22: ordinal of the first unanswered problem; null when none remain. */
+  resumeOrdinal: number | null;
+  /** From GENERATION_FAILURE_MESSAGES only (AC 6). Never a model id or payload. */
+  failureMessage: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+  // NOTE: model, effort, promptVersion, taxonomyVersion, failureCode and
+  // token counts are NEVER in a DTO.
+};
+
+export type PracticeProblemDTO = {
+  id: string;
+  ordinal: number;
+  /** Plain LaTeX-bearing text. */
+  text: string;
+  /** Server-rendered KaTeX HTML (ADR-0005: no KaTeX JS ships for this surface). */
+  textHtml: string;
+  containsMath: boolean;
+  answerFormat: AnswerFormat;
+  choices: string[];
+  skillCode: string;
+  /** AC 9: what the UI renders. The raw code is carried but never displayed. */
+  skillDescriptor: string;
+  skillGradeLevel: GradeLevel;
+  attemptCount: number;
+  revealed: boolean;
+  /** AC 12/17: NON-NULL ONLY once `revealed` is true. */
+  workedSolution: string | null;
+  workedSolutionHtml: string | null;
+  // NOTE: canonicalAnswer and acceptedForms are NEVER in a DTO, in any state.
+};
+
+export type AttemptDTO = {
+  id: string;
+  practiceProblemId: string;
+  attemptNumber: number;
+  submittedAnswer: string;
+  result: AttemptResult;
+  createdAt: string;
+  // NOTE: gradedBy and appliedToMasteryAt are NEVER in a DTO.
+};
+
+export type FeedbackDTO = {
+  result: AttemptResult;
+  /** Allowlisted framing copy. For UNSCORED this NEVER says the answer is wrong (AC 14). */
+  message: string;
+  /** AC 11: post-checked to contain neither the canonical answer nor any accepted form. */
+  hint: string | null;
+  hintHtml: string | null;
+  retryOffered: boolean;
+  attemptsRemainingBeforeReveal: number;
+  revealAvailable: boolean;
+};
+
+export type SkillMasteryDTO = {
+  skillCode: string;
+  skillDescriptor: string;
+  level: MasteryLevel;
+  /** AC 20: a COUNT of problems practised — monotonic by construction. */
+  problemsPracticed: number;
+  lastPracticedAt: string | null;
+  // NOTE: correctCount, consecutiveCorrect, modelGradedCount and
+  // streakStartPracticeSetId are NEVER in a DTO (AC 20).
+};
+
+export type PracticeSetSummaryDTO = {
+  skills: { skillCode: string; skillDescriptor: string; problemsAnswered: number }[];
+  totalAnswered: number;
+  /** AC 21: progress framing, from an allowlist. No score, no percentage, no streak. */
+  message: string;
+};
+
+export type PracticeSetDetailResponse = {
+  set: PracticeSetDTO;
+  problems: PracticeProblemDTO[];
+  attempts: AttemptDTO[];
+};
+
+export type AttemptResponse = {
+  attempt: AttemptDTO;
+  feedback: FeedbackDTO;
+  mastery: SkillMasteryDTO;
 };

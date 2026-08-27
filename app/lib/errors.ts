@@ -116,6 +116,49 @@ export const EXTRACTION_FAILURE_MESSAGES: Record<ExtractionFailureCode, string> 
   INTERNAL: "Something went wrong on our end. Please try again.",
 };
 
+/**
+ * M2 practice-generation failure codes (plan §2). `PracticeSet.failureCode`
+ * is never returned verbatim — `GENERATION_FAILURE_MESSAGES` is the same
+ * allowlist pattern as `EXTRACTION_FAILURE_MESSAGES` above (M2 AC 6).
+ *
+ * `SLATE_EMPTY` is M2-specific: ADR-0009 §4 says an ungradable subject (no
+ * Common Core coverage, e.g. SCIENCE with no overlapping standard, or a
+ * grade level outside the bundled K-8 range) must be "refused cleanly rather
+ * than graded badly" — this is that refusal, reached with zero AI calls,
+ * through the SAME terminal-FAILED status machine as every other generation
+ * failure (`lib/practice/generate.ts`), so the client has one state to
+ * handle rather than a second error shape for this one case.
+ */
+export const GENERATION_FAILURE_CODES = [
+  "REFUSED",
+  "PARSE_FAILED",
+  "TIMEOUT",
+  "UPSTREAM",
+  "INTERNAL",
+  "SLATE_EMPTY",
+] as const;
+
+export type GenerationFailureCode = (typeof GENERATION_FAILURE_CODES)[number];
+
+export const GENERATION_FAILURE_MESSAGES: Record<GenerationFailureCode, string> = {
+  REFUSED: "We weren't able to generate practice from this worksheet. Please try again.",
+  PARSE_FAILED: "We had trouble creating practice problems this time. Please try again.",
+  TIMEOUT: "This is taking longer than expected. Please try again.",
+  UPSTREAM: "A service we depend on is temporarily unavailable. Please try again shortly.",
+  INTERNAL: "Something went wrong on our end. Please try again.",
+  SLATE_EMPTY: "We can't generate practice for this subject or grade level yet.",
+};
+
+/**
+ * ADR-0011 §4. Substituted for a model-generated hint that a post-check
+ * (`lib/grading/adjudicate.ts`) finds contains the canonical answer or any
+ * accepted form, verbatim or in normalised form. Deliberately generic —
+ * a fallback a child might read after a genuinely bad hint should encourage
+ * another try, not repeat itself into its own kind of unhelpfulness. The
+ * SAME fallback backs M3's chat replies (ADR-0011 §4).
+ */
+export const HINT_FALLBACK = "Try looking at the problem one more time and see what you notice.";
+
 // ─────────────────────────── construction helpers ───────────────────────────
 
 export function apiOk<T>(data: T): ApiResult<T> {

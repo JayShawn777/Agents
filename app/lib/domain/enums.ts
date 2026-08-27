@@ -18,12 +18,17 @@
 
 import {
   AgeBand,
+  AnswerFormat,
+  AttemptResult,
   ConsentMethod,
   ConsentRelationship,
   ConsentScope,
   DeletionKind,
   ExtractionStatus,
+  GradedBy,
   GradeLevel,
+  MasteryLevel,
+  PracticeSetStatus,
   StudentProfileStatus,
   Subject,
   UploadStatus,
@@ -31,12 +36,17 @@ import {
 
 export {
   AgeBand,
+  AnswerFormat,
+  AttemptResult,
   ConsentMethod,
   ConsentRelationship,
   ConsentScope,
   DeletionKind,
   ExtractionStatus,
+  GradedBy,
   GradeLevel,
+  MasteryLevel,
+  PracticeSetStatus,
   StudentProfileStatus,
   Subject,
   UploadStatus,
@@ -116,3 +126,58 @@ export const SUBJECT_ORDER: readonly Subject[] = [
   "COMPUTER_SCIENCE",
   "OTHER",
 ];
+
+// ─────────────────────────── M2: practice and mastery ───────────────────────────
+
+/** Display labels for `AnswerFormat` — used by the answer input to pick a control, not by grading. */
+export const ANSWER_FORMAT_LABELS: Record<AnswerFormat, string> = {
+  NUMERIC: "Number",
+  EXPRESSION: "Expression",
+  FRACTION: "Fraction",
+  SHORT_TEXT: "Short answer",
+  MULTIPLE_CHOICE: "Multiple choice",
+};
+
+/**
+ * ADR-0010 §1. The canonical ordering of `MasteryLevel` — Prisma cannot
+ * compare enum values, so `lib/mastery/apply.ts`'s ratchet and
+ * `LEVELS_BELOW` below are both built FROM this array rather than each
+ * re-declaring the order.
+ */
+export const MASTERY_LEVEL_ORDER: readonly MasteryLevel[] = [
+  "NOT_STARTED",
+  "BEGINNING",
+  "DEVELOPING",
+  "SECURE",
+];
+
+/**
+ * PARENT-FACING vocabulary (M2 AC 9, AC 19, AC 20). A `MasteryLevel` is a
+ * ratchet that never falls — ADR-0010 §"accepted trade-offs" says this
+ * explicitly: "a child who reached SECURE in March and has forgotten
+ * everything still shows SECURE." These labels are written for that
+ * constraint: each one names a stage of getting there, never a state that
+ * could plausibly be read as having been lost, expired, or downgraded. A
+ * child never sees a level that can fall, and word choice is the sharpest
+ * edge of that rule — "Mastered" or "Expert" would invite exactly the
+ * "wait, why did that go away?" question this design forbids from ever
+ * having an answer.
+ */
+export const MASTERY_LEVEL_LABELS: Record<MasteryLevel, string> = {
+  NOT_STARTED: "Not started yet",
+  BEGINNING: "Just getting started",
+  DEVELOPING: "Building confidence",
+  SECURE: "Confident with this",
+};
+
+/**
+ * ADR-0010 §2. `LEVELS_BELOW[level]` is every `MasteryLevel` strictly lower
+ * than `level`, in `MASTERY_LEVEL_ORDER`. The ratchet's guarded write reads
+ * `level: { in: LEVELS_BELOW[newLevel] }` — a concurrent write that already
+ * raised the level makes that `updateMany` match zero rows, which is the
+ * whole of the ratchet's concurrency safety (ADR-0010 §2, "Concurrency").
+ */
+export const LEVELS_BELOW: Record<MasteryLevel, readonly MasteryLevel[]> = Object.fromEntries(
+  MASTERY_LEVEL_ORDER.map((level, index) => [level, MASTERY_LEVEL_ORDER.slice(0, index)]),
+) as unknown as Record<MasteryLevel, readonly MasteryLevel[]>;
+

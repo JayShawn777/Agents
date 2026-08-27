@@ -172,7 +172,15 @@ export async function deleteStudentData(
     });
 
     // Cascades take the descendants: DirectNotice, Upload (and its
-    // Extraction/ExtractedProblem rows), UploadTokenGrant.
+    // Extraction/ExtractedProblem rows), UploadTokenGrant, and — M2 —
+    // PracticeSet (with its PracticeProblem/PracticeAnswerKey rows),
+    // Attempt, and SkillMastery. All five M2 models declare
+    // `onDelete: Cascade` from StudentProfile in prisma/schema.prisma; see
+    // `tests/integration/practice-deletion-cascade.test.ts` for the
+    // assertion against a real database. This is DELIBERATELY the only
+    // path that removes SkillMastery — deleting a single Extraction cascades
+    // its PracticeSet but leaves SkillMastery untouched (ADR-0010 §6: mastery
+    // is per (profile, skill) and accumulates across many worksheets).
     await tx.studentProfile.delete({ where: { id: studentProfileId } });
   });
 

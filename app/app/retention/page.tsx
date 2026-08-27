@@ -56,6 +56,14 @@ const CATEGORY_LABELS: Record<RetentionCategoryKey, string> = {
   ACCOUNT_SESSION: "Account and session records",
   CLOSED_ACCOUNT: "Closed account (recovery window)",
   DELETION_AUDIT: "Deletion audit record",
+  // M2 additions (backend track). Minimal, additive edit to this otherwise
+  // frontend-owned file: `CATEGORY_LABELS` is an exhaustive `Record` over
+  // `RETENTION_POLICY`'s keys, so adding a category in lib/config.ts is a
+  // compile error here until a label is added — see the backend-engineer's
+  // M2 report for why this couldn't be left to the frontend track.
+  PRACTICE_CONTENT: "Generated practice problems and answer keys",
+  ATTEMPT_HISTORY: "Practice answer history",
+  MASTERY_RECORD: "Per-skill mastery progress",
 };
 
 /**

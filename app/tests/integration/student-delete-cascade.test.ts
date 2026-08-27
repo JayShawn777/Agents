@@ -130,6 +130,14 @@ describe("student profile deletion against the real database — consented profi
     }
   });
 
+  // M2 note: this test's 20 sequential real-Postgres round trips occasionally
+  // exceed Vitest's default 5000ms test timeout once several OTHER
+  // integration test files (all sharing this same local database) run
+  // concurrently — e.g. tests/integration/mastery-two-set-ratchet.test.ts,
+  // practice-deletion-cascade.test.ts and answer-key-never-reaches-payload.test.ts,
+  // added in M2. This is contention/timing, not a change in what the test
+  // proves — the assertions are unchanged; only the wall-clock budget is
+  // widened to match how many integration tests now share one local database.
   it("the bare cascade (no explicit ParentalConsent delete first) does not abort either, across 20 trials with extra FK edges from an appended withdrawal row", async () => {
     for (let i = 0; i < 20; i++) {
       const user = await db.user.create({
@@ -182,5 +190,5 @@ describe("student profile deletion against the real database — consented profi
         db.studentProfile.delete({ where: { id: profile.id } }),
       ).resolves.toBeDefined();
     }
-  });
+  }, 20000);
 });

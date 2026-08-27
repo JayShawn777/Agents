@@ -97,6 +97,18 @@ Schema lives in `prisma/schema.prisma`. The datasource URL is read from
 - Review the SQL before applying a migration that drops or renames a column.
   Renames are generated as drop+add, which loses data.
 - Never point `db:migrate` at the production database. Use `migrate deploy`.
+- **Local `prisma dev` shadow-database quirk (found while applying the M2
+  migration, 2026-08-27):** `pnpm db:migrate` can fail with `P3005`/a "reset
+  the public schema" prompt even when the target database and its migration
+  history are actually fine — the local `prisma dev` server's own writes
+  (including `prisma migrate resolve`) were observed to be eventually
+  consistent rather than immediately durable against its exposed TCP ports,
+  and `CREATE DATABASE` defaults to cloning `template1`, which this project's
+  main dev database happens to run as. **Never accept the reset prompt** — it
+  drops all local dev data. If you hit it, see the non-destructive recipe
+  in `.env.example`'s comment on `SHADOW_DATABASE_URL` (`migrate diff` +
+  `db execute` + `migrate resolve`, the same "baseline an existing database"
+  shape `db:migrate:prod` already uses).
 
 ---
 

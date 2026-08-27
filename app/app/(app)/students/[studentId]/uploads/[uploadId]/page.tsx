@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ConfirmExtractionButton } from "@/components/uploads/confirm-extraction-button";
 import { EmptyExtraction } from "@/components/uploads/empty-extraction";
 import { ExtractionStatus } from "@/components/uploads/extraction-status";
+import { GeneratePracticeButton } from "@/components/practice/generate-practice-button";
 import { ProblemList } from "@/components/uploads/problem-list";
 import { UploadPreview } from "@/components/uploads/upload-preview";
 import { requireExtraction, requireUpload } from "@/lib/auth/dal";
@@ -95,9 +96,16 @@ export default async function UploadResultsPage({
           <ProblemList extractionId={extraction.id} problems={problems} editable={Boolean(isEditable)} />
           {isConfirmable ? <ConfirmExtractionButton extractionId={extraction.id} /> : null}
           {extraction.status === "CONFIRMED" ? (
-            <p className="text-sm text-muted-foreground">
-              You&apos;ve confirmed this list is correct.
-            </p>
+            <div className="flex flex-col gap-3">
+              <p className="text-sm text-muted-foreground">
+                You&apos;ve confirmed this list is correct.
+              </p>
+              {/* M2 AC 3's UI half: the CTA only ever renders once the
+                  extraction is CONFIRMED. The server enforces the same rule
+                  with a 409 (endpoint 29), so this is a courtesy, not the
+                  boundary. */}
+              <GeneratePracticeButton extractionId={extraction.id} />
+            </div>
           ) : null}
         </>
       ) : null}

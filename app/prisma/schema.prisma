@@ -118,6 +118,50 @@ enum ExtractionStatus {
   CONFIRMED
 }
 
+// ─────────────────────── M2: practice and mastery ───────────────────────
+
+enum PracticeSetStatus {
+  GENERATING // row exists, AI call in flight. Also the AC 26 rate-limit grant.
+  READY // generated, not yet started
+  IN_PROGRESS // at least one attempt
+  COMPLETE // AC 21 — the student reached the end
+  FAILED // AC 5/6 — zero problems persisted
+}
+
+enum AnswerFormat {
+  NUMERIC
+  EXPRESSION
+  FRACTION
+  SHORT_TEXT
+  MULTIPLE_CHOICE
+}
+
+/// AC 14: UNSCORED is a first-class outcome, not an error. The student is never
+/// told they are wrong on an UNSCORED attempt (ADR-0011 §3).
+enum AttemptResult {
+  CORRECT
+  INCORRECT
+  UNSCORED
+}
+
+/// Which stage of ADR-0011 decided this attempt. Feeds SkillMastery.modelGradedCount,
+/// which is how a later parent-facing report (M7) can be honest about its own evidence.
+enum GradedBy {
+  NORMALIZER
+  MODEL
+  UNGRADED
+}
+
+/// AC 18. Ordered. MASTERY_LEVEL_ORDER in lib/domain/enums.ts is the canonical
+/// ordering — Prisma cannot compare enum values, so the ratchet uses
+/// `level: { in: LEVELS_BELOW[next] }` (ADR-0010 §2).
+enum MasteryLevel {
+  NOT_STARTED
+  BEGINNING
+  DEVELOPING
+  SECURE
+}
+
 // ─────────────────── auth (Auth.js v5, ADR-0002) ───────────────────
 
 model User {
@@ -229,11 +273,16 @@ model StudentProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  notices  DirectNotice[]
-  consents ParentalConsent[]
-  uploads  Upload[]
-  grants   UploadTokenGrant[]
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notices      DirectNotice[]
+  consents     ParentalConsent[]
+  uploads      Upload[]
+  grants       UploadTokenGrant[]
+  /// M2 — required by Prisma; cascade-deleted with the profile (AC 25).
+  practiceSets PracticeSet[]
+  attempts     Attempt[]
+  /// M2 — required by Prisma. Survives extraction deletion by design (ADR-0010 §6).
+  skillMastery SkillMastery[]
 
   @@index([userId, createdAt])
   /// The pre-consent purge job's query (AC 22). Without it that job seq-scans.
@@ -399,8 +448,10 @@ model Extraction {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  upload   Upload             @relation(fields: [uploadId], references: [id], onDelete: Cascade)
-  problems ExtractedProblem[]
+  upload       Upload             @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  problems     ExtractedProblem[]
+  /// M2 AC 25: deleting the extraction cascades its practice sets (but never SkillMastery, ADR-0010 §6).
+  practiceSets PracticeSet[]
 
   @@index([status, startedAt])
 }
@@ -426,8 +477,173 @@ model ExtractedProblem {
 
   extraction Extraction @relation(fields: [extractionId], references: [id], onDelete: Cascade)
 
+  practiceProblems PracticeProblem[]
+
   @@unique([extractionId, ordinal])
   @@index([extractionId])
+}
+
+// ─────────────────────── M2: practice and mastery ───────────────────────
+
+model PracticeSet {
+  id               String            @id @default(cuid())
+  studentProfileId String
+  /// AC 3: practice only ever comes from a CONFIRMED extraction. Cascade is
+  /// AC 25: deleting the extraction deletes the practice built from it.
+  extractionId     String
+  status           PracticeSetStatus @default(GENERATING)
+
+  /// Provenance of the authoring call. NEVER returned to a client (AC 6).
+  model              String
+  effort             String
+  promptVersion      String
+  /// ADR-0009 §3: which taxonomy generation produced these skill codes.
+  taxonomyVersion    String
+  generationAttempts Int     @default(0)
+  /// Internal code, mapped to a fixed user-facing string at the API layer (AC 6).
+  failureCode        String?
+  inputTokens        Int?
+  outputTokens       Int?
+
+  startedAt   DateTime?
+  /// Generation finished (any terminal status).
+  completedAt DateTime?
+  /// AC 21: the student reached the end. A different axis from `completedAt`.
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  studentProfile StudentProfile    @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  extraction     Extraction        @relation(fields: [extractionId], references: [id], onDelete: Cascade)
+  problems       PracticeProblem[]
+
+  /// AC 26's hourly cap counts rows here. The row is written BEFORE the AI call,
+  /// so a failed generation still counts — the same reason UploadTokenGrant exists.
+  @@index([studentProfileId, createdAt])
+  @@index([extractionId])
+  /// The lazy-reap query for a GENERATING set whose function died (mirrors reapIfStale).
+  @@index([status, startedAt])
+}
+
+model PracticeProblem {
+  id                       String  @id @default(cuid())
+  practiceSetId            String
+  ordinal                  Int
+  /// AC 1: which extracted problem this was modelled on. SetNull rather than
+  /// Cascade — the set already cascades from the extraction, so this FK only has
+  /// to survive M1 AC 29's single-problem delete without taking the practice with it.
+  sourceExtractedProblemId String?
+
+  /// AC 7: exactly one primary skill code, from the bundled taxonomy. Constrained
+  /// at generation time by a zod enum over the candidate slate (ADR-0009 §2), and
+  /// re-checked against the same slate before persistence.
+  skillCode        String
+  /// LaTeX delimited $…$ / $$…$$, same convention as M1 (ADR-0005).
+  text             String
+  containsMath     Boolean      @default(false)
+  answerFormat     AnswerFormat
+  /// MULTIPLE_CHOICE only; empty otherwise. NOT an answer key — the correct
+  /// option is identified in PracticeAnswerKey, never by position here.
+  choices          String[]
+  /// 0 = same level as the source, +1 = one step harder (the spec's assumption:
+  /// the last problem in a set is one step harder). Driven by PRACTICE_SET_DIFFICULTY_LADDER.
+  difficultyOffset Int          @default(0)
+  createdAt        DateTime     @default(now())
+
+  practiceSet   PracticeSet        @relation(fields: [practiceSetId], references: [id], onDelete: Cascade)
+  sourceProblem ExtractedProblem?  @relation(fields: [sourceExtractedProblemId], references: [id], onDelete: SetNull)
+  answerKey     PracticeAnswerKey?
+  attempts      Attempt[]
+
+  @@unique([practiceSetId, ordinal])
+  @@index([skillCode])
+}
+
+/// AC 17, the STRUCTURAL half. A separate table so that
+/// `db.practiceProblem.findMany({ where: { practiceSetId } })` — the query a page
+/// writes without thinking — cannot return an answer key, and so that a server
+/// component passing a PracticeProblem row into a client component serialises no
+/// key into the RSC flight payload. Reaching it requires typing
+/// `include: { answerKey: true }`, which is one grep for a reviewer (ADR-0011 §5).
+model PracticeAnswerKey {
+  practiceProblemId String   @id
+  canonicalAnswer   String
+  /// AC 13: alternate written forms the author judged acceptable for this skill.
+  acceptedForms     String[]
+  /// AC 12: revealed only after ATTEMPTS_BEFORE_REVEAL incorrect attempts.
+  workedSolution    String
+  createdAt         DateTime @default(now())
+
+  practiceProblem PracticeProblem @relation(fields: [practiceProblemId], references: [id], onDelete: Cascade)
+}
+
+model Attempt {
+  id                 String        @id @default(cuid())
+  practiceProblemId  String
+  /// Denormalised. Ownership scoping is one index hit instead of a three-table
+  /// join, and it is the same profile either way.
+  studentProfileId   String
+  /// AC 10: 1-based, never overwritten. The @@unique makes a double-submit a
+  /// P2002 the handler converts into "return the existing attempt".
+  attemptNumber      Int
+  submittedAnswer    String
+  result             AttemptResult
+  gradedBy           GradedBy
+  /// AC 11: shown to the student. Post-checked to exclude the canonical answer
+  /// and every accepted form (ADR-0011 §4).
+  hint               String?
+  /// AC 12: this attempt is the one that triggered the reveal.
+  revealed           Boolean       @default(false)
+  elapsedMs          Int?
+  /// Exactly-once mastery application (ADR-0010 §3). Also stamped immediately,
+  /// with NO counter change, for an attempt submitted after a reveal.
+  appliedToMasteryAt DateTime?
+  createdAt          DateTime      @default(now())
+
+  practiceProblem PracticeProblem @relation(fields: [practiceProblemId], references: [id], onDelete: Cascade)
+  studentProfile  StudentProfile  @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([practiceProblemId, attemptNumber])
+  @@index([studentProfileId, createdAt])
+  @@index([practiceProblemId, createdAt])
+}
+
+/// AC 18. One record per (profile, skill). `level` is a RATCHET — assigned only a
+/// value strictly higher than its current one (AC 19, ADR-0010 §2).
+/// Removed ONLY on profile deletion, never on extraction deletion (ADR-0010 §6).
+model SkillMastery {
+  id               String @id @default(cuid())
+  studentProfileId String
+  /// ADR-0009 §3: a bundled-taxonomy code. Deliberately no foreign key.
+  skillCode        String
+
+  attemptCount             Int          @default(0)
+  correctCount             Int          @default(0)
+  /// Resets to 0 on a wrong answer. NEVER rendered — AC 20 governs payloads,
+  /// and this is an input to the ratchet, not an output.
+  consecutiveCorrect       Int          @default(0)
+  /// DEVIATION FROM ADR-0010'S ORIGINAL FIELD LIST — see the owner's correction
+  /// recorded in ADR-0010's revision note and `lib/mastery/apply.ts`. Records
+  /// which PracticeSet the CURRENT consecutive-correct streak began in, so the
+  /// ratchet can require the streak to have crossed into a second, distinct
+  /// PracticeSet before it may promote a skill to the top rung of
+  /// MASTERY_LADDER. Reset to null alongside `consecutiveCorrect` on any wrong
+  /// answer. NEVER rendered — this is an input to the ratchet, not an output.
+  streakStartPracticeSetId String?
+  /// How many of correctCount the MODEL decided rather than the deterministic
+  /// normaliser. Server-only. The evidence floor for any later parent-facing report.
+  modelGradedCount         Int          @default(0)
+  level                    MasteryLevel @default(NOT_STARTED)
+  levelReachedAt           DateTime?
+  lastPracticedAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([studentProfileId, skillCode])
+  @@index([studentProfileId, level])
 }
 
 // ──────────────────────────── audit ────────────────────────────

@@ -6,7 +6,16 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/config";
 import { isInClosureRecoveryWindow } from "@/lib/auth/closure";
 import { db } from "@/lib/db";
-import type { Extraction, ExtractedProblem, StudentProfile, Upload } from "@/lib/generated/prisma/client";
+import type {
+  Attempt,
+  Extraction,
+  ExtractedProblem,
+  PracticeAnswerKey,
+  PracticeProblem,
+  PracticeSet,
+  StudentProfile,
+  Upload,
+} from "@/lib/generated/prisma/client";
 
 /**
  * The Data Access Layer (Next.js's own recommended pattern — see
@@ -140,11 +149,117 @@ export type ExtractionWithProblems = Extraction & { upload: Upload; problems: Ex
  * `extractionId` is a 404 (M1 AC 33), never a 403 that would confirm the id
  * exists.
  */
-export const requireExtraction = cache(async (extractionId: string): Promise<ExtractionWithProblems | null> => {
-  const session = await verifySession();
-  if (!session) return null;
-  return db.extraction.findFirst({
-    where: { id: extractionId, upload: { studentProfile: { userId: session.userId } } },
-    include: { upload: true, problems: { orderBy: { ordinal: "asc" } } },
-  });
-});
+export type ExtractionWithStudentProfile = Extraction & { upload: Upload & { studentProfile: StudentProfile } };
+
+/**
+ * `requireExtraction`, extended (S19 / plan §5.0): `upload` now carries its
+ * `studentProfile` too, so M2 endpoint 29 (`POST
+ * .../extractions/[extractionId]/practice-sets`) can run its Owner+ACTIVE
+ * gate (`requireState`, ADR-0006 step 4) off the SAME resolved resource,
+ * without a second query. Every existing caller (M1's confirm/retry/problem
+ * routes) already loads `upload` and is unaffected by the extra nested field.
+ */
+export const requireExtraction = cache(
+  async (extractionId: string): Promise<(ExtractionWithProblems & ExtractionWithStudentProfile) | null> => {
+    const session = await verifySession();
+    if (!session) return null;
+    return db.extraction.findFirst({
+      where: { id: extractionId, upload: { studentProfile: { userId: session.userId } } },
+      include: { upload: { include: { studentProfile: true } }, problems: { orderBy: { ordinal: "asc" } } },
+    });
+  },
+);
+
+// ─────────────────────── M2: practice and mastery ───────────────────────
+
+/**
+ * A `PracticeSet` plus its ordered `PracticeProblem` rows, each with its
+ * `Attempt` history and — the ONE place outside `lib/grading/**` this DAL
+ * selects anything off `PracticeAnswerKey` — its `workedSolution` ONLY
+ * (`select`, never `include`). `canonicalAnswer` and `acceptedForms` are
+ * structurally impossible to obtain through this function: Prisma never
+ * fetches a column that isn't named in a `select`, so the secret half of the
+ * answer key cannot reach this row's memory at all, let alone a DTO
+ * (ADR-0011 §5, M2 AC 17). `workedSolution` itself is still gated on
+ * `revealed` by `lib/practice/dto.ts`'s `toPracticeProblemDTO` — see that
+ * function's docstring for why this DAL can't withhold it structurally the
+ * same way and what closes the gap instead.
+ */
+export type PracticeSetWithProblems = PracticeSet & {
+  /** Just enough of the owning profile for the Owner+ACTIVE gate (endpoint 34's `requireState`) without a second query. */
+  studentProfile: Pick<StudentProfile, "status">;
+  problems: (PracticeProblem & {
+    attempts: Attempt[];
+    answerKey: Pick<PracticeAnswerKey, "workedSolution"> | null;
+  })[];
+};
+
+/**
+ * Resolves a practice set scoped to the CALLING user via the
+ * `PracticeSet -> StudentProfile.userId` join — the same "id in a URL is not
+ * authorization" rule (plan §0) applied to practice. Cross-account and
+ * nonexistent ids are indistinguishable (both `null`), which is exactly the
+ * 404 M2 AC 24 demands. Used by endpoint 30 and the practice-set page
+ * (`app/(app)/practice/[practiceSetId]/page.tsx`).
+ */
+export const requirePracticeSet = cache(
+  async (practiceSetId: string): Promise<PracticeSetWithProblems | null> => {
+    const session = await verifySession();
+    if (!session) return null;
+    return db.practiceSet.findFirst({
+      where: { id: practiceSetId, studentProfile: { userId: session.userId } },
+      include: {
+        studentProfile: { select: { status: true } },
+        problems: {
+          orderBy: { ordinal: "asc" },
+          include: {
+            attempts: { orderBy: { attemptNumber: "asc" } },
+            answerKey: { select: { workedSolution: true } },
+          },
+        },
+      },
+    });
+  },
+);
+
+/** A `PracticeProblem` plus its parent `PracticeSet` (with just enough of the owning profile for the Owner+ACTIVE gate) and its own `Attempt` history, ordered by `attemptNumber`. Deliberately WITHOUT `answerKey` — see `lib/grading/grade.ts`'s docstring for the one place that may load it (ADR-0011 §5, M2 AC 17). */
+export type PracticeProblemWithContext = PracticeProblem & {
+  practiceSet: PracticeSet & { studentProfile: Pick<StudentProfile, "status" | "gradeLevel"> };
+  attempts: Attempt[];
+};
+
+/**
+ * Resolves a practice problem scoped to the CALLING user via the
+ * `PracticeProblem -> PracticeSet -> StudentProfile.userId` join. Used by
+ * endpoints 32/33 (`app/api/practice-problems/[problemId]/**`). Cross-account
+ * and nonexistent ids are both a 404 (M2 AC 24).
+ */
+export const requirePracticeProblem = cache(
+  async (practiceProblemId: string): Promise<PracticeProblemWithContext | null> => {
+    const session = await verifySession();
+    if (!session) return null;
+    return db.practiceProblem.findFirst({
+      where: { id: practiceProblemId, practiceSet: { studentProfile: { userId: session.userId } } },
+      include: {
+        practiceSet: { include: { studentProfile: { select: { status: true, gradeLevel: true } } } },
+        attempts: { orderBy: { attemptNumber: "asc" } },
+      },
+    });
+  },
+);
+
+/**
+ * The ONE function that may load a `PracticeAnswerKey` row (ADR-0011 §5,
+ * M2 AC 17) — a reviewer grep for `practiceAnswerKey.findUnique` /
+ * `include: { answerKey`, same control as ADR-0007's `parentalConsent.update`
+ * convention. By convention only two call sites use it, both AFTER
+ * independently re-verifying ownership via `requirePracticeProblem` above:
+ * `lib/grading/grade.ts` and the reveal handler
+ * (`app/api/practice-problems/[problemId]/reveal/route.ts`). This helper
+ * takes an already-owned `practiceProblemId` rather than a session — it is a
+ * second, narrower query on a resource ownership has already established,
+ * not a second authorization path.
+ */
+export async function requirePracticeAnswerKey(practiceProblemId: string): Promise<PracticeAnswerKey | null> {
+  return db.practiceAnswerKey.findUnique({ where: { practiceProblemId } });
+}

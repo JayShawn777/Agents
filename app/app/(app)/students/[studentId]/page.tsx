@@ -4,13 +4,16 @@ import { notFound } from "next/navigation";
 import { Camera } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { MasteryStrip } from "@/components/practice/mastery-strip";
+import { PracticeSetList } from "@/components/practice/practice-set-list";
 import { StudentStatusBadge } from "@/components/students/student-status-badge";
 import { UploadList, type UploadListRow } from "@/components/uploads/upload-list";
 import { requireStudentProfile } from "@/lib/auth/dal";
+import { toPracticeSetDTO, toSkillMasteryDTO } from "@/lib/practice/dto";
 import { db } from "@/lib/db";
 import { toStudentProfileDTO } from "@/lib/students/dto";
 import { toUploadDTO } from "@/lib/uploads/dto";
-import type { StudentProfileDTO } from "@/lib/schemas/dto";
+import type { PracticeSetDTO, SkillMasteryDTO, StudentProfileDTO } from "@/lib/schemas/dto";
 
 /**
  * The student's own page (plan §4/§5.2, F13; M0 AC 36, M1 AC 11). Gates
@@ -72,6 +75,27 @@ export default async function StudentHomePage({
     extractionStatus: row.extraction?.status ?? null,
   }));
 
+  // M2 AC 9/18-20 (plan §4, F20): mastery is a PARENT-facing read — this
+  // page, not the practice runner, is where it renders. Reuses the SAME
+  // `toSkillMasteryDTO` builder `lib/practice/dto.ts` exports, so this
+  // strip can never diverge from what a future parent-report surface (M7)
+  // reads off the same rows.
+  const masteryRows = await db.skillMastery.findMany({
+    where: { studentProfileId: studentId },
+    orderBy: { lastPracticedAt: "desc" },
+  });
+  const mastery: SkillMasteryDTO[] = masteryRows.map(toSkillMasteryDTO);
+
+  // M2 AC 22-23 (plan §4, F23): the resumable practice-set list, reusing the
+  // SAME `toPracticeSetDTO` the practice page and endpoint 30 use, so this
+  // list can never drift from what the runner itself shows.
+  const practiceSetRows = await db.practiceSet.findMany({
+    where: { studentProfileId: studentId },
+    orderBy: { createdAt: "desc" },
+    include: { problems: { include: { attempts: true } } },
+  });
+  const practiceSets: PracticeSetDTO[] = practiceSetRows.map(toPracticeSetDTO);
+
   const missingStep =
     student.status === "CONSENT_WITHDRAWN" || student.canUpload
       ? null
@@ -131,6 +155,15 @@ export default async function StudentHomePage({
         <h2 className="text-sm font-medium text-foreground">Uploads</h2>
         <UploadList uploads={uploads} studentId={studentId} canUpload={student.canUpload} />
       </div>
+
+      {practiceSets.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-foreground">Practice</h2>
+          <PracticeSetList sets={practiceSets} />
+        </div>
+      ) : null}
+
+      <MasteryStrip mastery={mastery} />
     </div>
   );
 }

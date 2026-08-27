@@ -322,6 +322,56 @@ other M2 model.
       this "a reasonable position" and says it would be a new row in M0's
       retention table. If they do, §6's warning gets sharper.
 
+## Revision note — 2026-08-27, the owner's two-set correction to §2
+
+Flagged by the owner during M2 implementation, and confirmed by the
+"Negative / accepted trade-offs" section this ADR already wrote: *"Six
+problems per set with SECURE at 5 consecutive means a single set can carry a
+skill from nothing to SECURE. That is almost certainly too fast."* This was
+correct, and because `level` is a ratchet, the mistake would have been
+permanent per skill the first time it happened.
+
+**The fix:** the ratchet's TOP rung (`SECURE`) may not be reached until the
+evidence — the consecutive-correct streak — has touched at least two distinct
+`PracticeSet`s. Lower rungs (`BEGINNING`, `DEVELOPING`) are unaffected, and
+no counter's accumulation rule changes: `attemptCount`, `correctCount` and
+`consecutiveCorrect` still update exactly as §1/§2 describe.
+
+**Implementation, one column beyond §1's original field list:**
+`SkillMastery.streakStartPracticeSetId String?` — the `PracticeSet` the
+CURRENT consecutive-correct streak began in, reset to `null` alongside
+`consecutiveCorrect` on any wrong answer. A given attempt's evidence "spans
+two sets" iff `streakStartPracticeSetId` is set AND differs from the
+`PracticeSet` that attempt belongs to — true the moment a streak that started
+in one set picks up a correct answer in a different one, and never before.
+`MASTERY_LADDER` (`lib/config.ts`) gained a `requiresMultiplePracticeSets`
+flag, set only on the `SECURE` entry; `lib/mastery/apply.ts`'s `levelFor`
+skips any rung whose flag is set unless the streak has spanned two sets.
+
+Like `consecutiveCorrect` itself, `streakStartPracticeSetId` is NEVER
+rendered — it is an input to the ratchet, not an output, and is absent from
+`SkillMasteryDTO` (asserted by the same exact-key-set test §2's follow-up
+already asked for).
+
+Tested at the boundary directly: `tests/unit/lib/mastery/apply.test.ts`
+(the pure `levelFor` table, including "five consecutive correct within ONE
+set does NOT reach SECURE") and
+`tests/integration/mastery-two-set-ratchet.test.ts` (the same boundary
+through the real `applyMastery` transaction against Postgres). Both were
+run against the code with this gate removed first and confirmed to fail
+before the fix was restored — a regression test that has never gone red is
+not evidence.
+
+**Concurrency caveat, stated rather than solved (see `lib/mastery/apply.ts`'s
+own docstring):** `consecutiveCorrect` and `streakStartPracticeSetId` are
+computed from a read earlier in the same transaction, not from an atomic
+increment or a guarded write the way `level` itself is. Two attempts on the
+SAME skill landing in overlapping transactions could in principle race on
+these two fields. Accepted at the same severity as this codebase's existing
+count-then-create rate-limiter races (`lib/uploads/rate-limit.ts`): a single
+child submits one answer at a time, and the worst case is an undercounted
+streak by one, never a level moving down.
+
 ## Revisit when
 
 The owner answers the parent-facing decay question; or a measured fixture run
