@@ -14,7 +14,7 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-27)
 
-**3 of 8 milestones built. 501 tests. All gates green and stable.**
+**3 of 8 milestones built. 517 tests. All gates green and stable.**
 
 A parent can sign up, read the §312.4 notice, give verified consent, add a
 student, upload a worksheet, see its problems extracted and correctable, and
@@ -26,6 +26,7 @@ generate graded practice from them. The retention jobs enforce what
 | **M0** accounts, consent, deletion | done, reviewed — 52 criteria |
 | **M1** upload, extraction | done, reviewed — 36 criteria |
 | **M2** practice, grading, mastery | **built, NOT reviewed** — 27 criteria |
+| **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
 | **M3–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
 
 ### Start here, in this order
@@ -36,6 +37,34 @@ generate graded practice from them. The retention jobs enforce what
    evidence. Assume this one will too.
 2. **Then M3** (chat tutor). Its contract is fixed in the M2–M7 plan.
    M4–M7 are shape-only until the measurements in that plan's §9 are taken.
+
+### This app is not a math app
+
+Confirmed by the owner on 2026-08-27: the tutor covers **math, reading, language
+arts, social studies, science** and, eventually, foreign languages. Math is the
+first example, never the scope.
+
+It very nearly shipped as a math app by accident. `GRADABLE_SUBJECTS` was hand
+written in `lib/config.ts` as `['MATH', 'SCIENCE']` while the bundled taxonomy
+carried math and ELA and **no science at all** — so science worksheets passed the
+gradability filter and died as `SLATE_EMPTY`, and ELA's 18 usable skills were
+filtered out one step earlier. Only math worked. Every one of the 501 tests that
+passed over this used math.
+
+The fix is structural, not a corrected constant. `lib/taxonomy/skills-k8.json`
+now bundles four frameworks (CCSS math + ELA, NGSS science, C3 social studies),
+`SUBJECT_FAMILY` maps the finer-grained `Subject` enum onto them so `READING`,
+`WRITING` and `HISTORY` reach the right skills, and **`GRADABLE_SUBJECTS` is
+derived from that coverage** — a subject cannot be declared gradable unless
+skills for it exist. See ADR-0009's 2026-08-27 revision note.
+
+`FOREIGN_LANGUAGE` is still uncovered and is the known gap against the promise:
+ACTFL is organised by proficiency rather than grade, so bundling it means
+deciding a mapping ACTFL does not publish. It needs its own ADR. A test asserts
+it is non-gradable so that adding it has to be deliberate.
+
+**Before shipping anything subject-specific, ask whether it works for an essay
+and a history question, not just an equation.**
 
 ### Known gaps, carried forward
 

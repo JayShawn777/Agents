@@ -239,11 +239,15 @@ export const MAX_EXTRACTION_ATTEMPTS = 3;
 // ─────────────────────────── M2: practice and mastery ───────────────────────────
 
 /**
- * ADR-0009 §1. Bumped whenever `lib/taxonomy/ccss-k8.json` changes; recorded
+ * ADR-0009 §1. Bumped whenever `lib/taxonomy/skills-k8.json` changes; recorded
  * verbatim on `PracticeSet.taxonomyVersion` so a later version bump is legible
  * in the data rather than inferred.
+ *
+ * `.2` widened the bundle from CCSS alone to CCSS + NGSS (science) + C3
+ * (social studies), and renamed the data file accordingly. Sets generated
+ * before that carry `ccss-2010.k8.1`.
  */
-export const TAXONOMY_VERSION = "ccss-2010.k8.1";
+export const TAXONOMY_VERSION = "k8-ccss-ngss-c3.2";
 
 /**
  * M2 AC 8 — ASSUMPTION, per ADR-0009's own follow-up ("decide from the first
@@ -254,13 +258,15 @@ export const TAXONOMY_VERSION = "ccss-2010.k8.1";
 export const SKILL_GRADE_BAND = 1;
 
 /**
- * M2 open question — ASSUMPTION. Which `Subject`s practice can be generated
- * and auto-graded for. ADR-0009 §4: NGSS is not bundled, so `SCIENCE` leans on
- * the same math-shaped taxonomy only where a real overlap exists, and a
- * request against any other subject is refused cleanly (`SLATE_EMPTY`) rather
- * than graded badly.
+ * `GRADABLE_SUBJECTS` MOVED to `lib/taxonomy/index.ts`, where it is derived
+ * from the bundle's actual coverage instead of hand-listed here. It cannot
+ * live in this file: the derivation reads the taxonomy, and the taxonomy reads
+ * `TAXONOMY_VERSION` from this file, so importing it back would be circular.
+ *
+ * Its former value here was `["MATH", "SCIENCE"]`, which was wrong in both
+ * directions — no science skill was bundled, and ELA's 18 were excluded. See
+ * the coverage note in `lib/taxonomy/index.ts`.
  */
-export const GRADABLE_SUBJECTS = ["MATH", "SCIENCE"] as const;
 
 /** M2 AC 23 — ASSUMPTION. A practice set's size is bounded and never grows. */
 export const PRACTICE_SET_SIZE = 6;

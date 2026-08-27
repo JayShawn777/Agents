@@ -1,9 +1,43 @@
-# ADR-0009: A bundled Common Core subset, and the model picks from a closed slate
+# ADR-0009: A bundled standards subset, and the model picks from a closed slate
 
 - **Status:** Proposed
 - **Date:** 2026-08-27
 - **Deciders:** Jaysh (pending)
 - **Spec:** docs/specs/m2-practice-and-mastery.md
+
+## Revision 2026-08-27 — §4 replaced; the bundle is no longer Common Core alone
+
+Revised in place under docs rule 3 (a **Proposed** ADR may be revised with a
+dated note saying what changed and why).
+
+**What changed.** §4 originally scoped the bundle to Common Core and declared
+`GRADABLE_SUBJECTS = ['MATH', 'SCIENCE']`. That is replaced: the bundle now
+carries **four frameworks** — CCSS (math, ELA), NGSS (science) and C3 (social
+studies) — the data file is `lib/taxonomy/skills-k8.json`, and the gradable set
+is **derived from coverage** rather than declared. See the new §4 below.
+
+**Why.** Two reasons, one product and one defect.
+
+The product reason: the owner confirmed on 2026-08-27 that this is a tutor for
+math, reading, language arts, social studies and science — not a math app that
+tolerates other subjects. A first cut scoped to one framework put the product's
+core promise behind a data file nobody was scheduled to revisit.
+
+The defect reason, which matters more, is that §4's own reasoning did not
+survive contact with the implementation. It said science would be "generated
+against the math-shaped machinery only where a math standard genuinely applies."
+`candidateSlate` never did that and could not — it filters strictly on
+`skill.subject`, and no bundled skill was tagged `SCIENCE`. So the two lists
+ended up almost exactly inverted: **science was declared gradable with zero
+science skills bundled**, meaning every science worksheet passed the gradability
+filter and then died as `SLATE_EMPTY`; while **ELA had 18 usable skills and was
+excluded one step earlier**. 501 tests passed over this, all of them using math.
+
+The lesson is the one the M0-M2 retro already records as #11 — green gates
+answer a different question from "does the thing work" — and the fix is
+structural rather than a corrected constant: `GRADABLE_SUBJECTS` is now computed
+from `SUBJECT_FAMILY` and the loaded bundle, so a subject cannot be declared
+gradable unless skills for it exist. That class of drift is now unrepresentable.
 
 ## Context
 
@@ -133,13 +167,50 @@ id. A retired code never breaks a page.
 
 ### 4. Which subjects are in scope
 
-`GRADABLE_SUBJECTS = ['MATH', 'SCIENCE']` (M2's stated assumption). Common Core
-covers math and ELA; NGSS covers science and is **not** bundled in the first cut.
-Science practice is therefore generated against the math-shaped machinery only
-where a math standard genuinely applies, and otherwise the request is refused
-cleanly — the spec's own condition for this being non-blocking. ELA standards are
-bundled (they are in the same source and cost nothing) but ELA is not in
-`GRADABLE_SUBJECTS`, so nothing generates against them in M2.
+**Revised 2026-08-27 (see the revision note at the top).** The bundle carries
+four published frameworks, K-8:
+
+| Framework | Subject | Codes look like |
+|---|---|---|
+| Common Core (CCSS) | `MATH` | `4.NF.B.3` |
+| Common Core (CCSS) | `ENGLISH_LANGUAGE_ARTS` | `8.RI.2` |
+| Next Generation Science Standards (NGSS) | `SCIENCE` | `MS-PS1-1` |
+| College, Career & Civic Life (C3) | `SOCIAL_STUDIES` | `D2.His.1.3-5` |
+
+`GRADABLE_SUBJECTS` is **not written down**. It is derived in
+`lib/taxonomy/index.ts` from `SUBJECT_FAMILY` intersected with the subjects the
+loaded bundle actually has skills for. A subject becomes gradable by adding its
+skills to the data file and pointing at them in the map — never by editing a
+list. This is the load-bearing half of the revision: the original defect was two
+hand-maintained lists disagreeing, and derivation is what makes them unable to.
+
+**`SUBJECT_FAMILY` exists because the `Subject` enum is finer-grained than the
+frameworks.** `READING` and `WRITING` are separate enum members but both are
+graded against CCSS ELA; `HISTORY` is graded against C3, which publishes history
+as one of its four social-studies dimensions. Without the map, a reading
+comprehension worksheet would resolve to an empty slate — the same failure
+science used to hit, relocated rather than fixed.
+
+**Uncovered subjects are refused cleanly, and named.** `FOREIGN_LANGUAGE`,
+`COMPUTER_SCIENCE` and `OTHER` have no bundled framework and yield an empty
+slate, which is the `SLATE_EMPTY` path — no AI call, no bad grade. A unit test
+asserts `FOREIGN_LANGUAGE` is not gradable specifically so that adding ACTFL
+later has to change that assertion deliberately rather than by accident.
+
+`FOREIGN_LANGUAGE` is the notable gap against what the product promises. ACTFL's
+World-Readiness Standards are organised by **proficiency level** (Novice Low /
+Mid / High), not by grade, so bundling them means deciding how proficiency maps
+onto `GradeLevel` — a mapping ACTFL does not publish. Inventing one is exactly
+what the spec's non-goals forbid, so it is left uncovered and visible rather
+than faked. It needs its own ADR.
+
+**Grade banding.** CCSS and NGSS K-5 are per-grade and are recorded as written.
+NGSS middle school (`MS-`) and every C3 standard are published as bands (K-2,
+3-5, 6-8). Each banded standard is placed at its band's **middle** grade —
+`GRADE_1`, `GRADE_4`, `GRADE_7` — so `SKILL_GRADE_BAND = 1` reaches the whole
+band from any grade inside it. A code appears exactly once; duplicating it per
+grade would make the code→skill map lossy, and the map is what `SkillMastery`
+rows hang off.
 
 ## Alternatives considered
 
@@ -238,19 +309,37 @@ bundled (they are in the same source and cost nothing) but ELA is not in
   surface.
 
 ### Follow-up required
-- [ ] **Someone must read the Common Core licence** and confirm the attribution
-      obligation, before descriptors ship to a parent. This is a legal check, not
-      an engineering one.
-- [ ] Record the source URL, fetch date and derivation script for
-      `ccss-k8.json` in `docs/research/`, per the knowledge-base rule that a
-      finding with no source cannot be re-verified.
-- [ ] A unit test asserting every `code` in the file is unique, every
+
+Updated 2026-08-27 with the revision. The licensing and provenance items got
+**wider**, not narrower — they now cover four frameworks with three different
+attribution regimes, and every descriptor in the bundle is a paraphrase rather
+than a verified reproduction.
+
+- [ ] **Someone must read each framework's licence** — CCSS, NGSS and C3 — and
+      confirm the attribution obligation before descriptors ship to a parent.
+      They are three different licensors with three different terms; clearing
+      one does not clear the others. This is a legal check, not an engineering
+      one, and it is the highest-priority item in this list.
+- [ ] Record the source URL, fetch date and derivation script for each framework
+      in `skills-k8.json` in `docs/research/`, per the knowledge-base rule that a
+      finding with no source cannot be re-verified. The file is currently hand
+      authored from well-known identifiers with paraphrased descriptors — see
+      the flagged deviation at the top of `lib/taxonomy/index.ts`.
+- [x] A unit test asserting every `code` in the file is unique, every
       `gradeLevel` and `subject` is a valid enum member, and every entry has a
-      non-empty descriptor. A malformed taxonomy must fail CI, not a student's
-      practice set.
+      non-empty descriptor. — done, `tests/unit/lib/taxonomy/index.test.ts`,
+      which now also asserts every gradable subject yields a non-empty slate at
+      every K-8 grade. That last assertion is the one that would have caught the
+      original defect.
 - [ ] Decide `SKILL_GRADE_BAND` from the first fixture run rather than leaving it
-      at the assumed `1`.
-- [ ] NGSS, if and when science practice becomes a real surface.
+      at the assumed `1`. Now load-bearing in a way it was not before: the banded
+      NGSS and C3 standards sit at their band's middle grade and rely on a band
+      of at least 1 to be reachable from the band's edges. Lowering it to 0
+      silently empties social studies at five of the nine K-8 grades.
+- [x] NGSS, if and when science practice becomes a real surface. — done.
+- [ ] `FOREIGN_LANGUAGE` has no bundled framework. ACTFL is organised by
+      proficiency, not grade; bundling it needs its own ADR deciding that
+      mapping. Tracked as an assertion in the taxonomy test.
 
 ## Revisit when
 

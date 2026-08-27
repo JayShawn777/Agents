@@ -8,10 +8,9 @@ import type { PracticeSet } from "@/lib/generated/prisma/client";
 import { getAnthropicClient, MissingAnthropicApiKeyError } from "@/lib/ai/client";
 import { buildPracticeGenerationSchema, type GeneratedPracticeProblem } from "@/lib/ai/practice-schema";
 import { PRACTICE_PROMPT_VERSION, PRACTICE_SYSTEM_PROMPT, buildPracticeUserPrompt, type PracticeSourceSlot } from "@/lib/practice/prompt";
-import { candidateSlate, resolveSkill, type Skill } from "@/lib/taxonomy";
+import { candidateSlate, isGradableSubject, resolveSkill, type Skill } from "@/lib/taxonomy";
 import type { Subject } from "@/lib/domain/enums";
 import {
-  GRADABLE_SUBJECTS,
   PRACTICE_EFFORT,
   PRACTICE_GENERATION_TIMEOUT_MS,
   PRACTICE_MODEL,
@@ -86,7 +85,7 @@ export async function runPracticeGeneration(practiceSetId: string): Promise<RunG
 
   const gradableProblems = set.extraction.problems.filter(
     (problem): problem is typeof problem & { subject: Subject } =>
-      problem.subject !== null && (GRADABLE_SUBJECTS as readonly string[]).includes(problem.subject),
+      problem.subject !== null && isGradableSubject(problem.subject),
   );
   if (gradableProblems.length === 0) {
     return await finalizeFailed(practiceSetId, "SLATE_EMPTY");

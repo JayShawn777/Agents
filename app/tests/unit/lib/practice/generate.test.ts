@@ -119,13 +119,70 @@ describe("runPracticeGeneration — SLATE_EMPTY (ADR-0009 §4), zero AI calls", 
     expect(dbMock.practiceProblem.createManyAndReturn).not.toHaveBeenCalled();
   });
 
-  it("no gradable source problems (e.g. all READING) -> SLATE_EMPTY, no AI call", async () => {
+  /**
+   * This case used to assert READING -> SLATE_EMPTY. That was the bug, not the
+   * contract: the bundle carried 18 ELA skills that READING never reached
+   * because a hand-written `GRADABLE_SUBJECTS` excluded it. READING is now
+   * gradable (see the positive case below); the SLATE_EMPTY path is still
+   * exercised, using a subject the bundle genuinely does not cover.
+   */
+  it("no gradable source problems (all FOREIGN_LANGUAGE) -> SLATE_EMPTY, no AI call", async () => {
     dbMock.practiceSet.findUnique.mockResolvedValue(
-      baseSet({ extraction: { problems: [{ id: "ep_1", ordinal: 1, subject: "READING", text: "Read this." }] } }),
+      baseSet({
+        extraction: { problems: [{ id: "ep_1", ordinal: 1, subject: "FOREIGN_LANGUAGE", text: "Conjuga el verbo." }] },
+      }),
     );
     const result = await runPracticeGeneration(PRACTICE_SET_ID);
     expect(result).toEqual({ status: "FAILED", failureCode: "SLATE_EMPTY" });
     expect(parseMock).not.toHaveBeenCalled();
+  });
+
+  it("a problem with no subject at all -> SLATE_EMPTY, no AI call", async () => {
+    dbMock.practiceSet.findUnique.mockResolvedValue(
+      baseSet({ extraction: { problems: [{ id: "ep_1", ordinal: 1, subject: null, text: "???" }] } }),
+    );
+    const result = await runPracticeGeneration(PRACTICE_SET_ID);
+    expect(result).toEqual({ status: "FAILED", failureCode: "SLATE_EMPTY" });
+    expect(parseMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The positive half of the coverage fix. This app is not a math app — a
+   * reading, science or social-studies worksheet must reach the model and come
+   * back with practice, and each must be constrained to ITS OWN framework's
+   * codes. Each case below would have failed as SLATE_EMPTY before the
+   * taxonomy carried four frameworks and gradability was derived from them.
+   */
+  it.each([
+    { subject: "READING", skillCode: "4.RI.3", text: "What is the main idea of the second paragraph?" },
+    { subject: "WRITING", skillCode: "4.W.1", text: "Write an opinion paragraph with two reasons." },
+    { subject: "SCIENCE", skillCode: "4-PS3-1", text: "Which ball has more energy, and how do you know?" },
+    { subject: "SOCIAL_STUDIES", skillCode: "D2.His.1.3-5", text: "Put these three events in order." },
+    { subject: "HISTORY", skillCode: "D2.His.1.3-5", text: "Why is this event considered significant?" },
+  ])("generates practice for a $subject worksheet", async ({ subject, skillCode, text }) => {
+    dbMock.practiceSet.findUnique.mockResolvedValue(
+      baseSet({ extraction: { problems: [{ id: "ep_1", ordinal: 1, subject, text }] } }),
+    );
+    parseMock.mockResolvedValue({
+      stop_reason: "end_turn",
+      parsed_output: {
+        problems: Array.from({ length: 6 }, (_, i) =>
+          validGeneratedProblem({
+            skillCode,
+            text: `${subject} practice ${i}`,
+            containsMath: false,
+            answerFormat: "SHORT_TEXT",
+            canonicalAnswer: `answer ${i}`,
+          }),
+        ),
+      },
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+
+    const result = await runPracticeGeneration(PRACTICE_SET_ID);
+
+    expect(result).toEqual({ status: "READY", problemCount: 6 });
+    expect(parseMock).toHaveBeenCalledTimes(1);
   });
 
   it("a grade level outside the bundled K-8 taxonomy -> SLATE_EMPTY, no AI call", async () => {
