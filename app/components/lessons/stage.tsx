@@ -114,6 +114,7 @@ export function Stage({
   return (
     <div
       ref={containerRef}
+      data-lesson-stage=""
       className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border bg-card"
       role="img"
       aria-label={script.title}
@@ -126,6 +127,11 @@ export function Stage({
             if (element) elementRefs.current.set(op.id, element);
             else elementRefs.current.delete(op.id);
           }}
+          // A stable hook for the browser-based legibility measurement
+          // (M4-3). Placed elements are the only things with a box worth
+          // measuring, and finding them by class would break the moment the
+          // styling changes.
+          data-lesson-element={op.id}
           className={`absolute -translate-x-1/2 -translate-y-1/2 text-foreground ${
             op.kind === "write" ? SIZE_CLASS[op.size] : "text-sm"
           } ${reducedMotion ? "" : "transition-opacity duration-300"}`}
