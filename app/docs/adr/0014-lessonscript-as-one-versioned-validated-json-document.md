@@ -1,8 +1,9 @@
 # ADR-0014: A LessonScript is one validated JSON document on a version row, over a closed primitive vocabulary and a normalised canvas
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-27
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m4-whiteboard-lessons.md
 
 ## Context

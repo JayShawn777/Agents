@@ -1,8 +1,9 @@
 # ADR-0012: Chat sessions are bounded at open, and the learner context is snapshotted onto the session row
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-27
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m3-chat-tutor.md, docs/specs/m7-adaptive-loop.md
 
 ## Revision 2026-08-27 — §2's renderer input is a sibling type, not a widened `OutboundLearnerFacts`

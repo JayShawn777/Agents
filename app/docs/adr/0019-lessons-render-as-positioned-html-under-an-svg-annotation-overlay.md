@@ -1,8 +1,9 @@
 # ADR-0019: A lesson renders as positioned HTML under an SVG annotation overlay, with LaTeX pre-rendered on the server
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-28
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m4-whiteboard-lessons.md
 - **Measurement:** docs/research/m4-authoring-measurement.md (plan §9.2, M4-2)
 

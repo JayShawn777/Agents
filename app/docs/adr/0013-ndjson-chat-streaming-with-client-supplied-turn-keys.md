@@ -1,8 +1,9 @@
 # ADR-0013: Chat streams as NDJSON from a route handler, and a turn is idempotent on a client-supplied key
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-27
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m3-chat-tutor.md
 
 ## Revision 2026-08-28 — a partial turn is REGENERATED, not resumed, and `apiStream` does not throw
