@@ -86,6 +86,8 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 ### Plans
 - [m0-m1-implementation.md](plans/m0-m1-implementation.md) — Schema, API contract, component tree, build order, and the storage spike
 - [m2-m7-implementation.md](plans/m2-m7-implementation.md) — Schema for all six remaining milestones; full contract for M2-M3, shape only beyond (revised 2026-08-26 against the 52-AC M0 spec)
+- [m2-5-checkpoints-implementation.md](plans/m2-5-checkpoints-implementation.md) — Checkpoints and the foreign-language column
+- [m4-lessons-implementation.md](plans/m4-lessons-implementation.md) — M4's contract, written after plan §9.2's five measurements returned. Schema, six endpoints, component tree, nine slices
 
 ### Retros
 - [m0-m3.md](retros/m0-m3.md) — Nineteen lessons across M0-M3, and what changed because of each. A running document: each milestone's retro is appended and the file is renamed.

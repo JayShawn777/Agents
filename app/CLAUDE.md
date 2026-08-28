@@ -312,10 +312,20 @@ generate graded practice from them. The retention jobs enforce what
    which changes the height annotations are drawn around. The three maths
    fixtures would never have surfaced that one.
 
-   **NEXT: write M4's contract** — routes, the `Lesson`/`LessonScriptVersion`
-   migration, and the player component tree — then build it. Per the workflow in
-   `~/.claude/CLAUDE.md` that is an architecture step and **stops for the
-   owner's approval** before implementation.
+   **M4's contract is written** —
+   [docs/plans/m4-lessons-implementation.md](docs/plans/m4-lessons-implementation.md):
+   the migration (three models, one hand-added CHECK), six endpoints (40-45),
+   the component tree, and nine slices. **It is AWAITING THE OWNER'S APPROVAL**
+   per the workflow in `~/.claude/CLAUDE.md`; no implementation has started.
+
+   Three things in it are decisions rather than transcriptions of the spec, and
+   are the parts worth arguing with: `LessonFlag.reason` is a four-value
+   allowlist rather than free text (a free-text box on a child-facing surface is
+   an unbounded personal-data channel with a retention row behind it); there is
+   no "record playback" endpoint even though plan §3.5 sketched one (no AC asks
+   for it and M7 owns activity); and extracting the generic status machine —
+   which §3.5 correctly says is now due at its third instance — is deferred to a
+   follow-up slice rather than done while the third one is being written.
 
    Nothing in M3 is outstanding except the two owner decisions in item 5.
 
