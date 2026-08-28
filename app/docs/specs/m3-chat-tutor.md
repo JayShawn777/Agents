@@ -214,11 +214,23 @@ Deliberately deferred; leave the seams, do not build them:
 - [ ] **After how many turns does the tutor give the worked answer (AC 4)?**
   **PRODUCT.** ASSUMPTION: three student attempts within the session, matching
   M2's reveal threshold. Non-blocking.
-- [ ] **What happens on a distress signal (AC 21) — is the account owner
-  notified?** **PRODUCT, and it needs a decision before launch.** Notifying a
-  parent may be the right thing and may also be the thing that stops a child
-  telling the truth. This spec does not decide it; it specifies the fixed message
-  and stops there. Non-blocking for the build, **blocking for real users.**
+- [x] **What happens on a distress signal (AC 21) — is the account owner
+  notified?** **DECIDED 2026-08-28 by the owner: NO.** The child sees the fixed
+  message and nothing else fires.
+
+  The reasoning, recorded so it is not re-litigated: `lib/chat/safety.ts` is a
+  phrase matcher, not a safeguarding system, and it will fire on "i hate myself"
+  said about fractions. An alarm channel driven by that produces false alarms to
+  a parent, which frightens them and then desensitises them to a real one. And
+  the cost the other way is the one this spec already names — a child who learns
+  the tutor reports them stops telling it anything true, which is the whole
+  value of the surface.
+
+  **The passive path still works and is the mechanism relied on:** a distress
+  turn is a stored message, so it appears in the transcript the account owner
+  can already read (AC 14). That is accurate whether or not the matcher was
+  right. **Revisit when there is a real classifier and a qualified reviewer** —
+  the decision is against notifying *on this signal*, not against notifying ever.
 - [ ] **Does the streaming call fit inside the Vercel function duration limit?**
   **TECHNICAL UNKNOWN.** Streaming time counts toward `maxDuration`. A long
   tutoring reply with adaptive thinking on Opus 5 has never been measured here.

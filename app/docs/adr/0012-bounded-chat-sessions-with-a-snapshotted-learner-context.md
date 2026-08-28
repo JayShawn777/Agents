@@ -334,7 +334,7 @@ silent and expensive, so it belongs in our logging from day one."
 - [ ] Decide the session bounds for real (20/20 is an assumption) after watching
       one child use it.
 - [ ] AC 21's distress path needs its fixed copy written by someone who is not an
-      engineer, and the owner must answer whether the account holder is notified.
+      engineer, and the owner DECIDED on 2026-08-28 that the account holder is NOT notified (see the M3 spec's open questions for the reasoning). The copy review remains outstanding.
 
 ## Revisit when
 

@@ -360,14 +360,21 @@ generate graded practice from them. The retention jobs enforce what
    subject, or a session that runs to its bounds.
 
 5. **Two things need the owner, not an engineer.**
-   - **`DISTRESS_SAFETY_MESSAGE` (AC 21) is an engineer-written DRAFT, and it
-     is now on a LIVE PATH.** As of 2026-08-28 `lib/chat/safety.ts` actually
-     shows it to a child; it is no longer an unused constant. ADR-0012's
-     follow-up says this copy needs someone qualified, and the owner still has
-     to answer **whether the account holder is notified when it fires** —
-     notifying has real value and real risk, since a child who learns the tutor
-     reports them stops telling it anything true. This is the single highest
-     priority item on this list.
+   - **`DISTRESS_SAFETY_MESSAGE` (AC 21) is still an engineer-written DRAFT on
+     a LIVE PATH.** `lib/chat/safety.ts` shows it to a child today. The owner
+     has it out for review; the packet a reviewer needs is
+     [docs/research/distress-message-review-request.md](docs/research/distress-message-review-request.md),
+     written for someone who will never see the codebase. Whatever comes back
+     replaces the constant verbatim.
+   - **The notification question is DECIDED: the account holder is NOT
+     notified** (owner, 2026-08-28). The check is a phrase matcher, not an
+     assessment, and an alarm channel driven by it produces false alarms that
+     desensitise a parent to a real one — while a child who learns the tutor
+     reports them stops telling it anything true. The passive path is the
+     mechanism: a distress turn is a stored message, so it already appears in
+     the transcript a parent can read (AC 14). Reasoning recorded in the M3
+     spec's open questions. Against notifying ON THIS SIGNAL, not against
+     notifying ever.
    - **The ADR backlog is cleared.** Sixteen ADRs were accepted by the owner on
      2026-08-28 — every one describing code that is shipped. **Exactly two
      remain `Proposed`, and deliberately so:** 0015 (per-profile narration

@@ -98,6 +98,8 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [vercel-blob-verified.md](research/vercel-blob-verified.md) — **Supersedes the storage signatures above**, read from the installed types
 - [elevenlabs-tts.md](research/elevenlabs-tts.md) — Narration, character-level timing data, and consent-gated voice cloning
 - [coppa-childrens-privacy.md](research/coppa-childrens-privacy.md) — **Verifiable parental consent, retention, and BIPA.** Read before touching the consent flow
+- [distress-message-review-request.md](research/distress-message-review-request.md) — What the tutor says to a child in distress, packaged for a qualified non-engineer reviewer. AWAITING REVIEW
+- [m4-authoring-measurement.md](research/m4-authoring-measurement.md) — Plan §9.2's five measurements, and what each one settled
 - [coppa-312-5-primary-text.md](research/coppa-312-5-primary-text.md) — **The nine consent methods, quoted from the regulation.** The only fetched-primary-source file we have on this
 - [vpc-verification-vendors.md](research/vpc-verification-vendors.md) — Paid identity vendors, BIPA exposure, and why a vendor avoids billing. Its subsection lettering is inferred, not read — confirm against eCFR before relying on it
 - [tutoring-product-patterns.md](research/tutoring-product-patterns.md) — What the category does, which patterns to adopt, and which to deliberately reject
