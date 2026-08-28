@@ -1,0 +1,3 @@
+- [Milestone review blind spots](project_milestone-review-blind-spots.md) — new models forget RETENTION_POLICY + /retention disclosure; e2e .mjs fixtures have no local-DB guard.
+- [Recurring defect classes](project_recurring-defect-classes.md) — the four hole classes this app has actually shipped, and where to look for each first.
+- [Live DB constraint check](reference_live_db_constraint_check.md) — prove a CHECK or cascade is really in Postgres, not just in a migration file.

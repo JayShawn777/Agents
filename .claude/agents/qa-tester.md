@@ -101,3 +101,57 @@ asserts the children are gone. Assert a **count over the child rows is zero**,
 not a list of known ids — a count is the only form of the question a future
 column or a second binding cannot slip past. Cover every binding: a row reachable
 only through one of two optional foreign keys is the one that gets missed.
+
+## Name the writer behind every fixture (M4 retro, lesson 20)
+
+Fourth occurrence of the mock family. Twice in M4 a test passed by describing a
+state the system cannot produce:
+
+- a mock resolved `{ parsed_output: null }` where the real SDK **throws**, so
+  the branch under test was dead in production for its whole life;
+- a fixture gave a `FAILED` lesson a *current* version carrying a failure code,
+  when `currentVersionId` only ever moves on success — so the current version is
+  by definition the one that did not fail.
+
+Both fixtures were coherent, well commented, and impossible.
+
+**Before writing a fixture, answer: which function in this codebase writes this
+row, or returns this shape?** Put the answer in a comment. If you cannot name
+one, you are testing an imaginary system, and it will stay green through every
+change to the real one. This is one level up from "a mock must match
+production's timing" — the timing can be perfect and the *state* still fictional.
+
+## Assert what a function returns, not only what it wrote (M4 retro, lesson 21)
+
+A reaper's test asserted that a particular write did **not** happen. True, and
+the smaller half: it never inspected the returned object, which is the whole
+output of the function and the thing both callers render. The bug lived there —
+a hard-coded failure status shown to a child over a perfectly good lesson.
+
+**If a function returns a value that a caller renders or branches on, every test
+of it asserts that value.** Side-effect assertions (`not.toHaveBeenCalled`,
+`toHaveBeenCalledWith`) check the half that is easy to see.
+
+## A coverage test must iterate the SOURCE, not the registry (M4 retro, lesson 22)
+
+A retention-coverage test asserted every policy entry had a job step and vice
+versa. Airtight for the entries that existed — and blind to three new Prisma
+models with no entry at all, which meant child-derived data retained
+indefinitely and a COPPA disclosure page that omitted a whole category.
+
+A test that walks the registry it is checking cannot see an omission from that
+registry.
+
+**Iterate the source of truth** — parse `schema.prisma`, walk the route
+directory, read the filesystem — **and fail on anything the registry does not
+account for**, with a message saying what to add. Then guard the parse itself
+(assert it found a plausible number of items), or a rename makes every
+assertion vacuously true.
+
+## Falsify a guard before trusting it
+
+For any test whose job is to catch an omission or an ordering, **mutate the code
+it guards and watch it go red.** Reading it proves nothing. In M4 a mutation
+showed that deleting an entire layout fix left 55/55 tests green — jsdom reports
+zero-sized rects, so the code under test never executed. The three guards added
+in M4 were each falsified this way before being kept.

@@ -90,7 +90,7 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [m4-lessons-implementation.md](plans/m4-lessons-implementation.md) — M4's contract, written after plan §9.2's five measurements returned. Schema, six endpoints, component tree, nine slices
 
 ### Retros
-- [m0-m3.md](retros/m0-m3.md) — Nineteen lessons across M0-M3, and what changed because of each. A running document: each milestone's retro is appended and the file is renamed.
+- [m0-m4.md](retros/m0-m4.md) — Twenty-four lessons across M0-M4, and what changed because of each. A running document: each milestone's retro is appended and the file is renamed.
 
 ### Research
 - [anthropic-api.md](research/anthropic-api.md) — Claude API: vision, PDF, structured output, streaming, caching, pricing

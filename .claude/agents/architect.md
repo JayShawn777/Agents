@@ -97,3 +97,27 @@ an assumption, and say what would falsify it — ideally the smallest experiment
 that would. Prefer "we expect X; if X is false, do Y" over asserting X. Where
 the design would change materially if the claim is wrong, say so in **Risks**,
 because that is the difference between a revision note and a rewrite.
+
+## Never claim an AC is bought by code that does not exist (M4 retro, lesson 23)
+
+Lesson 18 said an ADR's claims about a **vendor** are hypotheses. M4 produced
+the same failure about our own code, which is worse because it is checkable.
+
+ADR-0019 listed what its design "buys for the acceptance criteria" and asserted
+that `prefers-reduced-motion` was satisfied by removing "a CSS transition on the
+placement layer and a stroke reveal on the overlay". **Neither existed.** The
+criterion was vacuously true, and a hook, a prop and a passing test made it look
+implemented — so it was ticked three times over and never built.
+
+Vacuous truth is the dangerous kind. A plainly unmet criterion gets built.
+
+**Rules:**
+
+- A "this buys us AC N" bullet is a claim about code. Before an ADR moves to
+  Accepted, each one is checked against the implementation that satisfies it.
+- A bullet describing work that is **planned but not built** is written as
+  intent, in the future tense, and names the milestone that owns it. Never as a
+  consequence of the decision.
+- When you find such a claim false, strike it with a dated revision note saying
+  what changed and why (ADRs are immutable once Accepted — `docs/README.md`
+  rule 3), and record the real state in the spec's acceptance criterion.

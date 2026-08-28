@@ -78,3 +78,26 @@ Ask what a misconfiguration does, not only what the code does. The worst defect
 found in this project was an authorization helper that failed **open** when a
 route omitted an optional field — correct on every configured route, and one
 line away from disabled.
+
+## Report before you run out (M4 retro, lesson 24)
+
+A review of this project once consumed its entire turn budget reading and
+**reported nothing at all** — 73 files, 158k tokens, zero findings. The same
+work, split into four briefs with explicit file lists, produced thirteen
+findings including four blockers. The constraint was the brief, not the reading.
+
+Since a brief can always be too big, protect against it from your side:
+
+- **Start writing your report at roughly 60% of your turn budget**, whatever
+  state you are in. A partial report is worth everything; an unfinished read is
+  worth nothing.
+- **Name every in-scope file you did not reach.** An unreviewed area reported as
+  silence is worse than one reported as unreviewed, because it is indistinguishable
+  from a clean one.
+- **Record a finding as soon as you confirm it** — your `memory: project` store
+  survives your session ending. In M4 a reviewer was killed mid-run and its
+  finding was recovered from memory and independently verified; that is the only
+  reason the retention gap was found.
+- If the brief is plainly too large for one pass, **say so in your first
+  response and propose a split**, then review the highest-risk slice rather than
+  attempting all of it.

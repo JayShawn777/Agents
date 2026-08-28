@@ -1,1 +1,4 @@
 - [Falsify ADR-0006 ordering tests](review-ordering-tests-must-be-falsified.md) — run check-order tests against a reordered handler; reading them proves nothing.
+- [Probe, don't read](feedback_review-probe-technique.md) — for AI and background-job paths, construct the violation as a throwaway test, run it, delete it.
+- [Layout review technique](feedback_review_technique.md) — mutate the implementation and stub getBoundingClientRect; jsdom's 0x0 rects hide every stage code path.
+- [SDK parse_failed branch is dead](project_sdk-parse-failed-branch.md) — zodOutputFormat THROWS on schema failure and never yields parsed_output === null.
