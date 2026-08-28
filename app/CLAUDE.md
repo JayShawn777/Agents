@@ -14,9 +14,9 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-28)
 
-**M0-M3 are done and reviewed. M4 is started: all five of plan §9.2's gating
-measurements have returned and its contract is unblocked. 859 tests, 4 live
-tests skipped by default. All gates green.**
+**M0-M3 done and reviewed. M4 BUILT — all nine slices, backend and UI, reachable
+from two entry points. 981 tests, 4 live tests skipped by default. All gates
+green. M4 has NOT been reviewed, and its retro is not done.**
 
 **The vision path is verified.** On 2026-08-28 a real worksheet went to the real
 model for the first time: 35 of 35 problems, every addend pair correct, labels
@@ -35,7 +35,7 @@ generate graded practice from them. The retention jobs enforce what
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
 | **M2.5** checkpoints (quizzes) | **done and reviewed** 2026-08-27 — all 7 slices, spec, plan, ADRs 0016/0017/0018 |
 | **M3** chat tutor | **done and REVIEWED** 2026-08-28 — all five endpoints (35-39), the NDJSON transport, `lib/chat/safety.ts` (AC 21), the whole UI with both entry points wired, and the chat path verified against the real API. Three review findings, all fixed. |
-| **M4** whiteboard lessons | **measurement slice done** 2026-08-28 — script schema, referential validator, authoring prompt, and all five §9.2 measurements. ADR-0019 picks the renderer. **No routes, no player, no migration yet** — the contract is next and needs approval. |
+| **M4** whiteboard lessons | **BUILT, not reviewed** 2026-08-28 — nine slices: migration + CHECK, authoring status machine, six endpoints (40-45), cascades, stage + player, controls/text view/flag, and the entry point wired into practice and chat. **Slice 9's browser measurement is SKIPPED** — one auth fix away, see its file header. |
 | **M5–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009-0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
@@ -312,22 +312,57 @@ generate graded practice from them. The retention jobs enforce what
    which changes the height annotations are drawn around. The three maths
    fixtures would never have surfaced that one.
 
-   **M4's contract is written** —
-   [docs/plans/m4-lessons-implementation.md](docs/plans/m4-lessons-implementation.md):
-   the migration (three models, one hand-added CHECK), six endpoints (40-45),
-   the component tree, and nine slices. **It is AWAITING THE OWNER'S APPROVAL**
-   per the workflow in `~/.claude/CLAUDE.md`; no implementation has started.
+   **M4's contract was approved by the owner and ALL NINE SLICES ARE BUILT** —
+   [docs/plans/m4-lessons-implementation.md](docs/plans/m4-lessons-implementation.md).
+   Migration `20260828001314_m4_lessons` (three models, one hand-added CHECK),
+   the authoring status machine, endpoints 40-45, the cascade test, the stage
+   and player, controls/text view/flag, and the entry point.
 
-   Three things in it are decisions rather than transcriptions of the spec, and
-   are the parts worth arguing with: `LessonFlag.reason` is a four-value
-   allowlist rather than free text (a free-text box on a child-facing surface is
-   an unbounded personal-data channel with a retention row behind it); there is
-   no "record playback" endpoint even though plan §3.5 sketched one (no AC asks
-   for it and M7 owns activity); and extracting the generic status machine —
-   which §3.5 correctly says is now due at its third instance — is deferred to a
-   follow-up slice rather than done while the third one is being written.
+   **START HERE FOR M4.** What is worth knowing before touching it:
 
-   Nothing in M3 is outstanding except the two owner decisions in item 5.
+   - **Authoring is `after()`-scheduled, never in-request** (12-59s measured).
+     `PENDING → AUTHORING → READY | FAILED`, with `reapIfStale` on the GET so a
+     killed function still reaches a terminal state. No job queue.
+   - **`authorLesson` REFUSES rather than defaults** when a profile has no grade
+     level or no resolvable subject. `resolveSkill(...)?.subject ?? "MATH"` is
+     how this project nearly shipped a maths app; both are gated at the route
+     with a 409.
+   - **AC 5's gate is read generously and is UNVALIDATED.** A lesson needs an
+     attempt or a chat session on the problem. A student never attempts an
+     EXTRACTED row — M1 extracts, M2 generates practice *from* it — so an
+     attempt on any derived practice problem counts, via
+     `sourceExtractedProblemId`. Requiring an attempt on the extracted row
+     would have refused every lesson. Nobody has checked it is the RIGHT gate.
+   - **The hourly cap counts authoring RUNS, not lessons.** Counting lessons
+     left regeneration uncapped per hour.
+   - **AC 19's guarantee is what regeneration does NOT do**: `currentVersionId`
+     is repointed only by `authorLesson`, only on success, so a failed
+     regeneration leaves the child with the lesson they had.
+   - **AC 12 needed no implementing.** The canvas is a fold over steps 0..k, so
+     backward and forward are the same computation.
+   - **`lesson-view.tsx` exists** because `LessonPlayer` uses a render prop and
+     a server component cannot pass a function across the boundary.
+
+   Three decisions in the plan were mine, not the spec's, and are the parts
+   worth arguing with: `LessonFlag.reason` is a four-value allowlist rather than
+   free text (a free-text box on a child-facing surface is an unbounded
+   personal-data channel with a retention row behind it); there is no "record
+   playback" endpoint even though plan §3.5 sketched one; and extracting the
+   generic status machine — §3.5 is right that the third instance is due — is
+   deferred to a follow-up slice rather than done while the third is being
+   written.
+
+   **NEXT, in this order.** (a) **Slice 9's browser measurement is SKIPPED and
+   is one auth fix from running** — the seeded session cookie is not accepted by
+   `auth()` (probed: `authjs.session-token=<token>` still 401). The spec's own
+   header carries the probe results and the next three things to check. Until it
+   runs, **M4-3's legibility pass remains an ESTIMATE**, and nothing has ever
+   seen a rendered lesson in a browser. (b) **The M4 review** — M2, M2.5 and M3
+   each turned up real findings, one of which had shipped. (c) **The M4 retro.**
+   (d) Then M5, narration.
+
+   Nothing in M3 is outstanding except the owner decisions in item 5, which are
+   all now made.
 
    **The chat path is VERIFIED against the real API** (2026-08-28,
    `tests/unit/live/chat.live.test.ts`, three real streamed turns). Three
