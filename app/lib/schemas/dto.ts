@@ -356,6 +356,13 @@ export type LessonVersionDTO = {
   // counts are NEVER in a DTO.
 };
 
+/**
+ * The flag reasons as a client-safe union. Client components need the VALUES
+ * (to send one) as well as the type, and `lib/domain/enums` is the one seam
+ * where a Prisma enum is allowed to reach the browser.
+ */
+export type LessonFlagReasonValue = LessonFlagReason;
+
 export type LessonFlagDTO = {
   id: string;
   versionId: string;
