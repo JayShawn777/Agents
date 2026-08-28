@@ -15,8 +15,9 @@ adapts to that student over time.
 ## Where the build is (2026-08-28)
 
 **M0-M3 done and reviewed. M4 BUILT — all nine slices, backend and UI, reachable
-from two entry points. 981 tests, 4 live tests skipped by default. All gates
-green. M4 has NOT been reviewed, and its retro is not done.**
+from two entry points, slice 9's browser measurement has RUN, and **M4 is now
+REVIEWED** — four narrow reviews, thirteen findings fixed. 999 tests, 4 live
+tests skipped by default. All gates green. The M4 retro is not done.**
 
 **The vision path is verified.** On 2026-08-28 a real worksheet went to the real
 model for the first time: 35 of 35 problems, every addend pair correct, labels
@@ -35,7 +36,7 @@ generate graded practice from them. The retention jobs enforce what
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
 | **M2.5** checkpoints (quizzes) | **done and reviewed** 2026-08-27 — all 7 slices, spec, plan, ADRs 0016/0017/0018 |
 | **M3** chat tutor | **done and REVIEWED** 2026-08-28 — all five endpoints (35-39), the NDJSON transport, `lib/chat/safety.ts` (AC 21), the whole UI with both entry points wired, and the chat path verified against the real API. Three review findings, all fixed. |
-| **M4** whiteboard lessons | **BUILT, not reviewed** 2026-08-28 — nine slices: migration + CHECK, authoring status machine, six endpoints (40-45), cascades, stage + player, controls/text view/flag, and the entry point wired into practice and chat. **Slice 9's browser measurement is SKIPPED** — one auth fix away, see its file header. |
+| **M4** whiteboard lessons | **BUILT and REVIEWED** 2026-08-28 — nine slices: migration + CHECK, authoring status machine, six endpoints (40-45), cascades, stage + player, controls/text view/flag, and the entry point wired into practice and chat. Browser measurement RAN; four reviews found 4 blockers, 1 HIGH and 8 more, all fixed. |
 | **M5–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009-0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
@@ -263,7 +264,7 @@ generate graded practice from them. The retention jobs enforce what
    the generation cap already listed under "Known gaps".
 
    **The M3 retro is done** (2026-08-28, appended to
-   [docs/retros/m0-m3.md](docs/retros/m0-m3.md) — a running document, renamed
+   [docs/retros/m0-m4.md](docs/retros/m0-m4.md) — a running document, renamed
    per milestone). Three lessons, two of which changed an agent definition:
 
    - **17 — a mock stands in for exactly the thing in doubt.** Twice now (M1's
@@ -352,14 +353,187 @@ generate graded practice from them. The retention jobs enforce what
    deferred to a follow-up slice rather than done while the third is being
    written.
 
-   **NEXT, in this order.** (a) **Slice 9's browser measurement is SKIPPED and
-   is one auth fix from running** — the seeded session cookie is not accepted by
-   `auth()` (probed: `authjs.session-token=<token>` still 401). The spec's own
-   header carries the probe results and the next three things to check. Until it
-   runs, **M4-3's legibility pass remains an ESTIMATE**, and nothing has ever
-   seen a rendered lesson in a browser. (b) **The M4 review** — M2, M2.5 and M3
-   each turned up real findings, one of which had shipped. (c) **The M4 retro.**
-   (d) Then M5, narration.
+   **Slice 9's browser measurement RAN on 2026-08-28, and a lesson has now been
+   rendered in a browser for the first time.** 987 tests, all gates green.
+
+   **The blocker was not what the spec header said it was.** It blamed the
+   seeded session cookie and named three things to check in `lib/auth/config.ts`
+   — all three the wrong tree. **`AUTH_SECRET` is commented out in `.env`**, so
+   `assertConfig` throws `MissingSecret` before any cookie is read and `auth()`
+   returns null for every request. The two probes returned *the same* 401 with
+   and without a cookie, and that symmetry was the tell: an unaccepted cookie
+   and an unreadable config are indistinguishable at the status code. The dev
+   server's own log said `MissingSecret` the whole time.
+
+   **This is an owner action, and it is not about tests: nobody can sign in to
+   this app in this environment at all.** The guard hook blocks agents from
+   writing `.env`, so a human sets it once:
+
+   ```
+   AUTH_SECRET="$(pnpm dlx auth secret --raw 2>/dev/null || openssl rand -base64 32)"
+   ```
+
+   Until it is in `.env`, pass it per run: `AUTH_SECRET=... pnpm dev`.
+
+   **What the measurement found, and it is a real defect a child would have
+   seen.** At 1280px all three fixtures laid out clean. At 375px the reading
+   fixture's `rule` label — "the main idea of the whole paragraph" at `y: 0.14`
+   — measured `y -3..77` of a 257px stage: it wraps to four lines on a phone,
+   `boxAt` centres it on its point, and the stage clips with `overflow-hidden`,
+   so the top line was sliced off. One of three scripts is far above §9.2's 5%
+   threshold, which is exactly the condition under which §9.2 says **"a
+   deterministic layout pass becomes M4 scope"** — so that pass now exists:
+   `clampToBounds` / `offsetToBounds` in `lib/lessons/layout.ts`, applied by the
+   stage's existing measure pass as an addition to each element's centring
+   transform.
+
+   Three things about it worth not re-deriving: it **shifts rather than
+   shrinks**, because the model's coordinate is a claim about arrangement and
+   scaling text down is how a lesson becomes unreadable; it derives the next
+   correction from the *uncorrected* box, so re-measuring on a resize or a font
+   load is idempotent rather than drifting one clamp further each time; and an
+   element genuinely bigger than the stage is pinned and left reporting out of
+   bounds, so the clamp cannot launder a real overflow into a passing
+   measurement.
+
+   **The honest limit: n is 3.** Three fixtures cannot measure a 5% rate. What
+   they did was find a defect, which is worth more here than a precise rate —
+   but widening the fixture set is the real follow-up, and **the wrapped-label
+   shape is the one to add more of**: it is the only shape that failed, and the
+   three maths fixtures would never have produced it.
+
+   **M4 IS REVIEWED** (2026-08-28). Run as FOUR narrow reviews after one
+   73-file sweep died at its turn limit having reported nothing — scope, not
+   capability, was the problem. Thirteen findings fixed. The ones worth keeping:
+
+   - **`reapIfStale` returned a hard-coded FAILED when it LOST its guard race**,
+     so a lesson that finished authoring moments before the reaping read was
+     shown to the child as a failure while a good READY script sat in the row —
+     and a reload made it reappear, so it looked like a flake. Both siblings
+     (`run-extraction.ts`, `practice/generate.ts`) already re-read on
+     `count === 0`; this file's own docstring promised the same and did not do
+     it. **Its test asserted only that no version row was written and never
+     looked at the return value — the entire output of the function.**
+   - **`PARSE_FAILED` was unreachable.** The SDK's `zodOutputFormat(...).parse`
+     THROWS an `AnthropicError` on a schema violation; it does not return
+     `parsed_output: null`. So every closed-vocabulary violation and every
+     `max_tokens` truncation was classified `UPSTREAM` and told a child "a
+     service we depend on is temporarily unavailable" — wrong, and useless
+     advice for a deterministic prompt problem. It also pinned the observed
+     `PARSE_FAILED` rate at zero, which is the exact signal M4-4 reads.
+   - **The hourly authoring cap was a read-then-write count.** Step 7 counted
+     outside any transaction and the rows that raise the count were written
+     afterwards, so N parallel POSTs all read the same pre-insert count and all
+     passed — a cap of six admitting a hundred concurrent 12-59s Opus runs, with
+     no middleware and no IP limiter behind it. The count now also runs INSIDE
+     a `Serializable` transaction with the insert; P2034 and the cap both map
+     to the same 429.
+   - **`LESSON_AUTHORING_TIMEOUT_MS` was 120s while every authoring route
+     declares `maxDuration = 300`.** A slow-but-alive run was reapable with 180s
+     of life left: reaped to FAILED, the UI offered "try again", and pressing it
+     started a second paid run while the first was still generating. The
+     deadline is anchored to `maxDuration`, not to the measured worst case.
+   - **A failed regeneration hid a lesson that still played.** `currentVersionId`
+     is repointed only on success — that is AC 19 working — but the page gated
+     the player on `lesson.status === "READY"`, and `finalizeFailed` sets the
+     lesson to FAILED. The child lost a stored, playable lesson, permanently if
+     they were at `MAX_LESSON_VERSIONS`. The page now gates on "is there a
+     playable current version".
+   - **`failureMessage` was null in every state a writer can produce**, because
+     it read the CURRENT version's `failureCode` and the current version is by
+     definition the one that did not fail. AC 10's message never reached a
+     child. The test "proving" the mapping built a row combination nothing
+     writes — retro lesson 17 in a new costume.
+   - **Nothing reaped a lesson stranded in `PENDING`**, the state a dropped
+     `after()` leaves behind — AC 6's cheaper failure mode, needing no model
+     call to fail.
+   - **Claiming a PENDING version was check-then-act** (`findUnique` then
+     `update`), not a compare-and-swap, 100 lines above a correct guarded
+     `updateMany` in the same file.
+   - **Every arrow rendered without an arrowhead.** `url(#lesson-arrowhead)` had
+     no `<marker>` anywhere in the repository, and an undefined marker reference
+     is silently ignored. An `arrow` op carries no coordinates — its whole
+     meaning is direction — so "this becomes that" drew as an ambiguous squiggle.
+   - **The primary transport button was dead at the end of a lesson.** It called
+     `play()`, and `isPlaying` is `playRequested && !atEnd`, so a child who
+     reached the last step and pressed the big button got nothing — while it
+     announced itself as "Replay" and read "Play" (WCAG 2.5.3).
+   - **The authoring poller never stopped on error**, despite a comment saying
+     it did: a persistently failing GET fired `router.refresh()` every 2s for as
+     long as the tab stayed open.
+   - **Three M4 models had no `RETENTION_POLICY` entry**, so lesson data derived
+     from a child's schoolwork was retained indefinitely and `/retention` — the
+     parent-facing COPPA disclosure, rendered straight off that array — said
+     nothing about it. A retention notice that omits a category is not
+     incomplete, it is inaccurate.
+   - **The e2e seed had no local-database guard**: raw `DATABASE_URL`, real
+     `Session` rows, and cleanup by a cascading `DELETE FROM "User"`.
+
+   **Three of those were invisible to the suite by construction, and each got a
+   test that fails without the fix** (all three falsified by mutation, not by
+   reading): the retention gap is now caught by reading `schema.prisma` and
+   failing on any unclassified model; the layout clamp has a jsdom harness that
+   stubs `getBoundingClientRect` faithfully — deleting the clamp previously left
+   55/55 green; and `LessonPlayer` + `PlayerControls` are finally composed in a
+   test, which is the seam the dead button lived in.
+
+   **AC 15 IS STRUCK, by the owner, 2026-08-28.** ADR-0019 §4 claimed
+   `prefers-reduced-motion` was honoured by removing "a CSS transition on the
+   placement layer and a stroke reveal on the overlay". Neither was ever built,
+   so the criterion was **vacuously** true — and a `usePrefersReducedMotion`
+   hook, a `reducedMotion` prop and a passing test that asserted a class string
+   made it look implemented. Adding an animation purely so a preference has
+   something to switch off is backwards, so the claim is struck by a dated
+   revision note on ADR-0019, the plumbing is deleted, and the M4 spec records
+   AC 15 as NOT met. **M5 owns it:** narration is the first real timeline in the
+   product, so the first genuine reveal and the reinstated preference land in
+   the same change, never one after the other. The deleted hook was correct —
+   `useSyncExternalStore` over `matchMedia` with a `false` server snapshot — and
+   is worth recovering from git history rather than rewriting.
+
+   **STILL OPEN, deliberately — all reported, none fixed:**
+   - The clamp bounds the BORDER box while `overflow-hidden` clips the PADDING
+     box, so a 1px sliver of the original defect remains (use `clientWidth` /
+     `clientLeft`).
+   - `LessonFlag.versionId` and `Lesson.currentVersionId` have **no foreign key**;
+     the flags route's in-lesson resolution is the only thing preventing a
+     cross-student write.
+   - The DTO key-set tests stop at the top level; the nested op keys are held
+     only by the zod re-parse, one `.passthrough()` away from leaking.
+   - Background authoring never re-checks consent — a ~60s window after
+     withdrawal. **Project-wide, not an M4 regression**: M1/M2/M3's equivalents
+     do not either.
+   - `lesson-player.tsx` calls `staticCueSource(timeline)` every render and
+     discards it; `stepIndex` never resets when `script` changes. Latent until M5.
+   - The text view names elements by raw LaTeX ("Circled: \frac{1}{4}") when
+     `latexHtml` is right there.
+   - `LESSON_PROMPT_VERSION` is still `"m4.0-probe"` and every lesson a child
+     sees carries that stamp.
+   - The prompt tells the model an annotation may refer to an element in the
+     SAME step; the validator rejects it if it appears before its target in that
+     step's `ops` array.
+
+   **THE M4 RETRO IS DONE** (2026-08-28,
+   [docs/retros/m0-m4.md](docs/retros/m0-m4.md) — the running document, renamed
+   per milestone). Five lessons, 20-24, four of which changed an agent
+   definition:
+
+   - **20 — a fixture must be a state some writer actually produces.** Fourth
+     occurrence of lesson 17's family, and the sharpest: a mock resolved where
+     the real SDK throws, and a fixture gave a FAILED lesson a *current* version
+     carrying a failure code, which nothing writes. Both coherent, both
+     impossible. → `qa-tester`.
+   - **21 — assert what a function returns, not only what it wrote.** →
+     `qa-tester`.
+   - **22 — a coverage test that walks its own registry cannot see an
+     omission.** → `qa-tester`, plus the enforced schema check.
+   - **23 — a document may not claim an AC is bought by code that does not
+     exist.** Lesson 18 was about vendor claims; this is the same failure about
+     our own code, which is checkable. → `architect`.
+   - **24 — scope a review by file list, not by milestone.** → both reviewers,
+     and the dispatch rule below.
+
+   **NEXT: M5, narration.**
 
    Nothing in M3 is outstanding except the owner decisions in item 5, which are
    all now made.
@@ -484,6 +658,11 @@ and a history question, not just an equation.**
 
 ### Known gaps, carried forward
 
+- **The lesson stage's layout clamp bounds the BORDER box** while
+  `overflow-hidden` clips the PADDING box, so a 1px sliver of the overflow it
+  fixes remains (more at the rounded corners). `container.clientWidth` /
+  `clientLeft` is the fix; it was left because it couples the jsdom harness to
+  four more layout properties for one pixel.
 - **A student cannot report a bad question.** No endpoint, no control. Extraction
   accuracy is unmeasured and generation quality unproven; a child saying "this
   makes no sense" is the fastest signal available, and there is nowhere to put
@@ -535,7 +714,7 @@ Storage runs on a local filesystem adapter (`STORAGE_DRIVER=local`); the Vercel
 Blob implementation is unbuilt and its placeholder throws.
 
 Start at [docs/README.md](docs/README.md); read
-[docs/retros/m0-m3.md](docs/retros/m0-m3.md) before running the pipeline —
+[docs/retros/m0-m4.md](docs/retros/m0-m4.md) before running the pipeline —
 it now runs through M3.
 
 Because the app tutors minors, anything touching student data carries **COPPA**
@@ -595,6 +774,12 @@ Overstating it obscures the obligations that are real — see
 - `prebuild` clears `.next`. A stale `.next` makes Turbopack die on Windows with
   exit 3221225477.
 - `typecheck` runs `next typegen` first; the route types are gitignored.
+- **`AUTH_SECRET` must be set or nothing authenticates.** It is commented out in
+  `.env` as shipped; Auth.js fails config assertion before reading a cookie, so
+  every request is anonymous and every probe returns 401 whatever it carries.
+  The guard hook blocks agents from writing `.env` — a human sets it once. The
+  symptom is `[auth][error] MissingSecret` in the dev server log, and nowhere
+  else.
 
 ## Deployment
 
@@ -682,6 +867,29 @@ disjoint files by design. If drift shows up in practice — two engineers
 disagreeing about a type that the contract did not pin down — that is the signal
 to revisit, and it belongs in a milestone retro rather than a fresh argument.
 
+### Dispatching a review
+
+**Scope a review by an explicit file list, not by "the milestone".** M4's review
+was first sent as one `code-reviewer` and one `security-reviewer` over 73 files
+and ~7,500 lines. The code reviewer spent its entire 60-turn budget reading and
+reported **nothing at all** — 158k tokens, 71 tool calls, zero findings. Split
+into four briefs with named files, a priority order, and "begin writing your
+report by turn 35 no matter what", the same work returned thirteen findings
+including four blockers, each reproduced with a throwaway probe.
+
+The agents were not the constraint. The brief was.
+
+- Above roughly fifteen files, split by concern — routes and gates, the
+  pipeline, the data layer, the UI — and run them in parallel.
+- Tell each reviewer what this project has ACTUALLY got wrong before (the
+  repeat offenders in this file), not a generic checklist.
+- Tell each what is already known, so findings are not re-reported.
+- Require a reporting budget and an explicit list of what it did not reach.
+- Reviewers carry `memory: project`. In M4 one was killed mid-run and its
+  finding survived in `.claude/agent-memory/security-reviewer/`, which is the
+  only reason the retention gap was found — check there after any review that
+  ends abruptly.
+
 ### Retro cadence
 
 At the end of each milestone — when the chunk is shipped and working, roughly
@@ -703,6 +911,17 @@ strictly blank each time. That memory is theirs and is narrow; the documents in
 `docs/` remain the shared, reviewable record, which is why they are
 version-controlled and why the retro is a real step rather than a good
 intention.
+
+**Agent memory splits by working directory, and that bit us.** The canonical
+store is `/workspaces/Agents/.claude/agent-memory/` and it is version-
+controlled. But M4's reviewers ran with their cwd inside `app/` and wrote to a
+second store at `app/.claude/agent-memory/` — which those agents would never
+have found again from the repo root, so five genuinely useful memories (the SDK
+`parse` behaviour, the mutate-and-stub review technique, the live-constraint
+check) were one commit away from being written where nothing reads them. Same
+shape as the `.claude/agents/` subdirectory trap above. They have been merged
+into the root store; **after any agent run, check for a stray
+`app/.claude/agent-memory/` and consolidate it.**
 
 A copy is mirrored into `~/.claude/agents/` so edits take effect in a running
 session. The repository copy is canonical; refresh the mirror after changing it,

@@ -236,3 +236,56 @@ export function targetsOf(op: DrawOp): string[] {
       return [op.from, op.to];
   }
 }
+
+// ─────────────────────────── the layout pass (M4-3) ───────────────────────────
+
+/**
+ * Shifts a measured box back inside the stage, without resizing it.
+ *
+ * **Why this exists, and it is not a tidy-up.** M4-3's browser measurement —
+ * the first thing ever to render a lesson in Chromium — found the reading
+ * fixture's 36-character label at `y: 0.14` measuring `y -3..77` of a 257px
+ * stage at 375px. The label wraps to four lines on a phone, `boxAt` centres it
+ * on its point, and the stage clips with `overflow-hidden`: a child would have
+ * seen the top line of a label sliced off. One of three fixtures failed, which
+ * is far above plan §9.2's 5% threshold, so §9.2's "a deterministic layout pass
+ * becomes M4 scope" is what this is.
+ *
+ * **It shifts rather than shrinks** because the model's coordinate is a
+ * statement about where a thing belongs relative to the other things, and
+ * scaling text down to fit is how a lesson becomes unreadable rather than
+ * merely off-centre. A few pixels of movement preserves the arrangement; a
+ * smaller font does not.
+ *
+ * An element larger than the stage on an axis cannot be made to fit by moving
+ * it, so it is pinned to the top-left edge of that axis and left overflowing.
+ * That keeps `isWithinBounds` false, which is honest: the measurement should
+ * still report it rather than have the clamp quietly launder it into a pass.
+ */
+export function clampToBounds(box: Box, viewport: Viewport): Box {
+  const shift = (start: number, extent: number, bound: number): number => {
+    if (extent >= bound) return 0;
+    return Math.min(Math.max(start, 0), bound - extent);
+  };
+
+  return {
+    x: shift(box.x, box.width, viewport.width),
+    y: shift(box.y, box.height, viewport.height),
+    width: box.width,
+    height: box.height,
+  };
+}
+
+/**
+ * The correction `clampToBounds` implies, in pixels — what the renderer adds to
+ * an element's own centring transform.
+ *
+ * Returned separately from the clamped box because the two have different
+ * consumers: the box feeds the annotation geometry (so a ring drawn around a
+ * shifted label moves with it), and the offset feeds CSS. Deriving both from
+ * one function is what stops them disagreeing.
+ */
+export function offsetToBounds(box: Box, viewport: Viewport): { dx: number; dy: number } {
+  const clamped = clampToBounds(box, viewport);
+  return { dx: clamped.x - box.x, dy: clamped.y - box.y };
+}

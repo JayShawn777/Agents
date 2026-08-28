@@ -51,17 +51,44 @@ export default async function LessonPage({ params }: PageProps<"/lessons/[lesson
 
   const capped = atVersionCap(lesson.versionCount);
 
+  /**
+   * **Whether there is something to play, which is not the same as
+   * `lesson.status === "READY"`.**
+   *
+   * `currentVersionId` is repointed only by a SUCCESSFUL run, so after a failed
+   * regeneration it still points at the version that worked — `openNextVersion`
+   * leaves it alone on purpose, and AC 19 is the promise that "a failed
+   * regeneration leaves the student with the lesson they already had".
+   * Gating the player on the LESSON's status broke that promise: `finalizeFailed`
+   * sets the lesson to FAILED, the player disappeared, and a perfectly good
+   * stored lesson became unreachable — permanently, if the child was at
+   * `MAX_LESSON_VERSIONS`, because the regenerate button hides there too.
+   */
+  const playable = Boolean(version?.script && version.timeline);
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6">
       {lesson.status === "PENDING" || lesson.status === "AUTHORING" ? (
         <AuthoringState lessonId={lesson.id} />
       ) : null}
 
-      {lesson.status === "FAILED" ? (
+      {lesson.status === "FAILED" && !playable ? (
         <FailedLesson lessonId={lesson.id} failureMessage={lesson.failureMessage} atVersionCap={capped} />
       ) : null}
 
-      {lesson.status === "READY" && version?.script && version.timeline ? (
+      {lesson.status === "FAILED" && playable ? (
+        // The new explanation failed but the old one still plays. Say so
+        // without taking the lesson away.
+        <p
+          role="status"
+          className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground"
+        >
+          {lesson.failureMessage ?? "That new explanation didn’t work out."} Here’s the one you had
+          before.
+        </p>
+      ) : null}
+
+      {playable && version?.script && version.timeline ? (
         <>
           <LessonView
             lessonId={lesson.id}

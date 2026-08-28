@@ -27,7 +27,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import {
   arrowPathFor,
   bracePathFor,
+  clampToBounds,
   highlightFor,
+  offsetToBounds,
   ringFor,
   strikeFor,
   underlineFor,
@@ -38,21 +40,37 @@ import type { RenderableDrawOp, RenderableLessonScript } from "@/lib/schemas/dto
 
 const SIZE_CLASS = { sm: "text-sm", md: "text-base", lg: "text-2xl" } as const;
 
+/** A layout-pass correction in container pixels. */
+type Offset = { dx: number; dy: number };
+
+const ZERO_OFFSET: Offset = { dx: 0, dy: 0 };
+
+function sameOffsets(a: Record<string, Offset>, b: Record<string, Offset>): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => b[key] && a[key].dx === b[key].dx && a[key].dy === b[key].dy);
+}
+
 export function Stage({
   script,
   visibleStepCount,
-  reducedMotion = false,
 }: {
   script: RenderableLessonScript;
   /** AC 12: the canvas at step k is the ops of steps 0..k folded in order. */
   visibleStepCount: number;
-  /** AC 15. Removes the reveal transition; the final frame is identical. */
-  reducedMotion?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const elementRefs = useRef(new Map<string, HTMLElement>());
   const [boxes, setBoxes] = useState<Record<string, Box>>({});
   const [size, setSize] = useState({ width: 0, height: 0 });
+  /**
+   * The layout pass's corrections, in pixels, keyed by element id. Mirrored
+   * into a ref because `measure` must subtract the offset it already applied
+   * to recover the element's uncorrected position — reading that from state
+   * would make `measure` depend on its own output.
+   */
+  const [offsets, setOffsets] = useState<Record<string, Offset>>({});
+  const offsetsRef = useRef<Record<string, Offset>>({});
 
   const visible = script.steps.slice(0, Math.max(visibleStepCount, 0));
   const placements = visible.flatMap((step) =>
@@ -68,18 +86,42 @@ export function Stage({
     const bounds = container.getBoundingClientRect();
     setSize({ width: bounds.width, height: bounds.height });
 
+    const viewport = { width: bounds.width, height: bounds.height };
+    // A container with no layout yet (hidden, or before the first paint) would
+    // clamp every element onto the origin. Measure, but correct nothing.
+    const laidOut = viewport.width > 0 && viewport.height > 0;
+
     const next: Record<string, Box> = {};
+    const nextOffsets: Record<string, Offset> = {};
     for (const [id, element] of elementRefs.current) {
       const rect = element.getBoundingClientRect();
       // Relative to the container, so both layers share one coordinate space.
-      next[id] = {
+      const measured = {
         x: rect.left - bounds.left,
         y: rect.top - bounds.top,
         width: rect.width,
         height: rect.height,
       };
+      // Where CSS centring alone would have put it: what the browser reports
+      // MINUS the correction already applied. Deriving the next correction from
+      // the uncorrected box is what makes this idempotent — re-measuring on a
+      // resize or a font load recomputes the same answer rather than drifting
+      // one clamp further each time.
+      const applied = offsetsRef.current[id] ?? ZERO_OFFSET;
+      const uncorrected = { ...measured, x: measured.x - applied.dx, y: measured.y - applied.dy };
+
+      next[id] = laidOut ? clampToBounds(uncorrected, viewport) : uncorrected;
+      const offset = laidOut ? offsetToBounds(uncorrected, viewport) : ZERO_OFFSET;
+      if (offset.dx !== 0 || offset.dy !== 0) nextOffsets[id] = offset;
     }
     setBoxes(next);
+
+    // Guarded: the common case is that nothing needs moving, and setting a
+    // fresh object every measure would re-render on every resize tick.
+    if (!sameOffsets(offsetsRef.current, nextOffsets)) {
+      offsetsRef.current = nextOffsets;
+      setOffsets(nextOffsets);
+    }
   }, []);
 
   // Layout effect, not effect: measure before the browser paints, so the
@@ -132,12 +174,21 @@ export function Stage({
           // measuring, and finding them by class would break the moment the
           // styling changes.
           data-lesson-element={op.id}
-          className={`absolute -translate-x-1/2 -translate-y-1/2 text-foreground ${
-            op.kind === "write" ? SIZE_CLASS[op.size] : "text-sm"
-          } ${reducedMotion ? "" : "transition-opacity duration-300"}`}
+          // No animation, deliberately. `transition-opacity duration-300` used
+          // to sit here and transitioned nothing — no opacity value is ever
+          // changed — which made AC 15 look implemented (see ADR-0019's
+          // 2026-08-28 revision note). M5 adds the first real reveal, and
+          // reinstates `prefers-reduced-motion` in the same change.
+          className={`absolute text-foreground ${op.kind === "write" ? SIZE_CLASS[op.size] : "text-sm"}`}
           style={{
             left: `${op.at.x * 100}%`,
             top: `${op.at.y * 100}%`,
+            // The centring translate lives here rather than in a Tailwind
+            // class because the layout pass adds to it, and a `transform` in
+            // `style` would otherwise silently override the class's.
+            transform: `translate(calc(-50% + ${(offsets[op.id] ?? ZERO_OFFSET).dx}px), calc(-50% + ${
+              (offsets[op.id] ?? ZERO_OFFSET).dy
+            }px))`,
             // The 65-character label the model actually produced spans nearly
             // the whole canvas at 1280px and cannot fit one line at 375px.
             // Wrapping changes the element's height, which changes every
@@ -161,6 +212,29 @@ export function Stage({
         viewBox={`0 0 ${size.width || 1} ${size.height || 1}`}
         aria-hidden="true"
       >
+        {/*
+          Every `arrow` referenced `url(#lesson-arrowhead)` and this definition
+          did not exist anywhere in the repository — an undefined marker
+          reference is silently ignored, so every arrow drew as a bare curve.
+          An `arrow` op carries no coordinates: its entire meaning is direction
+          from one element to another, so without the head "this becomes that"
+          renders as an ambiguous squiggle. Nothing could catch it — jsdom draws
+          no annotations, and the e2e check only counts `svg *`.
+        */}
+        <defs>
+          <marker
+            id="lesson-arrowhead"
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+            className="text-primary"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+          </marker>
+        </defs>
         {annotations.map((op) => renderAnnotation(op, boxes))}
       </svg>
     </div>

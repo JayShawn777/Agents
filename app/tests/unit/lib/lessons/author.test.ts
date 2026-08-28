@@ -6,7 +6,7 @@ import { LESSON_AUTHORING_TIMEOUT_MS, LESSON_EFFORT, LESSON_MODEL, LESSON_SCHEMA
 
 const dbMock = {
   lessonScriptVersion: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-  lesson: { update: vi.fn(), updateMany: vi.fn() },
+  lesson: { update: vi.fn(), updateMany: vi.fn(), findUniqueOrThrow: vi.fn() },
   $transaction: vi.fn(async (arg: unknown) => {
     if (typeof arg === "function") return (arg as (tx: typeof dbMock) => Promise<unknown>)(dbMock);
     return Promise.all(arg as unknown[]);
@@ -279,8 +279,8 @@ describe("the stale reaper (AC 6)", () => {
     expect(dbMock.lesson.updateMany).not.toHaveBeenCalled();
   });
 
-  it("leaves a lesson that is not AUTHORING alone", async () => {
-    for (const status of ["PENDING", "READY", "FAILED"]) {
+  it("leaves a lesson in a TERMINAL state alone", async () => {
+    for (const status of ["READY", "FAILED"]) {
       vi.clearAllMocks();
       const result = await reapIfStale(lesson({ status }));
       expect(result.status).toBe(status);
@@ -288,10 +288,53 @@ describe("the stale reaper (AC 6)", () => {
     }
   });
 
+  /**
+   * PENDING is reapable too, and used not to be. A lesson is created PENDING
+   * and only becomes AUTHORING inside `authorLesson`'s own claim — so an
+   * instance recycled after the 202 but before that claim leaves a row that
+   * nothing could ever move, and a page that spins forever. That is AC 6's
+   * second failure mode, and the cheaper one to hit: it needs no model call to
+   * fail, just a dropped callback.
+   */
+  it("fails a lesson stranded in PENDING, which nothing else can move", async () => {
+    const result = await reapIfStale(lesson({ status: "PENDING" }));
+
+    expect(result.status).toBe("FAILED");
+    expect(dbMock.lesson.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "les_1", status: "PENDING" } }),
+    );
+  });
+
+  it("leaves a PENDING lesson alone until its deadline passes", async () => {
+    const result = await reapIfStale(lesson({ status: "PENDING", updatedAt: new Date() }));
+    expect(result.status).toBe("PENDING");
+    expect(dbMock.lesson.updateMany).not.toHaveBeenCalled();
+  });
+
   /** The original function recovering just before this read must win. */
   it("writes no version row when it loses the guard race", async () => {
     dbMock.lesson.updateMany.mockResolvedValue({ count: 0 });
+    dbMock.lesson.findUniqueOrThrow.mockResolvedValue({ id: "les_1", status: "READY" });
     await reapIfStale(lesson());
     expect(dbMock.lessonScriptVersion.updateMany).not.toHaveBeenCalled();
+  });
+
+  /**
+   * **The half the previous test never checked, and the bug that hid there.**
+   * It asserted only that no version row was written, and never looked at the
+   * return value — which is the entire output of the function, and which the
+   * status GET and the lesson page both render. It returned a hard-coded
+   * FAILED, so a lesson that finished authoring moments before the reaping
+   * read was shown to the child as a failure while a good READY script sat in
+   * the row. Reloading made it reappear, so it looked like a flake.
+   */
+  it("returns the TRUE status when it lost the race, not a hard-coded FAILED", async () => {
+    dbMock.lesson.updateMany.mockResolvedValue({ count: 0 });
+    dbMock.lesson.findUniqueOrThrow.mockResolvedValue({ id: "les_1", status: "READY" });
+
+    const result = await reapIfStale(lesson());
+
+    expect(result.status).toBe("READY");
+    expect(dbMock.lesson.findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: "les_1" } });
   });
 });

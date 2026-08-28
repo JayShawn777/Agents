@@ -68,6 +68,9 @@ const CATEGORY_LABELS: Record<RetentionCategoryKey, string> = {
   // conversation" is what they will recognise, and this is the row most likely
   // to be the reason someone opened the page at all.
   CHAT_TRANSCRIPT: "Tutoring conversations",
+  // M4. "Whiteboard lesson" is what a parent sees on the screen; naming it for
+  // the three tables behind it would be naming it for us instead of for them.
+  LESSON_CONTENT: "Whiteboard lessons",
 };
 
 /**

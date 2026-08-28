@@ -25,7 +25,11 @@ export function PlayerControls({ state }: { state: PlayerState }) {
       <Button
         type="button"
         size="sm"
-        onClick={state.isPlaying ? state.pause : state.play}
+        // At the end, `play()` was a no-op: it sets `playRequested`, but
+        // `isPlaying` is `playRequested && !atEnd`, so nothing moved. A child
+        // who reached the last step and pressed the big primary button got
+        // nothing at all. `replay` is the action the label already promised.
+        onClick={state.isPlaying ? state.pause : state.atEnd ? state.replay : state.play}
         aria-label={state.isPlaying ? "Pause" : state.atEnd ? "Replay" : "Play"}
       >
         {state.isPlaying ? (
@@ -33,7 +37,11 @@ export function PlayerControls({ state }: { state: PlayerState }) {
         ) : (
           <Play className="size-4" aria-hidden="true" />
         )}
-        {state.isPlaying ? "Pause" : "Play"}
+        {/*
+          The visible text must match the accessible name (WCAG 2.5.3, Label in
+          Name): this said "Play" while announcing itself as "Replay".
+        */}
+        {state.isPlaying ? "Pause" : state.atEnd ? "Replay" : "Play"}
       </Button>
 
       <Button

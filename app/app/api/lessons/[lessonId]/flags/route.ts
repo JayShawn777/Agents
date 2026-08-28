@@ -6,6 +6,7 @@ import { requireLesson, type LessonWithVersions } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { flagLessonInputSchema } from "@/lib/schemas/lesson";
 import { toLessonFlagDTO } from "@/lib/lessons/dto";
+import { withinFlagCap } from "@/lib/lessons/request";
 
 /**
  * Endpoint 45 (plan §3) — `POST /api/lessons/[lessonId]/flags`.
@@ -34,6 +35,10 @@ export const POST = withAuth({
   resolveResource: resolveOwnedLesson,
   requireState: (lesson) => lesson.studentProfile.status === "ACTIVE",
   bodySchema: flagLessonInputSchema,
+  // Step 7. This route had no rate limit at all — the only M4 mutation without
+  // one — and `LessonFlag` has no unique constraint, so a loop could insert
+  // unbounded rows on a child's account.
+  rateLimit: ({ resource }) => withinFlagCap(resource.studentProfileId),
   handler: async ({ resource: lesson, body }) => {
     // `versionId` arrives in the BODY, so unlike a path param nothing upstream
     // has scoped it. Resolving it against the already-owned lesson is what stops

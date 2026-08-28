@@ -160,6 +160,23 @@ belonging to that profile.
 15. **Given** a browser reporting `prefers-reduced-motion: reduce`, **when** a
     lesson is played, **then** each step's content appears without animation and
     all content remains reachable via the step controls.
+
+    > **NOT MET, and deliberately so as of 2026-08-28.** The M4 review found
+    > that the lesson renderer has no animation at all — the one motion-related
+    > class changed no value, and ADR-0019 §4's "stroke reveal on the overlay"
+    > was never built. The criterion was therefore *vacuously* true, which is
+    > worse than plainly false: a `reducedMotion` prop and a passing test made
+    > it look implemented. The plumbing has been deleted and ADR-0019 §4's claim
+    > struck (see that ADR's 2026-08-28 revision note).
+    >
+    > The second half — "all content remains reachable via the step controls" —
+    > IS met, and independently, by the step controls and by AC 16's static text
+    > view.
+    >
+    > **M5 owns this.** Narration is the first real timeline in the product, and
+    > any reveal synchronised to it is precisely the motion this criterion was
+    > written for. Reinstate the preference in the same change that adds the
+    > first animation, never afterwards.
 16. **Given** a `READY` lesson, **when** the student chooses the text view,
     **then** every step's narration text and its drawn content are presented as
     an ordered, static worked example, complete without the canvas.

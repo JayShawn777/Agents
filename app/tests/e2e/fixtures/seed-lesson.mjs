@@ -158,6 +158,44 @@ const FIXTURE_SCRIPTS = [
   },
 ];
 
+/**
+ * **Refuse to touch anything but a local database.**
+ *
+ * This script writes rows with raw SQL, mints a real `Session` row, and cleans
+ * up with `DELETE FROM "User"` — which cascades across a family's entire data.
+ * `.env`'s `DATABASE_URL` normally points at the local `prisma dev` server, but
+ * nothing stopped it being pointed at Neon for an afternoon (the runbook has
+ * people swapping connection strings), and a Playwright run would then have
+ * seeded and deleted production rows without a word.
+ *
+ * The check is on the HOST, not on a `NODE_ENV` or a flag, because the thing
+ * that must be true is "this is not the real database" and the host is what
+ * makes that true. A test fixture is exactly the kind of code nobody reads
+ * again, so it should refuse loudly rather than rely on being run correctly.
+ */
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function assertLocalDatabase(connectionString) {
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is not set. Run with `node --env-file=.env`.");
+  }
+  let host;
+  try {
+    host = new URL(connectionString).hostname;
+  } catch {
+    throw new Error("DATABASE_URL is not a parseable URL; refusing to seed.");
+  }
+  if (!LOCAL_HOSTS.has(host)) {
+    throw new Error(
+      `Refusing to seed: DATABASE_URL points at "${host}", which is not a local database. ` +
+        `This fixture writes rows and deletes a User (cascading across their whole family's data). ` +
+        `Point DATABASE_URL at the local \`prisma dev\` server before running e2e tests.`,
+    );
+  }
+}
+
+assertLocalDatabase(process.env.DATABASE_URL);
+
 const db = new Client({ connectionString: process.env.DATABASE_URL });
 await db.connect();
 

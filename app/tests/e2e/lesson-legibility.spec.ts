@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 import { isWithinBounds, overlapRatio, ILLEGIBLE_OVERLAP_RATIO, type Box } from "@/lib/lessons/layout";
 
@@ -43,36 +44,76 @@ function runSeed(...args: string[]): string {
  *
  * ---
  *
- * **SKIPPED, and here is exactly why — do not delete this, it is one fix away.**
+ * **IT RAN, on 2026-08-28, and it found something.** This is no longer an
+ * estimate: three fixtures at both viewports, in Chromium.
  *
- * What is finished and verified working:
- *   - the seed (`fixtures/seed-lesson.mjs`) runs and writes a complete READY
- *     lesson per fixture, via raw SQL through `pg`, cleaning up with one
- *     cascading delete;
- *   - the fixture scripts pass `LessonScriptSchema` (checked directly);
- *   - the page is reachable and renders (URL resolves, no redirect);
- *   - the measurement itself — bounds, overlap ratio, the zero-size guard and
- *     the "annotations actually drew something" check.
+ * **The result.** At 1280px all three laid out clean. At 375px one failed —
+ * the reading fixture's `rule` label, "the main idea of the whole paragraph"
+ * at `y: 0.14`, measured `y -3..77` of a 257px stage. It wraps to four lines
+ * on a phone, `boxAt` centres it on its point, and the stage clips with
+ * `overflow-hidden`: a child would have seen the top line of a label sliced
+ * off. One of three scripts is far above §9.2's 5% threshold, so §9.2's
+ * "a deterministic layout pass becomes M4 scope" fired, and
+ * `clampToBounds`/`offsetToBounds` in `lib/lessons/layout.ts` are it. Both
+ * viewports pass against the clamp.
  *
- * What is NOT working: **the seeded session cookie is not accepted by
- * `auth()`.** Probed directly against `GET /api/lessons/[id]`:
+ * **n is 3, and the threshold wants more.** Three fixtures cannot measure a 5%
+ * rate; what they did was find a real defect, which is worth more than a
+ * precise number over a wider sample would have been. Widening the fixture set
+ * is the honest follow-up, and the wrapped-label shape is now the one to add
+ * more of — it is the only shape that failed, and the three maths fixtures
+ * would never have produced it.
  *
- *     no cookie                          -> 401
- *     authjs.session-token=<sessionToken> -> 401   <-- should be 200
+ * ---
  *
- * So the `Session` row is written and the name `authjs.session-token` is the
- * documented Auth.js v5 default over http, but the request is still
- * unauthenticated — which makes the page `notFound()` (a 404 body of exactly
- * "Homework Helper | 404", which is what the earlier failure actually was).
+ * **What was actually wrong with auth, because the guess here was wrong.**
  *
- * The next step is to find what `auth()` expects: check `lib/auth/config.ts`
- * for a `cookies`/`basePath` override, whether `useSecureCookies` is on, and
- * whether v5 beta.32 wraps even a database session token. Signing in through
- * the real magic-link flow once and dumping the cookie jar would answer it in
- * one run.
+ * This header used to say the seeded session cookie was not accepted by
+ * `auth()`, and sent the next person to check `lib/auth/config.ts` for a
+ * `cookies`/`basePath` override, `useSecureCookies`, and whether v5 wraps a
+ * database session token. All three were the wrong tree. The cookie was always
+ * correct: for `strategy: "database"` the cookie value IS the raw
+ * `sessionToken` (@auth/core's own `SessionToken` type says so), and over http
+ * the name is exactly `authjs.session-token`.
  *
- * Un-skip the moment that returns 200. Nothing else here needs to change.
+ * **`AUTH_SECRET` was commented out in `.env`.** `assertConfig` fails with
+ * `MissingSecret` before any cookie is read, so `auth()` returned null for
+ * every request — which is why the two probes returned *the same* 401 with and
+ * without a cookie. That symmetry was the tell, and reading it as "the cookie
+ * is not accepted" is what cost the time: an unaccepted cookie and an
+ * unreadable config are indistinguishable at the status code, and the server
+ * log said which it was all along.
+ *
+ * A missing secret is not a test-harness problem — nobody could sign in to
+ * this app in this environment at all. Set `AUTH_SECRET` in `.env` (the guard
+ * hook blocks agents from writing it, so a human does this once) and both
+ * viewports pass.
  */
+
+/**
+ * **Why this is guarded rather than simply enabled.**
+ *
+ * These tests need a real signed-in session, and `auth()` returns null for
+ * every request unless `AUTH_SECRET` is set — see the header above. Setting it
+ * lives in `.env`, which the guard hook reserves for a human, so on a fresh
+ * checkout it is genuinely absent. Un-skipping unconditionally would make
+ * `pnpm test:e2e` RED for everyone who has not done that owner action, which
+ * reads as "the lesson renderer is broken" when the truth is "nobody measured".
+ *
+ * A skip says the second thing. The env var covers `AUTH_SECRET=... pnpm
+ * test:e2e`; the `.env` scan covers the case where the owner has set it
+ * properly, since Playwright's config does not load `.env` itself.
+ */
+function authSecretAvailable(): boolean {
+  if (process.env.AUTH_SECRET) return true;
+  try {
+    return /^\s*AUTH_SECRET\s*=\s*\S+/m.test(readFileSync(".env", "utf8"));
+  } catch {
+    return false;
+  }
+}
+
+const HAS_AUTH_SECRET = authSecretAvailable();
 
 const VIEWPORTS = [
   { name: "phone", width: 375, height: 812 },
@@ -91,7 +132,12 @@ test.afterAll(() => {
 });
 
 for (const viewport of VIEWPORTS) {
-  test.describe.skip(`at ${viewport.width}px (${viewport.name})`, () => {
+  test.describe(`at ${viewport.width}px (${viewport.name})`, () => {
+    test.skip(
+      !HAS_AUTH_SECRET,
+      "AUTH_SECRET is not set, so no request can authenticate — see this file's header.",
+    );
+
     test(`every lesson lays out legibly`, async ({ page, context }) => {
       await context.addCookies([
         { name: SESSION_COOKIE, value: seed.sessionToken, url: "http://localhost:3000" },

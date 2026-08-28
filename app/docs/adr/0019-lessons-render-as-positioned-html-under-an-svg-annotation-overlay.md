@@ -4,8 +4,42 @@
 - **Date:** 2026-08-28
 - **Deciders:** Jaysh
 - **Accepted:** 2026-08-28
+- **Revised:** 2026-08-28 (see "Revision note")
 - **Spec:** docs/specs/m4-whiteboard-lessons.md
 - **Measurement:** docs/research/m4-authoring-measurement.md (plan §9.2, M4-2)
+
+## Revision note — 2026-08-28
+
+**§4's AC 15 bullet is struck.** It claimed the renderer honours
+`prefers-reduced-motion` by removing "a CSS transition on the placement layer
+and a stroke reveal on the overlay". The M4 review found that **neither effect
+exists**: the only motion-related token in `components/lessons/**` was
+`transition-opacity duration-300`, and no opacity value is ever changed. There
+is no stroke reveal on the overlay at all.
+
+So the ADR was describing an animation nobody wrote, and AC 15 was satisfied
+only vacuously — there were no frames that could differ. Worse, the plumbing
+made it *look* satisfied: a `usePrefersReducedMotion` hook fed a `reducedMotion`
+prop that toggled a class with no effect, and the test asserted that class
+string was present and then absent. A green test, an implemented-looking prop,
+and no behaviour underneath.
+
+**The decision: strike the claim and delete the plumbing**, rather than
+implement a reveal now. A lesson is a static fold over steps 0..k today (§4's
+AC 12 bullet), and adding an animation purely so that an accessibility
+preference has something to switch off is backwards. The rest of §4 is
+unaffected — AC 11, 12, 13, 14 and 16 are all built and reviewed.
+
+**What this obliges M5 to do.** M5 introduces narration, which is the first
+thing in this product with a real timeline, and any reveal synchronised to it is
+exactly the motion AC 15 was written for. **Whoever builds M5 reinstates the
+preference alongside the first real animation, not after it** — the deleted hook
+(`useSyncExternalStore` over a `matchMedia` subscription, with a `false` server
+snapshot so hydration corrects it rather than flashing) was correct and is worth
+recovering from this file's history.
+
+Until then the honest statement is the one now in the M4 spec: a lesson has no
+animation, so there is nothing for the preference to remove.
 
 ## Context
 
@@ -89,10 +123,12 @@ the entire application, with no exception anywhere.**
   container size changes. Nothing in the stored document is a pixel.
 - **AC 11** (deterministic) — the draw is a pure function of (script, container
   size, measured boxes). No randomness, no clock. Same viewport, same output.
-- **AC 15** (`prefers-reduced-motion`) — animation is a CSS transition on the
+- ~~**AC 15** (`prefers-reduced-motion`) — animation is a CSS transition on the
   placement layer and a stroke reveal on the overlay. Both are opt-in effects on
   top of a static final frame, so honouring the preference is *removing* them,
-  never a second rendering path that could diverge.
+  never a second rendering path that could diverge.~~ **Struck 2026-08-28 — see
+  the Revision note.** Neither effect was ever built, so this claimed an
+  accessibility property the renderer does not have.
 - **AC 16** (static text view) — narration is already text, and the ops are
   already a list. The text view does not render the canvas at all; it is a
   sibling of the player, not a mode inside it.

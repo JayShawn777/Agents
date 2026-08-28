@@ -41,7 +41,13 @@ export type CueSource = {
  */
 export function staticCueSource(timeline: readonly Cue[]): CueSource {
   const cues = [...timeline];
-  const totalDurationMs = cues.reduce((sum, cue) => sum + cue.durationMs, 0);
+  // The END of the last cue, not the sum of the durations. The two agree only
+  // for a contiguous timeline, and this module exists precisely because M5's
+  // narration will make it non-contiguous — `cues.test.ts` already builds that
+  // shape (offsets 0 / 6200 / 11100), where the sum is 12000 and the real end
+  // is 14100. Summing would cut the last step off 2.1 seconds early.
+  const last = cues.at(-1);
+  const totalDurationMs = last ? last.startOffsetMs + last.durationMs : 0;
 
   return {
     cues,

@@ -72,7 +72,15 @@ type LessonForDTO = Pick<
   Lesson,
   "id" | "status" | "extractedProblemId" | "practiceProblemId" | "currentVersionId" | "createdAt"
 > & {
-  versions?: { id: string; failureCode: string | null }[];
+  /**
+   * REQUIRED, and ordered by `version` ascending (`requireLesson`'s own
+   * `orderBy`). It was optional, which meant a caller that forgot the include
+   * got `versionCount: 0` — no type error, no failing test, and
+   * `atVersionCap(0)` false, so the UI offered "explain it differently" on a
+   * lesson already at its ceiling. A permissive default on a missing field is
+   * how a cap becomes advisory.
+   */
+  versions: { id: string; version: number; failureCode: string | null }[];
 };
 
 export function toLessonDTO(lesson: LessonForDTO): LessonDTO {
@@ -84,15 +92,28 @@ export function toLessonDTO(lesson: LessonForDTO): LessonDTO {
     ? { kind: "EXTRACTED_PROBLEM", id: lesson.extractedProblemId }
     : { kind: "PRACTICE_PROBLEM", id: lesson.practiceProblemId ?? "" };
 
-  const current = lesson.versions?.find((version) => version.id === lesson.currentVersionId);
+  // **The LATEST version, not the current one.** `currentVersionId` is only
+  // ever repointed by a SUCCESSFUL run, so the version that just failed is
+  // never the current one — which made `failureMessage` null in every state a
+  // writer can actually produce, and AC 10's allowlisted message unreachable.
+  // A first run that fails leaves `currentVersionId` null; a failed
+  // regeneration leaves it on the last version that WORKED, whose
+  // `failureCode` is null by definition.
+  //
+  // The test that "proved" the mapping built a lesson whose current version
+  // carried a failure code — a row combination nothing in the codebase writes.
+  const latest = lesson.versions.reduce<(typeof lesson.versions)[number] | null>(
+    (highest, candidate) => (highest === null || candidate.version > highest.version ? candidate : highest),
+    null,
+  );
 
   return {
     id: lesson.id,
     status: lesson.status,
     subject,
     currentVersionId: lesson.currentVersionId,
-    versionCount: lesson.versions?.length ?? 0,
-    failureMessage: lesson.status === "FAILED" ? toFailureMessage(current?.failureCode ?? null) : null,
+    versionCount: lesson.versions.length,
+    failureMessage: lesson.status === "FAILED" ? toFailureMessage(latest?.failureCode ?? null) : null,
     createdAt: lesson.createdAt.toISOString(),
   };
 }

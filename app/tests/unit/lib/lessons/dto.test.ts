@@ -37,7 +37,7 @@ function lesson(overrides: Record<string, unknown> = {}) {
     practiceProblemId: null,
     currentVersionId: "ver_1",
     createdAt: new Date("2026-08-28T10:00:00Z"),
-    versions: [{ id: "ver_1", failureCode: null }],
+    versions: [{ id: "ver_1", version: 1, failureCode: null }],
     ...overrides,
   };
 }
@@ -79,7 +79,7 @@ describe("LessonDTO", () => {
    */
   it("maps a failure code through the allowlist, never verbatim", () => {
     const dto = toLessonDTO(
-      lesson({ status: "FAILED", versions: [{ id: "ver_1", failureCode: "REFUSED" }] }),
+      lesson({ status: "FAILED", versions: [{ id: "ver_1", version: 1, failureCode: "REFUSED" }] }),
     );
     expect(dto.failureMessage).toBe(LESSON_FAILURE_MESSAGES.REFUSED);
     expect(dto.failureMessage).not.toContain("REFUSED");
@@ -87,7 +87,7 @@ describe("LessonDTO", () => {
 
   it("falls back to a generic message for a code it does not recognise", () => {
     const dto = toLessonDTO(
-      lesson({ status: "FAILED", versions: [{ id: "ver_1", failureCode: "claude-opus-5-overloaded" }] }),
+      lesson({ status: "FAILED", versions: [{ id: "ver_1", version: 1, failureCode: "claude-opus-5-overloaded" }] }),
     );
     expect(dto.failureMessage).not.toContain("claude");
     expect(dto.failureMessage).toBeTruthy();
@@ -100,7 +100,10 @@ describe("LessonDTO", () => {
 
   it("counts versions so a client can offer a regeneration against the cap", () => {
     expect(
-      toLessonDTO(lesson({ versions: [{ id: "ver_1", failureCode: null }, { id: "ver_2", failureCode: null }] }))
+      toLessonDTO(lesson({ versions: [
+        { id: "ver_1", version: 1, failureCode: null },
+        { id: "ver_2", version: 2, failureCode: null },
+      ] }))
         .versionCount,
     ).toBe(2);
   });

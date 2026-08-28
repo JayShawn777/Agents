@@ -90,10 +90,22 @@ export async function authorLesson(versionId: string): Promise<AuthorLessonResul
     return finalizeFailed(version.id, version.lessonId, "INTERNAL");
   }
 
-  await db.$transaction([
-    db.lessonScriptVersion.update({ where: { id: version.id }, data: { status: "AUTHORING" } }),
-    db.lesson.update({ where: { id: version.lessonId }, data: { status: "AUTHORING" } }),
-  ]);
+  // Claim the version with a compare-and-swap, not a bare update. The
+  // `findUnique` above plus an unguarded `update` is check-then-act: two
+  // invocations for one version both read PENDING, both proceed, and both buy
+  // a 12-59s Opus run that writes into the same row. The `where` clause is
+  // what makes the claim exclusive — the same shape `reapIfStale` already uses
+  // 100 lines down, and the protection this function's own result type
+  // advertises when it says SKIPPED covers "already AUTHORING from a racing
+  // trigger".
+  const claimed = await db.lessonScriptVersion.updateMany({
+    where: { id: version.id, status: "PENDING" },
+    data: { status: "AUTHORING" },
+  });
+  if (claimed.count === 0) {
+    return { status: "SKIPPED" };
+  }
+  await db.lesson.update({ where: { id: version.lessonId }, data: { status: "AUTHORING" } });
 
   const facts: OutboundLearnerFacts = { gradeLevel, subject };
   const problemText = version.lesson.extractedProblem?.text ?? version.lesson.practiceProblem?.text ?? "";
@@ -180,23 +192,44 @@ export async function authorLesson(versionId: string): Promise<AuthorLessonResul
  * observed above 59s, and `LESSON_AUTHORING_TIMEOUT_MS` is twice that.
  */
 export async function reapIfStale(lesson: Lesson, now: Date = new Date()): Promise<Lesson> {
-  if (lesson.status !== "AUTHORING") return lesson;
+  // **Both non-terminal states, not just AUTHORING.** A lesson is created
+  // PENDING and only becomes AUTHORING inside `authorLesson`'s own claim — so
+  // if the instance is recycled after the 202 response but before that claim
+  // commits, which is the exact window `after()` exists to cover, the row
+  // stays PENDING forever and the page spins forever. Reaping only AUTHORING
+  // covered one of the two ways AC 6 can be violated, and the cheaper one to
+  // hit: the PENDING case needs no model call to fail, just a dropped
+  // callback.
+  if (lesson.status !== "AUTHORING" && lesson.status !== "PENDING") return lesson;
   if (now.getTime() < lesson.updatedAt.getTime() + LESSON_AUTHORING_TIMEOUT_MS) return lesson;
 
-  // Guarded by `status: 'AUTHORING'` so this can never clobber a terminal write
+  // Guarded by the status we read so this can never clobber a terminal write
   // that landed concurrently — the original function recovering and finishing
   // just before this read must win.
   const claimed = await db.lesson.updateMany({
-    where: { id: lesson.id, status: "AUTHORING" },
+    where: { id: lesson.id, status: lesson.status },
     data: { status: "FAILED" },
   });
 
-  if (claimed.count === 1) {
-    await db.lessonScriptVersion.updateMany({
-      where: { lessonId: lesson.id, status: "AUTHORING" },
-      data: { status: "FAILED", failureCode: "TIMEOUT" },
-    });
+  if (claimed.count === 0) {
+    // We LOST the race: the original run recovered and wrote a terminal state
+    // between this function's read and its update. The guard above is what
+    // protects the database; this re-read is what protects the CALLER, which
+    // renders the object we return (the status GET and the lesson page both
+    // do). Returning a hard-coded FAILED here told a child their lesson had
+    // failed while a perfectly good READY script sat in the row — and a
+    // reload made it reappear, so the bug looked like a flake.
+    //
+    // Both siblings already do this: `lib/extraction/run-extraction.ts` and
+    // `lib/practice/generate.ts` re-read on `count === 0`. This file's own
+    // docstring above promised the same behaviour and did not implement it.
+    return db.lesson.findUniqueOrThrow({ where: { id: lesson.id } });
   }
+
+  await db.lessonScriptVersion.updateMany({
+    where: { lessonId: lesson.id, status: { in: ["PENDING", "AUTHORING"] } },
+    data: { status: "FAILED", failureCode: "TIMEOUT" },
+  });
 
   return { ...lesson, status: "FAILED" };
 }
@@ -232,6 +265,25 @@ function resolveSubject(lesson: {
 function classifyFailure(err: unknown): LessonFailureCode {
   if (err instanceof MissingAnthropicApiKeyError) return "INTERNAL";
   if (err instanceof APIConnectionTimeoutError) return "TIMEOUT";
+  // **A schema violation arrives here as an exception, not as a null.**
+  // `zodOutputFormat(...).parse` THROWS an `AnthropicError` when the model's
+  // JSON fails `safeParse` (and when it is not valid JSON at all, which is what
+  // a `max_tokens` truncation looks like) — it does not return
+  // `parsed_output: null`. So the `PARSE_FAILED` branch above, whose comment
+  // describes exactly the closed-vocabulary violation AC 3 cares about, was
+  // unreachable, and every one of those failures was classified `UPSTREAM`.
+  //
+  // That told a child "a service we depend on is temporarily unavailable" —
+  // wrong, and useless advice, because retrying a deterministic prompt problem
+  // does not help. It also pinned the observed `PARSE_FAILED` rate at zero,
+  // which is the exact signal M4-4's vocabulary-sufficiency measurement reads.
+  //
+  // Matched on the SDK's own message prefix because it exports no distinct
+  // error class for this; both throw sites (`helpers/zod.mjs`, `lib/parser.mjs`)
+  // use it.
+  if (err instanceof AnthropicError && err.message.startsWith("Failed to parse structured output")) {
+    return "PARSE_FAILED";
+  }
   if (err instanceof AnthropicError) return "UPSTREAM";
   return "INTERNAL";
 }

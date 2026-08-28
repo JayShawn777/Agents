@@ -3,10 +3,10 @@ import "server-only";
 import { after } from "next/server";
 
 import { withAuth } from "@/lib/api/handler";
-import { successResponse } from "@/lib/errors";
+import { apiErr, errorResponse, successResponse } from "@/lib/errors";
 import { requireLesson, type LessonWithVersions } from "@/lib/auth/dal";
 import { requestLessonInputSchema } from "@/lib/schemas/lesson";
-import { atVersionCap, openNextVersion, withinAuthoringCap } from "@/lib/lessons/request";
+import { atVersionCap, isAuthoringCapRejection, openNextVersion, withinAuthoringCap } from "@/lib/lessons/request";
 import { authorLesson } from "@/lib/lessons/author";
 import { toLessonDTO } from "@/lib/lessons/dto";
 
@@ -58,7 +58,13 @@ export const POST = withAuth({
   bodySchema: requestLessonInputSchema,
   rateLimit: ({ resource }) => withinAuthoringCap(resource.studentProfileId),
   handler: async ({ resource: lesson }) => {
-    const version = await openNextVersion(lesson.id);
+    let version;
+    try {
+      version = await openNextVersion(lesson.id);
+    } catch (err) {
+      if (isAuthoringCapRejection(err)) return errorResponse(apiErr("RATE_LIMITED"));
+      throw err;
+    }
 
     after(() => authorLesson(version.id));
 

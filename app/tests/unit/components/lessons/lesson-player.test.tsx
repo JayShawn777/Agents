@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
 import { LessonPlayer } from "@/components/lessons/lesson-player";
@@ -19,7 +19,8 @@ import type { RenderableLessonScript } from "@/lib/schemas/dto";
  * checked in a browser by slice 9's Playwright pass.
  *
  * What IS checkable here is the part that owns the acceptance criteria: the
- * fold over steps (AC 12), the controls, and reduced motion (AC 15).
+ * fold over steps (AC 12) and the controls. AC 15 (reduced motion) is NOT
+ * checked here and no longer can be — see the note at the foot of this file.
  */
 
 const SCRIPT: RenderableLessonScript = {
@@ -104,18 +105,6 @@ const renderPlayer = () =>
       {controls}
     </LessonPlayer>,
   );
-
-let matchMediaMatches = false;
-
-beforeEach(() => {
-  matchMediaMatches = false;
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches: matchMediaMatches,
-    media: query,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  }));
-});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -246,24 +235,22 @@ describe("narration and accessibility", () => {
   });
 });
 
-describe("reduced motion (AC 15)", () => {
-  /**
-   * Honouring the preference REMOVES the transition; it does not take a second
-   * rendering path. So the same elements are present either way and only the
-   * animation class differs — which is what makes the final frame identical.
-   */
-  it("drops the transition class but renders the same content", () => {
-    const motion = renderPlayer();
-    const withMotion = motion.container.querySelector('[role="img"]')!.textContent;
-    expect(motion.container.innerHTML).toContain("transition-opacity");
-    motion.unmount();
-
-    matchMediaMatches = true;
-    const reduced = renderPlayer();
-    expect(reduced.container.innerHTML).not.toContain("transition-opacity");
-    expect(reduced.container.querySelector('[role="img"]')!.textContent).toBe(withMotion);
-  });
-});
+/**
+ * **There is no reduced-motion test here any more, and that is the point.**
+ *
+ * There used to be one, and it passed: it asserted `transition-opacity` was in
+ * the markup with motion allowed and absent with it reduced. Both assertions
+ * were true and neither meant anything — the class transitioned no value, so
+ * the two renders were pixel-identical either way. The test, the
+ * `reducedMotion` prop and the `usePrefersReducedMotion` hook together made
+ * AC 15 look implemented while nothing honoured anything.
+ *
+ * The animation was struck rather than written (ADR-0019's 2026-08-28 revision
+ * note): adding motion so that a preference has something to switch off is
+ * backwards. **M5 adds the first real reveal alongside narration and reinstates
+ * the preference in the same change** — and that is when this test comes back,
+ * asserting rendered output rather than a class string.
+ */
 
 describe("the annotation overlay in a layout-free environment", () => {
   /**

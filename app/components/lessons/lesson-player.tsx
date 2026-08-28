@@ -20,7 +20,7 @@
  * a reduced-motion viewer sees the same lesson without the movement.
  */
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Stage } from "@/components/lessons/stage";
 import { staticCueSource, type Cue } from "@/lib/lessons/cues";
@@ -39,7 +39,6 @@ export function LessonPlayer({
   const cueSourceRef = useRef(staticCueSource(timeline));
   const [stepIndex, setStepIndex] = useState(0);
   const [playRequested, setPlayRequested] = useState(false);
-  const reducedMotion = usePrefersReducedMotion();
 
   const lastIndex = Math.max(script.steps.length - 1, 0);
   const atEnd = stepIndex >= lastIndex;
@@ -85,7 +84,7 @@ export function LessonPlayer({
 
   return (
     <div className="flex flex-col gap-4">
-      <Stage script={script} visibleStepCount={stepIndex + 1} reducedMotion={reducedMotion} />
+      <Stage script={script} visibleStepCount={stepIndex + 1} />
 
       {/*
         The narration is rendered as text beside the canvas, not only spoken
@@ -115,30 +114,3 @@ export type PlayerState = {
   replay: () => void;
 };
 
-/**
- * AC 15. Watched rather than read once, because a viewer can change the system
- * setting while a lesson is open — someone who turns motion off part-way
- * through a lesson that is making them queasy should not have to reload.
- *
- * `useSyncExternalStore` rather than an effect that seeds state: a media query
- * IS external state, and subscribing to it directly avoids the render-then-
- * correct flash where the first paint animates and the second does not.
- */
-const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-
-function usePrefersReducedMotion(): boolean {
-  const subscribe = useCallback((onChange: () => void) => {
-    if (typeof window === "undefined" || !window.matchMedia) return () => {};
-    const query = window.matchMedia(REDUCED_MOTION_QUERY);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-
-  return useSyncExternalStore(
-    subscribe,
-    () => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia(REDUCED_MOTION_QUERY).matches : false),
-    // Server snapshot: assume motion is fine, because the preference is a
-    // client fact. The client corrects it on hydration.
-    () => false,
-  );
-}

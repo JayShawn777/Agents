@@ -28,17 +28,40 @@ export function AuthoringState({ lessonId }: { lessonId: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    // A slow response must not let ticks pile up on top of each other.
+    let inFlight = false;
 
     const timer = setInterval(async () => {
-      if (cancelled) return;
+      if (cancelled || inFlight) return;
       setElapsedMs((ms) => ms + POLL_INTERVAL_MS);
 
-      const result = await apiFetch<LessonDetailResponse>(`/api/lessons/${lessonId}`);
+      inFlight = true;
+      let result;
+      try {
+        result = await apiFetch<LessonDetailResponse>(`/api/lessons/${lessonId}`);
+      } finally {
+        inFlight = false;
+      }
       if (cancelled) return;
+
       // Any terminal state hands over to the page, which renders the player or
       // the failure. A poll that cannot read the lesson at all stops too —
       // continuing to poll a 404 helps nobody.
+      //
+      // **Stopping means clearing the interval, which this did not do.** It
+      // called `router.refresh()` and left the timer running, so a GET that
+      // keeps failing — a 403 after consent withdrawal, a 5xx, an offline tab —
+      // fired a full refresh every two seconds for as long as the tab stayed
+      // open, against a route that was already failing, on a page a child is
+      // sitting in front of.
+      //
+      // Stopping is safe even for a transient error: `router.refresh()`
+      // re-renders the page, and if the lesson is still in flight this
+      // component remounts and polls again. The recovery is the refresh, not
+      // the timer.
       if (!result.ok || result.data.lesson.status === "READY" || result.data.lesson.status === "FAILED") {
+        cancelled = true;
+        clearInterval(timer);
         router.refresh();
       }
     }, POLL_INTERVAL_MS);

@@ -3,10 +3,10 @@ import "server-only";
 import { after } from "next/server";
 
 import { withAuth } from "@/lib/api/handler";
-import { successResponse } from "@/lib/errors";
+import { apiErr, errorResponse, successResponse } from "@/lib/errors";
 import { requirePracticeProblem, type PracticeProblemWithContext } from "@/lib/auth/dal";
 import { requestLessonInputSchema } from "@/lib/schemas/lesson";
-import { hasEngagedWithProblem, openLesson, withinAuthoringCap } from "@/lib/lessons/request";
+import { hasEngagedWithProblem, isAuthoringCapRejection, openLesson, withinAuthoringCap } from "@/lib/lessons/request";
 import { authorLesson } from "@/lib/lessons/author";
 import { toLessonDTO } from "@/lib/lessons/dto";
 
@@ -51,10 +51,18 @@ export const POST = withAuth({
   bodySchema: requestLessonInputSchema,
   rateLimit: ({ resource }) => withinAuthoringCap(resource.practiceSet.studentProfileId),
   handler: async ({ resource: problem }) => {
-    const { lesson, version } = await openLesson({
-      studentProfileId: problem.practiceSet.studentProfileId,
-      binding: { kind: "PRACTICE_PROBLEM", practiceProblemId: problem.id },
-    });
+    // See the extracted-problem route: the transaction's own cap check is the
+    // authoritative one, and losing that race is a 429, not a 500.
+    let lesson, version;
+    try {
+      ({ lesson, version } = await openLesson({
+        studentProfileId: problem.practiceSet.studentProfileId,
+        binding: { kind: "PRACTICE_PROBLEM", practiceProblemId: problem.id },
+      }));
+    } catch (err) {
+      if (isAuthoringCapRejection(err)) return errorResponse(apiErr("RATE_LIMITED"));
+      throw err;
+    }
 
     after(() => authorLesson(version.id));
 

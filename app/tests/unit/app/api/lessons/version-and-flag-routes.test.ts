@@ -33,9 +33,16 @@ const authorLessonMock = vi.fn(async () => ({ status: "READY" as const, versionI
 vi.mock("@/lib/lessons/author", () => ({ authorLesson: authorLessonMock, reapIfStale: vi.fn(async (l: unknown) => l) }));
 
 const dbMock = {
-  lesson: { update: vi.fn() },
+  // `findUniqueOrThrow` is how `openNextVersion` reads the owning profile so it
+  // can re-count the authoring cap INSIDE its own transaction — the step-7
+  // count alone is a read-then-write that concurrent requests walk straight
+  // past. `lessonFlag.count` is the flag route's own cap, which it previously
+  // had none of.
+  lesson: { update: vi.fn(), findUniqueOrThrow: vi.fn(async () => ({ studentProfileId: "sp_1" })) },
   lessonScriptVersion: { count: vi.fn(), create: vi.fn(), aggregate: vi.fn() },
-  lessonFlag: { create: vi.fn() },
+  lessonFlag: { create: vi.fn(), count: vi.fn(async () => 0) },
+  // Takes an options argument now (`{ isolationLevel: "Serializable" }`), which
+  // this shim ignores — but it must not choke on it.
   $transaction: vi.fn(async (arg: unknown) => {
     if (typeof arg === "function") return (arg as (tx: typeof dbMock) => Promise<unknown>)(dbMock);
     return Promise.all(arg as unknown[]);

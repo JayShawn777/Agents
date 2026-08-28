@@ -672,12 +672,36 @@ export const LESSON_EFFORT = "high";
 export const LESSONS_PER_HOUR = 6;
 
 /**
- * M4 AC 10. Twice the measured worst case (59s), mirroring how
- * `EXTRACTION_TIMEOUT_MS` was set. Past this an `AUTHORING` row is reaped to
- * `FAILED` by the status GET, so a killed function still reaches a terminal
- * state and the client is never left polling forever.
+ * M4. A ceiling on "this lesson didn't help" reports, per profile per hour.
+ *
+ * The flag route was the one M4 mutation with no step-7 hook at all, and
+ * `LessonFlag` has no unique constraint — so a loop could insert unbounded rows
+ * on a child's account, in a table nothing ever reaps. Higher than the
+ * authoring cap on purpose: flagging is the cheap, honest signal we WANT (it is
+ * the closest thing this product has to "a student can report a bad question"),
+ * so the number only has to stop a script, not shape behaviour.
  */
-export const LESSON_AUTHORING_TIMEOUT_MS = 120_000;
+export const LESSON_FLAGS_PER_HOUR = 30;
+
+/**
+ * M4 AC 10. Past this a non-terminal row is reaped to `FAILED` by the status
+ * GET, so a killed function still reaches a terminal state and the client is
+ * never left polling forever.
+ *
+ * **It must exceed `maxDuration`, not the measured worst case.** This was
+ * 120_000 — twice the measured 59s, mirroring `EXTRACTION_TIMEOUT_MS` — while
+ * every authoring route declares `maxDuration = 300`. `after()` keeps running
+ * for that full budget, so a slow-but-alive run was reapable at 120s with 180s
+ * of life left in it: the reap marked it FAILED, the UI offered "try again",
+ * and pressing it started a SECOND paid Opus run while the first was still
+ * generating and still able to write its own terminal state.
+ *
+ * The deadline is therefore anchored to the longest a run can possibly still
+ * be alive, plus a margin for the reaping read itself. The cost is that a
+ * genuinely dead lesson shows a spinner for longer; the alternative was paying
+ * twice for one lesson and letting a reaped run resurrect itself.
+ */
+export const LESSON_AUTHORING_TIMEOUT_MS = 330_000;
 
 /**
  * AC 19 is unbounded as written — "the student asks for a different
@@ -883,5 +907,14 @@ export const RETENTION_POLICY = [
       "Lets an account owner read what their child was told, which is the only way to check the tutoring is any good. Windowed rather than kept for the life of the profile: it is the most sensitive record the app holds and the one whose usefulness fades fastest.",
     windowDays: CHAT_TRANSCRIPT_RETENTION_DAYS,
     anchor: "openedAt",
+  },
+  {
+    key: "LESSON_CONTENT",
+    purpose:
+      "Generated whiteboard lessons — the drawing steps and narration the tutor explains a problem with, every earlier version of a lesson, and the four-value reason a student picked when flagging one (Lesson, LessonScriptVersion, LessonFlag).",
+    businessNeed:
+      "This is the explanation itself — needed for as long as the profile is active so a student can replay a lesson they found helpful and a parent can see how something was taught. Kept for the life of the profile rather than windowed, unlike a chat transcript: a lesson holds no text the student wrote. The narration is model-authored explanation of a problem, and a flag's reason is a fixed allowlist rather than free text, so there is no open channel for a child to put personal information here.",
+    windowDays: null,
+    note: "life of the ACTIVE profile",
   },
 ] as const satisfies readonly RetentionPolicyEntry[];

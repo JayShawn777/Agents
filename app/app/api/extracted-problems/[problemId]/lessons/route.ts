@@ -3,10 +3,10 @@ import "server-only";
 import { after } from "next/server";
 
 import { withAuth } from "@/lib/api/handler";
-import { successResponse } from "@/lib/errors";
+import { apiErr, errorResponse, successResponse } from "@/lib/errors";
 import { requireExtractedProblem, type ExtractedProblemWithContext } from "@/lib/auth/dal";
 import { requestLessonInputSchema } from "@/lib/schemas/lesson";
-import { hasEngagedWithProblem, openLesson, withinAuthoringCap } from "@/lib/lessons/request";
+import { hasEngagedWithProblem, isAuthoringCapRejection, openLesson, withinAuthoringCap } from "@/lib/lessons/request";
 import { authorLesson } from "@/lib/lessons/author";
 import { toLessonDTO } from "@/lib/lessons/dto";
 
@@ -65,10 +65,20 @@ export const POST = withAuth({
   // regeneration cannot slip past it — see `withinAuthoringCap`.
   rateLimit: ({ resource }) => withinAuthoringCap(resource.extraction.upload.studentProfileId),
   handler: async ({ resource: problem }) => {
-    const { lesson, version } = await openLesson({
-      studentProfileId: problem.extraction.upload.studentProfileId,
-      binding: { kind: "EXTRACTED_PROBLEM", extractedProblemId: problem.id },
-    });
+    // The `rateLimit` hook above is the cheap rejection; `openLesson` re-counts
+    // inside its own serializable transaction, which is the authoritative one.
+    // A hit there means concurrent requests raced past the step-7 count, and
+    // the honest answer is the same 429 step 7 would have given.
+    let lesson, version;
+    try {
+      ({ lesson, version } = await openLesson({
+        studentProfileId: problem.extraction.upload.studentProfileId,
+        binding: { kind: "EXTRACTED_PROBLEM", extractedProblemId: problem.id },
+      }));
+    } catch (err) {
+      if (isAuthoringCapRejection(err)) return errorResponse(apiErr("RATE_LIMITED"));
+      throw err;
+    }
 
     // Scheduled AFTER the rows exist, so a poll started immediately always
     // finds something to poll.

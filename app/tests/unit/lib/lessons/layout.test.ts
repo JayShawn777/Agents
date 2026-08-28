@@ -7,7 +7,9 @@ import {
   centreOf,
   highlightFor,
   ILLEGIBLE_OVERLAP_RATIO,
+  clampToBounds,
   isWithinBounds,
+  offsetToBounds,
   overlapRatio,
   overlaps,
   overlapsIllegibly,
@@ -197,5 +199,62 @@ describe("the AC 13 / M4-3 measurement helpers", () => {
     // look negligible, which is exactly the wrong reading.
     expect(overlapRatio(big, small)).toBe(1);
     expect(overlapsIllegibly(big, small)).toBe(true);
+  });
+});
+
+/**
+ * The layout pass (M4-3). Every case below is a shape the browser measurement
+ * actually produced or would produce; the reading fixture's is the one that
+ * failed in Chromium before this existed.
+ */
+describe("clamping a measured box back into the stage", () => {
+  const STAGE = { width: 343, height: 257 };
+
+  it("leaves a box that already fits exactly where it is", () => {
+    const fits = box(100, 100, 80, 20);
+    expect(clampToBounds(fits, STAGE)).toEqual(fits);
+    expect(offsetToBounds(fits, STAGE)).toEqual({ dx: 0, dy: 0 });
+  });
+
+  /**
+   * The measured failure: the reading fixture's `rule` label at `y: 0.14`,
+   * wrapped to four lines on a phone, measured `y -3..77` and was clipped by
+   * the stage's `overflow-hidden`. Three pixels down is the whole fix.
+   */
+  it("pushes a label that overflows the top edge back down", () => {
+    const overflowing = box(229, -3, 75, 80);
+    expect(clampToBounds(overflowing, STAGE)).toEqual({ x: 229, y: 0, width: 75, height: 80 });
+    expect(offsetToBounds(overflowing, STAGE)).toEqual({ dx: 0, dy: 3 });
+    expect(isWithinBounds(clampToBounds(overflowing, STAGE), STAGE)).toBe(true);
+  });
+
+  it("pulls a box back from the right and bottom edges", () => {
+    const overflowing = box(300, 240, 80, 40);
+    expect(clampToBounds(overflowing, STAGE)).toEqual({ x: 263, y: 217, width: 80, height: 40 });
+    expect(offsetToBounds(overflowing, STAGE)).toEqual({ dx: -37, dy: -23 });
+  });
+
+  it("shifts without resizing — the arrangement survives, the font does not shrink", () => {
+    const moved = clampToBounds(box(-40, -40, 120, 60), STAGE);
+    expect(moved.width).toBe(120);
+    expect(moved.height).toBe(60);
+  });
+
+  /**
+   * An element taller or wider than the stage cannot be made to fit by moving
+   * it. Pinning it to the edge and leaving `isWithinBounds` false is deliberate:
+   * the clamp must not launder a real overflow into a passing measurement.
+   */
+  it("pins an element bigger than the stage and still reports it out of bounds", () => {
+    const huge = box(-20, -50, 400, 400);
+    expect(clampToBounds(huge, STAGE)).toEqual({ x: 0, y: 0, width: 400, height: 400 });
+    expect(isWithinBounds(clampToBounds(huge, STAGE), STAGE)).toBe(false);
+  });
+
+  /** Applying the clamp to its own output must change nothing — the renderer re-measures. */
+  it("is idempotent", () => {
+    const once = clampToBounds(box(229, -3, 75, 80), STAGE);
+    expect(clampToBounds(once, STAGE)).toEqual(once);
+    expect(offsetToBounds(once, STAGE)).toEqual({ dx: 0, dy: 0 });
   });
 });
