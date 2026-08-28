@@ -533,7 +533,57 @@ generate graded practice from them. The retention jobs enforce what
    - **24 — scope a review by file list, not by milestone.** → both reviewers,
      and the dispatch rule below.
 
-   **NEXT: M5, narration.**
+   **NEXT: M5, narration — and it is BLOCKED on one owner action.**
+
+   M5's first open question is blocking and says so: **"Nothing in M5 can be
+   built without this."** A TTS vendor is a **new major dependency**, which the
+   constitution says never to add without asking, and commercial use needs a
+   PAID plan — the free tier forbids it outright.
+
+   **What is needed: an ElevenLabs paid account, and its key in `.env` as
+   `ELEVENLABS_API_KEY`.** `.env.example` now documents it (server-only, never
+   `NEXT_PUBLIC_` — it is a billing credential, and narration text describes a
+   child's schoolwork). Approving the vendor and approving the dependency are
+   the same decision.
+
+   **Two vendor questions must be MEASURED before the architect fixes the
+   shape**, and M5's spec says exactly that. `tests/unit/live/narration.live.
+   test.ts` is that experiment, written and inert — it skips unless
+   `RUN_LIVE_AI=1` and a key is present, and it uses `fetch` with **no new
+   dependency**, deliberately: finding out whether the vendor does what the
+   research claims must not require first installing the SDK, and if the
+   answers come back wrong we will not have installed anything.
+
+   ```
+   RUN_LIVE_AI=1 pnpm vitest run tests/unit/live/narration.live.test.ts --project unit
+   ```
+
+   - **Does the with-timestamps endpoint work on the LOW-LATENCY model?** The
+     research could not confirm it. M5 pre-generates everything so the quality
+     model is the natural pick either way; the answer decides whether a future
+     low-latency synced surface (a live speaking tutor) is reachable at all.
+     Recorded rather than asserted — a `false` is a finding, not a broken test.
+   - **Which stock voices does the account actually have?** The legacy defaults
+     are documented to expire 2026-12-31 and may not exist for accounts created
+     after March 2026. Personas are database rows pointing at real provider
+     voice ids (AC 1); they cannot be chosen from a list nobody has looked at.
+
+   This is M4's §9.2 pattern applied again, and it earned its place there: four
+   of five measurements changed the design. Retro lesson 18 is the other half —
+   an ADR's claims about a vendor are hypotheses, and three of M3's were false.
+
+   **Also carried into M5, from M4:** AC 15's reduced-motion preference is
+   reinstated in the SAME change that adds the first real animation (see the
+   AC 15 note above), and ADR-0015 (`Proposed`) becomes live the moment
+   `NarrationAsset` lands in a migration. M5's spec asks the architect for three
+   ADRs: the vendor choice and persona-to-voice indirection, the cache key and
+   where audio lives, and our own normalised cue format — the last because the
+   vendor's alignment is character-level, so grouping characters into words is
+   our problem, not theirs.
+
+   Plan §8 also flags that **the §312.4 direct notice must be edited before
+   M5 ships**: M5 is the first outbound flow to a SECOND AI vendor, and the
+   notice enumerates who receives a child's data.
 
    Nothing in M3 is outstanding except the owner decisions in item 5, which are
    all now made.
