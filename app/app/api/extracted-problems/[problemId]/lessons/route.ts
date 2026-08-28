@@ -6,7 +6,7 @@ import { withAuth } from "@/lib/api/handler";
 import { successResponse } from "@/lib/errors";
 import { requireExtractedProblem, type ExtractedProblemWithContext } from "@/lib/auth/dal";
 import { requestLessonInputSchema } from "@/lib/schemas/lesson";
-import { hasEngagedWithProblem, openLesson, withinLessonCap } from "@/lib/lessons/request";
+import { hasEngagedWithProblem, openLesson, withinAuthoringCap } from "@/lib/lessons/request";
 import { authorLesson } from "@/lib/lessons/author";
 import { toLessonDTO } from "@/lib/lessons/dto";
 
@@ -61,8 +61,9 @@ export const POST = withAuth({
     return "Have a go at this one first — then I can walk you through it.";
   },
   bodySchema: requestLessonInputSchema,
-  // AC 22, last: a lesson is the most expensive call in the app.
-  rateLimit: ({ resource }) => withinLessonCap(resource.extraction.upload.studentProfileId),
+  // AC 22, last. Counted over authoring RUNS rather than lessons, so a
+  // regeneration cannot slip past it — see `withinAuthoringCap`.
+  rateLimit: ({ resource }) => withinAuthoringCap(resource.extraction.upload.studentProfileId),
   handler: async ({ resource: problem }) => {
     const { lesson, version } = await openLesson({
       studentProfileId: problem.extraction.upload.studentProfileId,

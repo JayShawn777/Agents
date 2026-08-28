@@ -59,18 +59,20 @@ export async function hasEngagedWithProblem(binding: LessonBinding): Promise<boo
 }
 
 /**
- * AC 22's cap, shared by both request routes so the two entry points cannot
- * drift into two different ceilings.
+ * AC 22's cap, shared by all three routes that can trigger authoring so they
+ * cannot drift into different ceilings.
  *
- * Counted over LESSONS, not versions: a regeneration is capped separately by
- * `MAX_LESSON_VERSIONS`, and counting both here would make one child's
- * legitimate second attempt at understanding cost them a whole new lesson's
- * allowance.
+ * **Counted over VERSIONS, not lessons, and that distinction is the point.** A
+ * version IS one authoring run — the thing that costs 12-59 seconds and up to
+ * 4,569 output tokens. Counting lessons would leave regeneration (endpoint 43)
+ * entirely uncapped per hour: `MAX_LESSON_VERSIONS` bounds one lesson at five,
+ * but nothing would bound a child pressing "explain it differently" across
+ * lesson after lesson. Counting the runs closes both doors with one rule.
  */
-export async function withinLessonCap(studentProfileId: string): Promise<boolean> {
+export async function withinAuthoringCap(studentProfileId: string): Promise<boolean> {
   const windowStart = new Date(Date.now() - 60 * 60 * 1000);
-  const count = await db.lesson.count({
-    where: { studentProfileId, createdAt: { gte: windowStart } },
+  const count = await db.lessonScriptVersion.count({
+    where: { lesson: { studentProfileId }, createdAt: { gte: windowStart } },
   });
   return count < LESSONS_PER_HOUR;
 }

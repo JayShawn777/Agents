@@ -6,7 +6,7 @@ import { withAuth } from "@/lib/api/handler";
 import { successResponse } from "@/lib/errors";
 import { requirePracticeProblem, type PracticeProblemWithContext } from "@/lib/auth/dal";
 import { requestLessonInputSchema } from "@/lib/schemas/lesson";
-import { hasEngagedWithProblem, openLesson, withinLessonCap } from "@/lib/lessons/request";
+import { hasEngagedWithProblem, openLesson, withinAuthoringCap } from "@/lib/lessons/request";
 import { authorLesson } from "@/lib/lessons/author";
 import { toLessonDTO } from "@/lib/lessons/dto";
 
@@ -49,7 +49,7 @@ export const POST = withAuth({
     return "Have a go at this one first — then I can walk you through it.";
   },
   bodySchema: requestLessonInputSchema,
-  rateLimit: ({ resource }) => withinLessonCap(resource.practiceSet.studentProfileId),
+  rateLimit: ({ resource }) => withinAuthoringCap(resource.practiceSet.studentProfileId),
   handler: async ({ resource: problem }) => {
     const { lesson, version } = await openLesson({
       studentProfileId: problem.practiceSet.studentProfileId,

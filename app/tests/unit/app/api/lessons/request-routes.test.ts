@@ -31,7 +31,7 @@ const dbMock = {
   attempt: { count: vi.fn() },
   chatSession: { count: vi.fn() },
   lesson: { count: vi.fn(), create: vi.fn(), update: vi.fn() },
-  lessonScriptVersion: { create: vi.fn(), aggregate: vi.fn() },
+  lessonScriptVersion: { count: vi.fn(), create: vi.fn(), aggregate: vi.fn() },
   $transaction: vi.fn(async (arg: unknown) => {
     if (typeof arg === "function") return (arg as (tx: typeof dbMock) => Promise<unknown>)(dbMock);
     return Promise.all(arg as unknown[]);
@@ -98,6 +98,7 @@ beforeEach(() => {
   dbMock.attempt.count.mockResolvedValue(1);
   dbMock.chatSession.count.mockResolvedValue(0);
   dbMock.lesson.count.mockResolvedValue(0);
+  dbMock.lessonScriptVersion.count.mockResolvedValue(0);
   dbMock.lesson.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
     id: "les_1",
     currentVersionId: null,
@@ -219,7 +220,7 @@ describe("requesting a lesson on an extracted problem (endpoint 40)", () => {
   });
 
   it("429s past the hourly cap, with no lesson row and no AI call (AC 22)", async () => {
-    dbMock.lesson.count.mockResolvedValue(LESSONS_PER_HOUR);
+    dbMock.lessonScriptVersion.count.mockResolvedValue(LESSONS_PER_HOUR);
     expect((await FROM_EXTRACTED(req(EXTRACTED_URL), extractedCtx())).status).toBe(429);
     expect(dbMock.lesson.create).not.toHaveBeenCalled();
     expect(authorLessonMock).not.toHaveBeenCalled();
@@ -310,7 +311,7 @@ describe("requesting a lesson on a practice problem (endpoint 41)", () => {
   });
 
   it("shares the hourly cap with endpoint 40", async () => {
-    dbMock.lesson.count.mockResolvedValue(LESSONS_PER_HOUR);
+    dbMock.lessonScriptVersion.count.mockResolvedValue(LESSONS_PER_HOUR);
     expect((await FROM_PRACTICE(req(PRACTICE_URL), practiceCtx())).status).toBe(429);
   });
 });
