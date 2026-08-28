@@ -14,9 +14,9 @@ adapts to that student over time.
 
 ## Where the build is (2026-08-28)
 
-**M0, M1, M2, M2.5 and M3 are DONE AND REVIEWED, and the chat path is verified
-against the real API. 825 tests, 3 live tests skipped by default. All gates
-green. The M3 retro is next.**
+**M0-M3 are done and reviewed. M4 is started: all five of plan §9.2's gating
+measurements have returned and its contract is unblocked. 859 tests, 4 live
+tests skipped by default. All gates green.**
 
 **The vision path is verified.** On 2026-08-28 a real worksheet went to the real
 model for the first time: 35 of 35 problems, every addend pair correct, labels
@@ -35,7 +35,8 @@ generate graded practice from them. The retention jobs enforce what
 | **subject coverage** | fixed 2026-08-27 — math, ELA, reading, writing, science, social studies, history all generate practice |
 | **M2.5** checkpoints (quizzes) | **done and reviewed** 2026-08-27 — all 7 slices, spec, plan, ADRs 0016/0017/0018 |
 | **M3** chat tutor | **done and REVIEWED** 2026-08-28 — all five endpoints (35-39), the NDJSON transport, `lib/chat/safety.ts` (AC 21), the whole UI with both entry points wired, and the chat path verified against the real API. Three review findings, all fixed. |
-| **M4–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009–0015. Not built. |
+| **M4** whiteboard lessons | **measurement slice done** 2026-08-28 — script schema, referential validator, authoring prompt, and all five §9.2 measurements. ADR-0019 picks the renderer. **No routes, no player, no migration yet** — the contract is next and needs approval. |
+| **M5–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009-0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
 ### Start here, in this order
@@ -279,8 +280,44 @@ generate graded practice from them. The retention jobs enforce what
    Agent edits are mirrored into `~/.claude/agents/` per the convention below,
    and belong in their OWN commit, separate from the feature work.
 
-   **NEXT: M4, the whiteboard renderer.** Nothing in M3 is outstanding except
-   the two owner decisions in item 5.
+   **M4 is started, and the gating measurements are done.** Plan §9.2 says
+   "M4's contract must not be written until these return". All five have —
+   see [docs/research/m4-authoring-measurement.md](docs/research/m4-authoring-measurement.md).
+   The four results that change the design:
+
+   - **Authoring takes 12-59s** (p50 35s), 10-20x a chat turn. In-request
+     authoring is dead. But `after()` runs for the route's `maxDuration`, so
+     **no job queue** — §9.2's expensive branch, "a new dependency, a new
+     approval and a new operational surface", is avoided. M4 gets the same
+     `PENDING → AUTHORING → READY | FAILED` shape extraction and practice
+     generation already use, which plan §3.5 notes is the THIRD instance and
+     should now be extracted into one generic.
+   - **The eight primitives held** — 0 schema rejections, 0 refusals, 6 of 6
+     referentially clean, 7 of 8 primitives used. Freeze recommended,
+     provisionally: six fixtures is not the twenty §9.2 asked for.
+   - **Non-maths lessons work, and the spec assumed they would not.** M4's open
+     question assumes "math and science only at first, other subjects fall back
+     to text". The READING fixture produced the best lesson of the six. That
+     assumption should be struck.
+   - **Canvas 2D is out.** KaTeX emits nested `<span>` HTML with no `<svg>`
+     (measured), so a 2D context cannot draw it — the gap §9.2 predicted in the
+     spec's "canvas" framing. **[ADR-0019](docs/adr/0019-lessons-render-as-positioned-html-under-an-svg-annotation-overlay.md)**
+     picks positioned HTML under an SVG annotation overlay, and because a script
+     is stored before it is played, every `write` op's LaTeX is server-rendered
+     — **no KaTeX JavaScript ships to the browser anywhere in this app now.**
+
+   Two smaller findings with teeth: a transient error killed 1 of 6 runs at
+   `maxRetries: 0`, so AC 2's retry is load-bearing rather than decorative; and
+   `label` text reaches 65 characters (schema allows 120), so labels must wrap,
+   which changes the height annotations are drawn around. The three maths
+   fixtures would never have surfaced that one.
+
+   **NEXT: write M4's contract** — routes, the `Lesson`/`LessonScriptVersion`
+   migration, and the player component tree — then build it. Per the workflow in
+   `~/.claude/CLAUDE.md` that is an architecture step and **stops for the
+   owner's approval** before implementation.
+
+   Nothing in M3 is outstanding except the two owner decisions in item 5.
 
    **The chat path is VERIFIED against the real API** (2026-08-28,
    `tests/unit/live/chat.live.test.ts`, three real streamed turns). Three

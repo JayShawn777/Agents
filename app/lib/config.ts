@@ -602,6 +602,64 @@ export const CHAT_CACHE_TTL = "1h";
  */
 export const CHAT_SYSTEM_PROMPT_MIN_TOKENS = 1_024;
 
+// ─────────────────────────── M4: whiteboard lessons ───────────────────────────
+
+/**
+ * ADR-0014 §2. Bumping this declares a NEW primitive vocabulary generation, and
+ * `LessonScriptVersion.schemaVersion` records which one a stored document was
+ * written against — so a player can refuse a document it cannot render and
+ * offer a regeneration, rather than drawing a blank canvas at a child.
+ *
+ * The vocabulary must be FROZEN before authoring prompts are written: widening
+ * it later invalidates every stored script. Plan §9.2's M4-4 is the measurement
+ * that earns the freeze.
+ */
+export const LESSON_SCHEMA_VERSION = "1";
+
+/**
+ * M4 AC 8. A lesson is a short worked example a child watches, not a chapter.
+ * The floor exists because a two-step "lesson" is a sentence with extra
+ * ceremony; the ceiling because attention is the scarce resource and a
+ * twenty-step animation is where it goes to die.
+ */
+export const LESSON_MIN_STEPS = 3;
+export const LESSON_MAX_STEPS = 12;
+
+/**
+ * M4 AC 8, and it is M5's constraint rather than M4's: **narration for one step
+ * must fit in one TTS request**, so that adding voice never means splitting a
+ * step across two audio files and reconciling their timings. Roughly two spoken
+ * sentences.
+ */
+export const NARRATION_CHAR_CAP = 240;
+
+/** How much may happen in one step. More than this and the step is really two. */
+export const LESSON_MAX_OPS_PER_STEP = 6;
+
+/**
+ * M4 AC 7's timeline bounds. The model authors `durationMs` per step; start
+ * offsets are DERIVED as the running sum (ADR-0014 §2), never authored, because
+ * a model asked for both invents timelines where step 3 starts before step 2
+ * ends and no schema constraint catches it.
+ */
+export const LESSON_MIN_STEP_MS = 1_500;
+export const LESSON_MAX_STEP_MS = 20_000;
+
+/** Research §1, same mechanism as `EXTRACTION_MODEL`. */
+export const LESSON_MODEL = "claude-opus-5";
+
+/**
+ * **PENDING MEASUREMENT — plan §9.2's M4-1**, which the API research calls the
+ * single biggest unvalidated assumption in the whole plan. Authoring latency at
+ * this setting decides whether lessons can be authored in-request with
+ * `after()` or whether M4 has to pay for a job queue.
+ *
+ * Starts at `high` rather than chat's `low`: a lesson is authored once, watched
+ * many times, and nobody is staring at a cursor while it happens — the opposite
+ * trade from `CHAT_EFFORT`.
+ */
+export const LESSON_EFFORT = "high";
+
 // ─────────────────────────── auth ───────────────────────────
 
 /** M0 AC 4. Auth.js magic-link `maxAge`. */
