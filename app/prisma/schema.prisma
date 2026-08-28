@@ -289,6 +289,7 @@ model StudentProfile {
   @@index([status, createdAt])
   /// M3 AC 16: chat sessions die with the profile.
   chatSessions      ChatSession[]
+  lessons           Lesson[]
 }
 
 /// AC 12–15. The §312.4 direct notice actually served to this account owner for this
@@ -493,6 +494,7 @@ model ExtractedProblem {
   @@index([extractionId])
   /// M3 AC 1 / AC 16: a session bound to this problem dies with it.
   chatSessions      ChatSession[]
+  lessons           Lesson[]
 }
 
 // ─────────────────────── M2: practice and mastery ───────────────────────
@@ -584,6 +586,7 @@ model PracticeProblem {
   sourceProblem ExtractedProblem?  @relation(fields: [sourceExtractedProblemId], references: [id], onDelete: SetNull)
   answerKey     PracticeAnswerKey?
   attempts      Attempt[]
+  lessons       Lesson[]
 
   @@unique([practiceSetId, ordinal])
   @@index([skillCode])
@@ -811,4 +814,113 @@ model ChatMessage {
   @@unique([sessionId, sequence])
   @@unique([sessionId, clientTurnId])
   @@index([sessionId, createdAt])
+}
+
+// ─────────────────────────── M4: whiteboard lessons ───────────────────────────
+
+enum LessonStatus {
+  PENDING // row exists, no AI call yet. Also the AC 22 rate-limit grant.
+  AUTHORING // the call is in flight
+  READY // AC 6 — a validated script is on the current version
+  FAILED // AC 2/AC 10 — script is NULL and zero steps were persisted
+}
+
+/// AC 18. A fixed allowlist, never free text: a free-text box on a child-facing
+/// surface is a new unbounded personal-data channel, with a retention row and a
+/// §312.4 notice line behind it. Four reasons carry the signal AC 18 asks for.
+enum LessonFlagReason {
+  CONFUSING
+  TOO_FAST
+  WRONG
+  NOT_MY_PROBLEM
+}
+
+model Lesson {
+  id               String @id @default(cuid())
+  studentProfileId String
+  /// AC 5 / AC 21: bound to exactly ONE of these, and never re-pointed. Prisma
+  /// cannot express "exactly one", so the migration is hand-edited to add
+  ///   CHECK (num_nonnulls("extractedProblemId", "practiceProblemId") = 1)
+  /// — invisible in this file, the same arrangement as ChatSession and
+  /// PracticeSet.kind. `tests/integration/lesson-binding-constraint.test.ts` is
+  /// what makes it real; that file is the constraint's documentation.
+  extractedProblemId String?
+  practiceProblemId  String?
+
+  status LessonStatus @default(PENDING)
+
+  /// AC 19. Repointed on each successful regeneration; the superseded version
+  /// row is untouched and stays playable. Unique because a version belongs to
+  /// at most one lesson as its current one.
+  currentVersionId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  studentProfile   StudentProfile    @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  extractedProblem ExtractedProblem? @relation(fields: [extractedProblemId], references: [id], onDelete: Cascade)
+  practiceProblem  PracticeProblem?  @relation(fields: [practiceProblemId], references: [id], onDelete: Cascade)
+  versions         LessonScriptVersion[]
+  flags            LessonFlag[]
+
+  @@index([studentProfileId, createdAt])
+  /// The stale-AUTHORING reaper on the status GET, the same query shape
+  /// `reapIfStale` uses for extraction.
+  @@index([status, updatedAt])
+}
+
+/// One authoring run. ADR-0014 §1: steps are NOT rows — the script is authored
+/// atomically, never edited, and always read whole for playback, so AC 2's
+/// "zero steps persisted" is a non-event rather than a transaction to get right.
+model LessonScriptVersion {
+  id       String @id @default(cuid())
+  lessonId String
+  version  Int
+
+  status LessonStatus
+
+  /// The whole `LessonScript` document (ADR-0014 §2). NULL until READY.
+  script Json?
+  /// ADR-0014 §3. Which primitive vocabulary generation this validates against,
+  /// so a player can refuse a document it cannot render and offer a
+  /// regeneration — rather than drawing a blank canvas at a child.
+  schemaVersion String
+
+  stepCount       Int?
+  totalDurationMs Int?
+
+  /// AC 1: what produced this script. NEVER in a DTO.
+  model         String
+  effort        String
+  promptVersion String
+
+  failureCode  String?
+  inputTokens  Int?
+  outputTokens Int?
+
+  createdAt DateTime @default(now())
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([lessonId, version])
+  @@index([lessonId, createdAt])
+}
+
+/// AC 18. The only signal that a lesson taught something wrong, and it depends
+/// on a child noticing — the spec says so plainly and accepts it.
+model LessonFlag {
+  id        String @id @default(cuid())
+  lessonId  String
+  /// Which authoring run was on screen. A regeneration must not inherit the
+  /// flag that caused it.
+  versionId String
+  /// NULL when the student flagged the lesson rather than one step.
+  stepIndex Int?
+  reason    LessonFlagReason
+
+  createdAt DateTime @default(now())
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId, createdAt])
 }

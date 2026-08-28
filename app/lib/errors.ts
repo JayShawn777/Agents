@@ -308,3 +308,37 @@ export const CHAT_FAILURE_MESSAGES: Record<ChatFailureCode, { code: ErrorCode; m
     message: "Something went wrong on our end. Please try asking again.",
   },
 };
+
+
+// ─────────────────────────── M4: lesson authoring failures ───────────────────────────
+
+/**
+ * `LessonScriptVersion.failureCode` is never returned verbatim — it may name a
+ * model, a provider error class or a parse detail. `LessonDTO.failureMessage`
+ * is built by looking up this table, the same allowlist pattern as
+ * `EXTRACTION_FAILURE_MESSAGES` and `GENERATION_FAILURE_MESSAGES` (M4 AC 10).
+ *
+ * `INVALID_SCRIPT` is M4-specific and covers both ways a script can be
+ * unusable: it failed the zod vocabulary (AC 3) or it referred to an element
+ * nobody drew (`lib/lessons/validate.ts`). Both mean the same thing to a
+ * child — the drawing would not have made sense — so they share one message.
+ */
+export const LESSON_FAILURE_CODES = [
+  "REFUSED",
+  "PARSE_FAILED",
+  "INVALID_SCRIPT",
+  "TIMEOUT",
+  "UPSTREAM",
+  "INTERNAL",
+] as const;
+
+export type LessonFailureCode = (typeof LESSON_FAILURE_CODES)[number];
+
+export const LESSON_FAILURE_MESSAGES: Record<LessonFailureCode, string> = {
+  REFUSED: "We couldn't build a lesson for this one. Try asking for it again.",
+  PARSE_FAILED: "We had trouble drawing this lesson. Please try again.",
+  INVALID_SCRIPT: "We had trouble drawing this lesson. Please try again.",
+  TIMEOUT: "This is taking longer than expected. Please try again.",
+  UPSTREAM: "A service we depend on is temporarily unavailable. Please try again shortly.",
+  INTERNAL: "Something went wrong on our end. Please try again.",
+};

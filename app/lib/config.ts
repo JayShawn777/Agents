@@ -660,6 +660,44 @@ export const LESSON_MODEL = "claude-opus-5";
  */
 export const LESSON_EFFORT = "high";
 
+/**
+ * M4 AC 22. Per profile, like every other cap in this app.
+ *
+ * Six because a lesson is the MOST EXPENSIVE call in the product — up to 59
+ * seconds and 4,569 output tokens at the top of the measured range
+ * (`docs/research/m4-authoring-measurement.md`), against a chat turn's ~3
+ * seconds and ~100. It is also the only cap here set without a usage number
+ * behind it, which is recorded in the plan's "assumptions to challenge".
+ */
+export const LESSONS_PER_HOUR = 6;
+
+/**
+ * M4 AC 10. Twice the measured worst case (59s), mirroring how
+ * `EXTRACTION_TIMEOUT_MS` was set. Past this an `AUTHORING` row is reaped to
+ * `FAILED` by the status GET, so a killed function still reaches a terminal
+ * state and the client is never left polling forever.
+ */
+export const LESSON_AUTHORING_TIMEOUT_MS = 120_000;
+
+/**
+ * AC 19 is unbounded as written — "the student asks for a different
+ * explanation" has no stated ceiling — and regeneration is the most expensive
+ * loop a child can drive by pressing one button repeatedly.
+ */
+export const MAX_LESSON_VERSIONS = 5;
+
+/**
+ * ADR-0019. The normalised width at which a `label` wraps.
+ *
+ * From a measurement, not a preference: the model produced a 65-character label
+ * ("3. Their wings are made of skin stretched over long finger bones.") and the
+ * schema permits 120. Unwrapped, that spans nearly the whole canvas at 1280px
+ * and cannot fit one line at 375px. Wrapping changes the element's height,
+ * which changes every annotation drawn around it — which is why ADR-0019
+ * measures boxes after layout rather than predicting them.
+ */
+export const LESSON_LABEL_MAX_WIDTH = 0.42;
+
 // ─────────────────────────── auth ───────────────────────────
 
 /** M0 AC 4. Auth.js magic-link `maxAge`. */

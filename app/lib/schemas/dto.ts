@@ -12,6 +12,7 @@
  */
 
 import type { ErrorCode } from "@/lib/errors";
+import type { DrawOp } from "@/lib/lessons/script-schema";
 import type {
   AgeBand,
   AnswerFormat,
@@ -19,6 +20,8 @@ import type {
   ChatRole,
   ChatSessionStatus,
   ConsentMethod,
+  LessonFlagReason,
+  LessonStatus,
   ConsentRelationship,
   ExtractionStatus,
   GradeLevel,
@@ -292,3 +295,77 @@ export type ChatStreamEvent =
   | { type: "delta"; text: string }
   | { type: "done"; message: ChatMessageDTO; session: ChatSessionDTO }
   | { type: "error"; code: ErrorCode; message: string };
+
+// ─────────────────────────── M4: whiteboard lessons ───────────────────────────
+
+/**
+ * A `write` op with its LaTeX already rendered to HTML on the server
+ * (ADR-0019 §3). Because a script is authored and STORED before anyone plays
+ * it, the rendering is known ahead of time — so the player positions HTML
+ * fragments and **no KaTeX JavaScript ships to the browser**, the same rule M1,
+ * M2 and M3 follow.
+ *
+ * `latex` is kept alongside `latexHtml`, deliberately: AC 16's static text view
+ * needs something a person can read, and a screen reader must not be handed
+ * KaTeX markup.
+ */
+export type RenderableDrawOp =
+  | (Extract<DrawOp, { kind: "write" }> & { latexHtml: string })
+  | Exclude<DrawOp, { kind: "write" }>;
+
+export type RenderableLessonStep = {
+  id: string;
+  narration: string;
+  durationMs: number;
+  ops: RenderableDrawOp[];
+};
+
+export type RenderableLessonScript = {
+  title: string;
+  steps: RenderableLessonStep[];
+};
+
+export type LessonDTO = {
+  id: string;
+  status: LessonStatus;
+  /** AC 5: bound to exactly ONE, and never re-pointed. */
+  subject: { kind: "EXTRACTED_PROBLEM" | "PRACTICE_PROBLEM"; id: string };
+  currentVersionId: string | null;
+  versionCount: number;
+  /** AC 10: from `LESSON_FAILURE_MESSAGES` only. Never a model id or provider payload. */
+  failureMessage: string | null;
+  createdAt: string;
+};
+
+export type LessonVersionDTO = {
+  id: string;
+  version: number;
+  status: LessonStatus;
+  /** NULL unless READY — AC 2's "zero steps persisted", as a shape rather than a promise. */
+  script: RenderableLessonScript | null;
+  stepCount: number | null;
+  totalDurationMs: number | null;
+  /**
+   * AC 7. Derived at persistence as the running sum of durations, never
+   * authored — so the timeline is monotonic by construction. The player takes
+   * it through a `CueSource` so M5 can replace it with narration timings
+   * without rewriting the player.
+   */
+  timeline: { stepId: string; startOffsetMs: number; durationMs: number }[] | null;
+  // NOTE: model, effort, promptVersion, failureCode, schemaVersion and token
+  // counts are NEVER in a DTO.
+};
+
+export type LessonFlagDTO = {
+  id: string;
+  versionId: string;
+  stepIndex: number | null;
+  reason: LessonFlagReason;
+  createdAt: string;
+};
+
+export type LessonDetailResponse = {
+  lesson: LessonDTO;
+  /** The CURRENT version, or null before the first authoring run finishes. */
+  version: LessonVersionDTO | null;
+};
