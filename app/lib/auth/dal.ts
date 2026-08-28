@@ -10,6 +10,8 @@ import type {
   Attempt,
   ChatMessage,
   ChatSession,
+  Lesson,
+  LessonScriptVersion,
   Extraction,
   ExtractedProblem,
   PracticeAnswerKey,
@@ -371,3 +373,33 @@ export const requireAttempt = cache(
     });
   },
 );
+
+/** A `Lesson` with its versions, ordered, and just enough of the owning profile for the gates. */
+export type LessonWithVersions = Lesson & {
+  studentProfile: Pick<StudentProfile, "id" | "status" | "gradeLevel">;
+  versions: LessonScriptVersion[];
+};
+
+/**
+ * Resolves a lesson scoped to the CALLING user via the
+ * `Lesson -> StudentProfile.userId` join. Used by endpoints 42-45
+ * (`app/api/lessons/**`). A cross-account id and an unknown id are both `null`,
+ * so both are a 404 — M4 AC 20's "no content is disclosed" is this query's
+ * `where` clause rather than a check a handler has to remember.
+ *
+ * NOT wrapped in `cache()`. The regenerate and flag routes both write and then
+ * re-read within one request, and a memoised read would hand back the
+ * pre-write row — the same hazard `requireChatSession` carries and for the same
+ * reason.
+ */
+export async function requireLesson(lessonId: string): Promise<LessonWithVersions | null> {
+  const session = await verifySession();
+  if (!session) return null;
+  return db.lesson.findFirst({
+    where: { id: lessonId, studentProfile: { userId: session.userId } },
+    include: {
+      studentProfile: { select: { id: true, status: true, gradeLevel: true } },
+      versions: { orderBy: { version: "asc" } },
+    },
+  });
+}
