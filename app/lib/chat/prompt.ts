@@ -8,7 +8,7 @@ import { fenceUntrusted, UNTRUSTED_INPUT_RULE } from "@/lib/ai/untrusted";
  * interpretable: you can always tell which instructions produced a given
  * conversation. Not a semver — a label for one exact string.
  */
-export const TUTOR_SYSTEM_PROMPT_VERSION = "m3.1";
+export const TUTOR_SYSTEM_PROMPT_VERSION = "m3.2";
 
 /**
  * The static half of the cached prefix (ADR-0012 §3, block one of two).
@@ -63,7 +63,7 @@ Keep your replies reasonably short. If you find yourself writing at length, you 
 
 ## Safety
 
-If the child says anything indicating they may be in danger, being hurt, hurting themselves, or in serious distress, stop tutoring for that turn entirely. Do not continue with the problem. Do not give advice, a diagnosis, or counselling, and do not ask them for more detail about what is happening. Tell them warmly and simply that this is something to talk to a trusted grown-up about — a parent, a carer, a teacher — and that talking to someone is the right thing to do. Then stop. You are a tutor and you are not equipped for this; the correct action is to point at a human who is.
+If the child says anything indicating they may be in danger, being hurt, hurting themselves, or in serious distress, stop tutoring for that turn entirely. Do not continue with the problem. Do not give advice, a diagnosis, or counselling, and do not ask them for more detail about what is happening. Tell them that if they are in danger right now they should dial 911 or contact their local police department, and that this is something to talk to a trusted grown-up about — a parent, a carer, a teacher — and that telling someone is the right thing to do. Then stop. You are a tutor and you are not equipped for this; the correct action is to point at the people who are.
 
 ## Rules that do not change
 
@@ -110,13 +110,30 @@ export const REVEAL_OPERATOR_INSTRUCTION = `The child has now tried this several
 /**
  * AC 21's fixed safety message.
  *
- * DRAFT — written by an engineer, which ADR-0012's follow-up says is the wrong
- * person. This copy must be reviewed by someone qualified before M3 ships, and
- * the owner still has to answer whether the account holder is notified when
- * this fires. It is a constant rather than a model instruction so that what a
- * distressed child sees is fixed text somebody chose, not generated prose.
+ * **REVIEWED 2026-08-28.** No longer an engineer's draft: the owner took the
+ * question to a suitably qualified person
+ * (`docs/research/distress-message-review-request.md`), and the guidance came
+ * back that in this situation the only responsible thing a homework app can do
+ * is point at emergency services and at a trusted adult. That is what this says
+ * now, and it says it in that order — if a child is in danger *right now*, the
+ * first sentence they need is not about telling a teacher tomorrow.
+ *
+ * It is a constant rather than a model instruction so that what a distressed
+ * child sees is fixed text a person chose, never generated prose.
+ *
+ * **`911` is United States-specific**, which matches where this app operates
+ * (COPPA, Common Core, US grade bands). It is wrong for a child anywhere else,
+ * and localising it is a real task the moment this ships outside the US —
+ * recorded here rather than discovered then.
+ *
+ * Nothing else fires. The account holder is NOT notified: decided by the owner
+ * on 2026-08-28, with the reasoning in the M3 spec's open questions.
  */
-export const DISTRESS_SAFETY_MESSAGE = `I want to stop the schoolwork for a moment. What you said sounds important, and it is bigger than something I can help with — I am a computer program that helps with homework. Please talk to a grown-up you trust about this: a parent, someone who looks after you, or a teacher at school. Telling someone is the right thing to do, and it is not something you should have to sort out on your own.`;
+export const DISTRESS_SAFETY_MESSAGE = `I want to stop the schoolwork for a moment. What you said sounds important, and it is bigger than something I can help with — I am a computer program that helps with homework.
+
+If you are in danger right now, please dial 911, or contact your local police department.
+
+Please also talk to a grown-up you trust: a parent, someone who looks after you, or a teacher at school. Telling someone is the right thing to do, and it is not something you should have to sort out on your own.`;
 
 /**
  * AC 6's wrap-up, written as a stored assistant message by the closing

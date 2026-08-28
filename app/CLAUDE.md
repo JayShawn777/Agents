@@ -359,13 +359,17 @@ generate graded practice from them. The retention jobs enforce what
    network path might. Nothing here says anything about handwriting, a non-math
    subject, or a session that runs to its bounds.
 
-5. **Two things need the owner, not an engineer.**
-   - **`DISTRESS_SAFETY_MESSAGE` (AC 21) is still an engineer-written DRAFT on
-     a LIVE PATH.** `lib/chat/safety.ts` shows it to a child today. The owner
-     has it out for review; the packet a reviewer needs is
-     [docs/research/distress-message-review-request.md](docs/research/distress-message-review-request.md),
-     written for someone who will never see the codebase. Whatever comes back
-     replaces the constant verbatim.
+5. **Owner decisions — both now made, kept for the reasoning.**
+   - **`DISTRESS_SAFETY_MESSAGE` (AC 21) is REVIEWED and applied** (2026-08-28).
+     A qualified person's guidance: the only responsible thing a homework app
+     can do here is point at emergency services and at a trusted adult. The
+     message now names 911 and the local police department FIRST, before the
+     trusted-adult sentence, and the tutor's system prompt was updated to match
+     so the model's fallback says the same thing (`TUTOR_SYSTEM_PROMPT_VERSION`
+     → `m3.2`). Record in
+     [docs/research/distress-message-review-request.md](docs/research/distress-message-review-request.md).
+     **Known limit: `911` is US-specific** — correct for where this app operates,
+     wrong the moment it ships anywhere else.
    - **The notification question is DECIDED: the account holder is NOT
      notified** (owner, 2026-08-28). The check is a phrase matcher, not an
      assessment, and an alarm channel driven by it produces false alarms that

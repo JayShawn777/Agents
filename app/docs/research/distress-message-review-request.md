@@ -1,9 +1,30 @@
 # Review request: what our tutoring app says to a child in distress
 
 - **Date:** 2026-08-28
-- **Status:** AWAITING REVIEW by a suitably qualified person
+- **Status:** **REVIEWED AND APPLIED, 2026-08-28.** Kept as the record of what was asked and what came back.
 - **Written by:** an engineer, which is the problem this document exists to fix
 - **Criterion:** M4/M3 spec AC 21 · ADR-0012 follow-up
+
+## Outcome
+
+Reviewed on 2026-08-28. The guidance was that in this situation **the only
+responsible thing a homework app can do is point at emergency services and at a
+trusted adult** — so the message now names 911 and the local police department
+explicitly, before the trusted-adult sentence. A child in danger right now needs
+that first, not advice about telling a teacher tomorrow.
+
+Applied verbatim in spirit to `DISTRESS_SAFETY_MESSAGE`, and the tutor's own
+system prompt was updated to match so the model's fallback path says the same
+thing as the fixed copy. `TUTOR_SYSTEM_PROMPT_VERSION` bumped to `m3.2`.
+
+**Known limit, recorded rather than discovered later:** `911` is
+United States-specific. It matches where this app operates today (COPPA, Common
+Core, US grade bands) and is wrong for a child anywhere else. Localising it is a
+real task the moment this ships outside the US.
+
+The original request follows, unchanged.
+
+---
 
 **Hand this whole document to the reviewer.** It is written for someone who has
 never seen the codebase — a school counsellor, a designated safeguarding lead, a
@@ -39,6 +60,8 @@ The phrases we currently match on cover:
   "running away from home"
 
 ## The exact text a child sees
+
+**This was the text sent for review.** The current text is above, under Outcome.
 
 > I want to stop the schoolwork for a moment. What you said sounds important,
 > and it is bigger than something I can help with — I am a computer program that
