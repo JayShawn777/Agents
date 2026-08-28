@@ -1,8 +1,9 @@
 # ADR-0005: Extracted problems are a zod-validated structured output storing LaTeX
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-26
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m1-upload-and-extract.md
 
 ## Context

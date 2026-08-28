@@ -1,9 +1,10 @@
 # ADR-0002: Passwordless email sign-in with Auth.js v5 and database sessions
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-26
 - **Revised:** 2026-08-26 (see "Revision note")
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m0-accounts-and-profiles.md
 
 ## Revision note — 2026-08-26

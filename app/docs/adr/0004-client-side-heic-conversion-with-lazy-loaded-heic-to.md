@@ -1,8 +1,9 @@
 # ADR-0004: Convert HEIC to JPEG in the browser, with a lazily loaded `heic-to`
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-26
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m1-upload-and-extract.md
 
 ## Context

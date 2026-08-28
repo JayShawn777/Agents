@@ -1,8 +1,9 @@
 # ADR-0009: A bundled standards subset, and the model picks from a closed slate
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-27
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m2-practice-and-mastery.md
 
 ## Revision 2026-08-27 — §4 replaced; the bundle is no longer Common Core alone

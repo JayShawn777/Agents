@@ -368,13 +368,13 @@ generate graded practice from them. The retention jobs enforce what
      notifying has real value and real risk, since a child who learns the tutor
      reports them stops telling it anything true. This is the single highest
      priority item on this list.
-   - **ADRs 0012, 0013, 0014 and 0019 were ACCEPTED on 2026-08-28** by the
-     owner. Fourteen others are still `Proposed`, which is a bookkeeping
-     backlog rather than fourteen open questions: twelve of them (0002-0011,
-     0017, 0018) describe code that is shipped AND reviewed, and two (0015
-     narration cache, 0016 foreign-language banding) describe work nobody has
-     built — those two are genuine live proposals and should stay Proposed
-     until their milestone starts.
+   - **The ADR backlog is cleared.** Sixteen ADRs were accepted by the owner on
+     2026-08-28 — every one describing code that is shipped. **Exactly two
+     remain `Proposed`, and deliberately so:** 0015 (per-profile narration
+     cache, M5) and 0016 (foreign language is proficiency-banded, unbuilt).
+     Those describe work nobody has started, so accepting them would claim a
+     decision that has not had to be made. A `Proposed` ADR now means something
+     again.
 
 ### This app is not a math app
 

@@ -1,8 +1,9 @@
 # ADR-0008: Verifiable parental consent is a swappable, recorded method behind one interface
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-26
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m0-accounts-and-profiles.md
 - **Research:** docs/research/coppa-childrens-privacy.md
 

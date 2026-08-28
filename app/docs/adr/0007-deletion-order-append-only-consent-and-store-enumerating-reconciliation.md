@@ -1,9 +1,10 @@
 # ADR-0007: Blob-first deletion, append-only consent, and a store-enumerating reconciler
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-26
 - **Revised:** 2026-08-26 (see "Revision note")
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m0-accounts-and-profiles.md, docs/specs/m1-upload-and-extract.md
 
 ## Revision note — 2026-08-26

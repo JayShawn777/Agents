@@ -23,9 +23,10 @@ closed `skillCode` enum, and the post-reveal short-circuit in
 note) is the fourth, and is the one still waiting on its consumer.
 
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-27
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m2-practice-and-mastery.md
 
 ## Context

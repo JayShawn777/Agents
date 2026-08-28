@@ -1,8 +1,9 @@
 # ADR-0017: Checkpoints are a `PracticeSet` kind, held together by a CHECK constraint
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-27
-- **Deciders:** owner (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m2-5-checkpoints.md
 
 ## Context

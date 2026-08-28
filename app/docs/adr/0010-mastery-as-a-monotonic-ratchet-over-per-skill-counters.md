@@ -23,9 +23,10 @@ inflated level can never be corrected downward. See `lib/ai/untrusted.ts`.
 §5 is left as originally written, below, for the record.
 
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-27
-- **Deciders:** Jaysh (pending)
+- **Deciders:** Jaysh
+- **Accepted:** 2026-08-28
 - **Spec:** docs/specs/m2-practice-and-mastery.md, docs/specs/m7-adaptive-loop.md
 
 ## Context
