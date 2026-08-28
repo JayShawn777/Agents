@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { AnswerInput } from "@/components/practice/answer-input";
 import { FeedbackPanel } from "@/components/practice/feedback-panel";
 import { OpenChatButton } from "@/components/chat/open-chat-button";
+import { RequestLessonButton } from "@/components/lessons/request-lesson-button";
 import { RevealPanel, type RevealResult } from "@/components/practice/reveal-panel";
 import { apiFetch } from "@/lib/api/client";
 import { ATTEMPTS_BEFORE_REVEAL, PRACTICE_ANSWER_MAX_LENGTH } from "@/lib/config";
@@ -200,10 +201,21 @@ export function PracticeRunner({
             after a correct one the useful next action is the next problem.
           */}
           {lastAttemptId && feedback && feedback.result !== "CORRECT" ? (
-            <OpenChatButton
-              subject={{ kind: "ATTEMPT", attemptId: lastAttemptId }}
-              label="Ask the tutor why"
-            />
+            <div className="flex flex-wrap items-start gap-2">
+              <OpenChatButton
+                subject={{ kind: "ATTEMPT", attemptId: lastAttemptId }}
+                label="Ask the tutor why"
+              />
+              {/*
+                M4 AC 5's other door. The student has just attempted this
+                problem, which is exactly the gate the lesson endpoint
+                enforces — so the button is offered only where it will work.
+              */}
+              <RequestLessonButton
+                subject={{ kind: "PRACTICE_PROBLEM", problemId: currentProblem.id }}
+                label="Show me on the whiteboard"
+              />
+            </div>
           ) : null}
 
           {validationError ? <p className="text-sm text-muted-foreground">{validationError}</p> : null}

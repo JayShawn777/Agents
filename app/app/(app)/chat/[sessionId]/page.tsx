@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatTranscript } from "@/components/chat/chat-transcript";
 import { SessionLimitBanner } from "@/components/chat/session-limit-banner";
+import { RequestLessonButton, type LessonSubject } from "@/components/lessons/request-lesson-button";
 import { requireChatSession } from "@/lib/auth/dal";
 import { closeIfPastBounds } from "@/lib/chat/session";
 import { toChatSessionDetail } from "@/lib/chat/dto";
@@ -60,6 +61,15 @@ export default async function ChatSessionPage({ params }: PageProps<"/chat/[sess
   const { session, messages } = toChatSessionDetail(closed, messageRows);
   const isOpen = session.status === "OPEN";
 
+  // A chat session binds to an extracted problem OR an attempt; a lesson binds
+  // to an extracted problem OR a PRACTICE problem. The attempt case therefore
+  // has to hop through the attempt to reach the problem a lesson can be about.
+  const lessonSubject: LessonSubject | null = sessionRow.extractedProblem
+    ? { kind: "EXTRACTED_PROBLEM", problemId: sessionRow.extractedProblem.id }
+    : sessionRow.attempt
+      ? { kind: "PRACTICE_PROBLEM", problemId: sessionRow.attempt.practiceProblem.id }
+      : null;
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6">
       <div className="flex flex-col gap-1">
@@ -76,6 +86,17 @@ export default async function ChatSessionPage({ params }: PageProps<"/chat/[sess
             : "This session has finished."}
         </p>
       </div>
+
+      {/*
+        M3's spec named this hand-off and deliberately left the seam: "a chat
+        turn will later be able to trigger a lesson". This is M4 taking it.
+        The subject is resolved from the session's own binding — an
+        attempt-bound session points at the PRACTICE PROBLEM, because that is
+        what endpoint 41 addresses and what a lesson is actually about.
+      */}
+      {lessonSubject ? (
+        <RequestLessonButton subject={lessonSubject} label="Show me on the whiteboard" variant="ghost" />
+      ) : null}
 
       <ChatTranscript messages={messages} />
 
