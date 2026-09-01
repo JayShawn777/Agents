@@ -3,6 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-09-01
 - **Deciders:** Jaysh (pending)
+- **Revised:** 2026-09-01 — §8.1 N2 ran; the `alignment` assumption is confirmed and the `normalized_alignment` trap is documented
 - **Spec:** docs/specs/m5-narration-and-personas.md (AC 13, 14, 15, 16)
 
 ## Context
@@ -84,12 +85,25 @@ times are clamped to be non-decreasing.
 **We will read the `alignment` array, not `normalized_alignment`.** `alignment`
 maps to the original text as we sent it, so its indices correspond to the string
 we authored and can annotate; `normalized_alignment` maps to the vendor's
-expanded text, whose indices correspond to nothing we hold. **This is an
-assumption about vendor behaviour and plan §8.1 N2 is the experiment that
-falsifies it**: if `alignment.characters.join("")` is not byte-identical to our
-input, this decision is wrong and word grouping has to key off the normalised
-array — which would change what a "word" even refers to, since the normalised
-text is not the text on screen.
+expanded text, whose indices correspond to nothing we hold.
+
+> **MEASURED AND CONFIRMED, 2026-09-01** — this was written as an assumption
+> with plan §8.1 N2 named as the experiment that would falsify it. N2 ran
+> (`docs/research/m5-narration-measurement.md`, Part 2) and the assumption
+> holds: for `"solve for x: 3x plus 5 equals 20"`,
+> `alignment.characters.join("")` came back **byte-identical** to the input and
+> the start times were monotonic.
+>
+> **And the trap is real, not hypothetical.** The same response's
+> `normalized_alignment` came back as `" solve for x: 3x plus 5 equals 20 "` —
+> padded with a leading and a trailing space. Two characters. Keyed off that
+> array, every word cue in a lesson would be shifted by one character's worth of
+> time: not enough to look like a bug, exactly enough to look like the sync is
+> slightly off and nobody can say why.
+>
+> So this is no longer a preference between two plausible fields. **Read
+> `alignment`. `normalized_alignment` is wrong for our purpose and its name is
+> the only thing about it that suggests otherwise.**
 
 **We will not store the raw provider payload.** Not in the row, not in the blob
 store, not in a log. AC 13's test — delete the raw payload and replay — is then
