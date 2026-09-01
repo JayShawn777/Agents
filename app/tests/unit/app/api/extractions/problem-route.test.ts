@@ -10,6 +10,12 @@ const dbMock = {
 };
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 
+const fakeStorage = { del: vi.fn(), fake: "storage-port" };
+vi.mock("@/lib/storage/get-storage", () => ({ getStoragePort: vi.fn(() => fakeStorage) }));
+
+const purgeUnreferencedNarrationMock = vi.fn(async () => ({ deleted: 0 }));
+vi.mock("@/lib/narration/purge", () => ({ purgeUnreferencedNarration: purgeUnreferencedNarrationMock }));
+
 const { PATCH, DELETE } = await import("@/app/api/extractions/[extractionId]/problems/[problemId]/route");
 
 function req(method: string, body?: unknown) {
@@ -26,6 +32,7 @@ function ctx(problemId = "p1") {
 function extractionWithProblems() {
   return {
     id: "extraction_1",
+    upload: { studentProfileId: "sp_1" },
     problems: [
       { id: "p1", ordinal: 1, text: "old text", studentCorrected: false },
       { id: "p2", ordinal: 2, text: "other", studentCorrected: false },
@@ -37,6 +44,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   dalMock.verifySession.mockResolvedValue({ userId: "user_1" });
   dalMock.requireExtraction.mockResolvedValue(extractionWithProblems());
+  purgeUnreferencedNarrationMock.mockResolvedValue({ deleted: 0 });
 });
 
 describe("PATCH (M1 AC 28)", () => {
@@ -83,5 +91,30 @@ describe("DELETE (M1 AC 29 — ordinals of survivors are never renumbered)", () 
     expect(dbMock.extractedProblem.delete).toHaveBeenCalledWith({ where: { id: "p1" } });
     // The survivor (p2, ordinal 2) is never touched by this handler.
     expect(dbMock.extractedProblem.update).not.toHaveBeenCalled();
+  });
+
+  it("M5 §7.3: sweeps now-unreferenced NarrationAsset rows for the owning profile after the row delete", async () => {
+    await DELETE(req("DELETE"), ctx());
+
+    expect(purgeUnreferencedNarrationMock).toHaveBeenCalledWith("sp_1", fakeStorage);
+    // Row delete must run first — the sweep is a cleanup of what the cascade left behind.
+    expect(dbMock.extractedProblem.delete.mock.invocationCallOrder[0]).toBeLessThan(
+      purgeUnreferencedNarrationMock.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("a purge failure is logged but does not fail the delete the user asked for", async () => {
+    purgeUnreferencedNarrationMock.mockRejectedValue(new Error("storage exploded"));
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await DELETE(req("DELETE"), ctx());
+    const body = (await res.json()) as { data: { deleted: true } };
+
+    expect(res.status).toBe(200);
+    expect(body.data.deleted).toBe(true);
+    expect(dbMock.extractedProblem.delete).toHaveBeenCalledWith({ where: { id: "p1" } });
+    expect(consoleErrorSpy).toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
   });
 });

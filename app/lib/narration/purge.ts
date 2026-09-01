@@ -27,7 +27,7 @@ import type { StoragePort } from "@/lib/storage/port";
  * profile with NO remaining `LessonNarrationStep` rows, blobs first (ADR-
  * 0007 §1), then rows. It is called after the row deletion.
  *
- * **WHERE IT IS ACTUALLY CALLED FROM, as of slice 3 — and where it is not.**
+ * **WHERE IT IS ACTUALLY CALLED FROM, as of slice 6 — and where it is not.**
  * This used to read "by every path that can cascade a lesson away", which was
  * a claim about code that does not exist yet (retro lesson 23), and the next
  * reader would have had no reason to doubt it.
@@ -38,13 +38,12 @@ import type { StoragePort } from "@/lib/storage/port";
  *     is registered in `PROFILE_BLOB_SOURCES`, so `deleteStudentData` removes
  *     every narration blob under the profile without needing this sweep.
  *   - `app/api/extractions/[extractionId]/problems/[problemId]/route.ts`
- *     (single extracted-problem DELETE) — **NOT WIRED.** Deleting one problem
- *     cascades its lesson and narration ROWS, but leaves the audio blobs in
- *     the store with no `NarrationAsset` reference to them. They are not lost
- *     forever — slice 2's reconciler treats an unclaimed object older than
- *     the threshold as an orphan and deletes it — but the audio outlives the
- *     child's data for up to an hour, and AC 20 asks for better than
- *     eventually. **Slice 6 owns wiring this**, and it is one call.
+ *     (single extracted-problem DELETE) — **WIRED** (slice 6). Deleting one
+ *     problem cascades its lesson and narration ROWS; this call sweeps the
+ *     now-unreferenced `NarrationAsset` blobs left behind, same best-effort,
+ *     logged-not-fatal pattern as `delete-upload.ts`'s step 4. Before this,
+ *     the audio only reached the store's reconciler as an unclaimed orphan
+ *     past its threshold — up to an hour later than AC 20 asks for.
  *
  * Three things about it worth not re-deriving (plan §7.3):
  *
