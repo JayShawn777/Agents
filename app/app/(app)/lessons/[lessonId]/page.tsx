@@ -1,15 +1,19 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { AiVoiceDisclosure } from "@/components/lessons/ai-voice-disclosure";
 import { AuthoringState } from "@/components/lessons/authoring-state";
 import { FailedLesson } from "@/components/lessons/failed-lesson";
 import { LessonTextView } from "@/components/lessons/lesson-text-view";
-import { LessonView } from "@/components/lessons/lesson-view";
+import { NarrationState } from "@/components/lessons/narration-state";
 import { RegenerateLessonButton } from "@/components/lessons/regenerate-lesson-button";
 import { requireLesson } from "@/lib/auth/dal";
+import { DEFAULT_PERSONA_SLUG } from "@/lib/config";
+import { db } from "@/lib/db";
 import { reapIfStale } from "@/lib/lessons/author";
 import { toLessonDetail } from "@/lib/lessons/dto";
 import { atVersionCap } from "@/lib/lessons/request";
+import { findPersonaById, findPersonaBySlug } from "@/lib/personas/dal";
 
 /**
  * The lesson screen (plan §4, F24; M4 AC 6, 10, 11, 12, 15, 16, 18, 19).
@@ -51,6 +55,21 @@ export default async function LessonPage({ params }: PageProps<"/lessons/[lesson
 
   const capped = atVersionCap(lesson.versionCount);
 
+  // M5 AC 4/18/19. Read directly off the row rather than through a DTO:
+  // `requireLesson`'s own `studentProfile` select carries only
+  // `{id, status, gradeLevel}` (M4's shape), and `lib/auth/dal.ts` is the
+  // backend track's file — this is the SAME row `requireLesson` already
+  // proved belongs to the calling user, just two more columns of it.
+  const profileVoiceSettings = await db.studentProfile.findUnique({
+    where: { id: lessonRow.studentProfile.id },
+    select: { personaId: true, captionsEnabled: true },
+  });
+  const persona = profileVoiceSettings?.personaId
+    ? await findPersonaById(profileVoiceSettings.personaId)
+    : await findPersonaBySlug(DEFAULT_PERSONA_SLUG);
+  const personaLabel = persona?.label ?? "the tutor";
+  const captionsEnabled = profileVoiceSettings?.captionsEnabled ?? true;
+
   /**
    * **Whether there is something to play, which is not the same as
    * `lesson.status === "READY"`.**
@@ -90,12 +109,16 @@ export default async function LessonPage({ params }: PageProps<"/lessons/[lesson
 
       {playable && version?.script && version.timeline ? (
         <>
-          <LessonView
+          <AiVoiceDisclosure personaLabel={personaLabel} />
+
+          <NarrationState
             lessonId={lesson.id}
             versionId={version.id}
+            studentId={lessonRow.studentProfile.id}
             script={version.script}
             timeline={version.timeline}
             atVersionCap={capped}
+            initialCaptionsEnabled={captionsEnabled}
           />
 
           {/*

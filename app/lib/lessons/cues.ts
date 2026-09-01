@@ -72,3 +72,31 @@ export function staticCueSource(timeline: readonly Cue[]): CueSource {
     },
   };
 }
+
+/**
+ * M5's cue source (plan §4, slice 8). Real speech timings, from a step's
+ * `LessonNarrationStep` row rather than an authored duration guess — the
+ * exact substitution ADR-0021 and this module's own docstring describe.
+ *
+ * **Deliberately placed here rather than in `lib/narration/cue-source.ts`**
+ * (the plan's file, ADR-0021 §3). `lib/narration/` is the vendor-calling,
+ * server-side half of M5 — provider client, cache, generation pipeline,
+ * purge — built concurrently by the backend track in the same milestone. This
+ * function is pure, browser-safe and reads nothing but the shape already on
+ * `NarrationStepDTO`, so it costs nothing to keep beside `staticCueSource`
+ * instead of inside the directory the other track is actively writing to.
+ * The `CueSource` contract this returns is identical either way — the player
+ * imports a function, not a file path.
+ *
+ * A thin adapter, not a reimplementation: a narration step's `stepId`,
+ * `startOffsetMs` and `durationMs` are already exactly a `Cue`, and
+ * `staticCueSource` already handles a non-contiguous timeline correctly
+ * (`cues.test.ts`'s own "uses the offsets it was given" case is precisely
+ * what narration timing looks like — a narrator does not take exactly the
+ * model's guessed duration to say a line).
+ */
+export function narrationCueSource(
+  steps: readonly { stepId: string; startOffsetMs: number; durationMs: number }[],
+): CueSource {
+  return staticCueSource(steps.map((step) => ({ ...step })));
+}

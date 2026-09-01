@@ -36,6 +36,7 @@ import {
   type Box,
 } from "@/lib/lessons/layout";
 import { LESSON_LABEL_MAX_WIDTH } from "@/lib/config";
+import { usePrefersReducedMotion } from "@/hooks/use-prefers-reduced-motion";
 import type { RenderableDrawOp, RenderableLessonScript } from "@/lib/schemas/dto";
 
 const SIZE_CLASS = { sm: "text-sm", md: "text-base", lg: "text-2xl" } as const;
@@ -59,6 +60,20 @@ export function Stage({
   /** AC 12: the canvas at step k is the ops of steps 0..k folded in order. */
   visibleStepCount: number;
 }) {
+  // AC 15. Read once per render, not once ever: someone can turn motion off
+  // mid-lesson and the very next step revealed should honour it immediately.
+  const reducedMotion = usePrefersReducedMotion();
+  // A real `animation` (tw-animate-css, already a project dependency —
+  // `app/globals.css` imports it), not a `transition`: each placement DIV is
+  // keyed by `op.id` and mounts EXACTLY ONCE, the render its step first
+  // becomes visible, so this class plays on that mount and never again for
+  // the same element — genuine motion, not the struck no-op
+  // (`transition-opacity` that transitioned nothing, ADR-0019's 2026-08-28
+  // note). With motion reduced, the class is simply omitted: the element
+  // renders at its final, fully-opaque state on the very first frame either
+  // way — AC 15's "the final frame is identical" by construction, since
+  // nothing here changes WHAT is drawn, only whether arriving at it is seen.
+  const revealClass = reducedMotion ? "" : "animate-in fade-in-0 duration-300 ease-out";
   const containerRef = useRef<HTMLDivElement | null>(null);
   const elementRefs = useRef(new Map<string, HTMLElement>());
   const [boxes, setBoxes] = useState<Record<string, Box>>({});
@@ -174,12 +189,7 @@ export function Stage({
           // measuring, and finding them by class would break the moment the
           // styling changes.
           data-lesson-element={op.id}
-          // No animation, deliberately. `transition-opacity duration-300` used
-          // to sit here and transitioned nothing — no opacity value is ever
-          // changed — which made AC 15 look implemented (see ADR-0019's
-          // 2026-08-28 revision note). M5 adds the first real reveal, and
-          // reinstates `prefers-reduced-motion` in the same change.
-          className={`absolute text-foreground ${op.kind === "write" ? SIZE_CLASS[op.size] : "text-sm"}`}
+          className={`absolute text-foreground ${op.kind === "write" ? SIZE_CLASS[op.size] : "text-sm"} ${revealClass}`}
           style={{
             left: `${op.at.x * 100}%`,
             top: `${op.at.y * 100}%`,
@@ -235,7 +245,7 @@ export function Stage({
             <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
           </marker>
         </defs>
-        {annotations.map((op) => renderAnnotation(op, boxes))}
+        {annotations.map((op) => renderAnnotation(op, boxes, revealClass))}
       </svg>
     </div>
   );
@@ -247,9 +257,14 @@ export function Stage({
  * and in any environment without layout — drawing a ring at the origin because
  * a box came back 0x0 would put a mark on the canvas that means nothing.
  */
-function renderAnnotation(op: RenderableDrawOp, boxes: Record<string, Box>) {
+function renderAnnotation(op: RenderableDrawOp, boxes: Record<string, Box>, revealClass: string) {
   const stroke = "currentColor";
-  const common = { stroke, fill: "none", strokeWidth: 2, className: "text-primary" };
+  // Same reveal as the placement layer, on the same "mounts once per op.id"
+  // basis — an annotation naturally mounts a render AFTER its target is
+  // first measured (see this function's own docstring), so it fades in
+  // slightly behind the element it marks rather than simultaneously with it,
+  // which reads as "pointing at", not as noise.
+  const common = { stroke, fill: "none", strokeWidth: 2, className: `text-primary ${revealClass}` };
 
   const measured = (id: string): Box | null => {
     const box = boxes[id];
@@ -282,7 +297,7 @@ function renderAnnotation(op: RenderableDrawOp, boxes: Record<string, Box>) {
           width={rect.width}
           height={rect.height}
           rx={3}
-          className="text-primary/20"
+          className={`text-primary/20 ${revealClass}`}
           fill="currentColor"
         />
       );

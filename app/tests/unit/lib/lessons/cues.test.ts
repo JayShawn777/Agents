@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { staticCueSource, type Cue } from "@/lib/lessons/cues";
+import { narrationCueSource, staticCueSource, type Cue } from "@/lib/lessons/cues";
 
 /** `lib/lessons/cues.ts` — AC 7's injectable timeline. */
 
@@ -61,5 +61,48 @@ describe("staticCueSource", () => {
     // Still on step 1 at 6,000ms — the running sum would have said step 2 by
     // 4,000ms, and using it here would desync the canvas from the narration.
     expect(source.stepIndexAt(6_000)).toBe(0);
+  });
+});
+
+/**
+ * `narrationCueSource` (M5, plan §4) — the thin adapter from a
+ * `NarrationStepDTO`-shaped array to the same `CueSource` contract.
+ *
+ * Fixture note (retro lesson 20): this shape — `stepId`/`startOffsetMs`/
+ * `durationMs`, non-contiguous — is exactly what `lib/narration/dto.ts`
+ * (backend track, not built yet) will map a READY `LessonNarrationStep` row
+ * into; a narrator's actual timing does not match the model's guessed
+ * `durationMs`, which is the whole reason this file exists rather than
+ * reusing `timeline` unchanged.
+ */
+describe("narrationCueSource", () => {
+  const NARRATION_STEPS = [
+    { stepId: "s1", stepIndex: 0, startOffsetMs: 0, durationMs: 3_500 },
+    { stepId: "s2", stepIndex: 1, startOffsetMs: 3_500, durationMs: 4_800 },
+    { stepId: "s3", stepIndex: 2, startOffsetMs: 8_300, durationMs: 2_900 },
+  ];
+
+  it("produces the same CueSource contract as staticCueSource, over real speech timings", () => {
+    const source = narrationCueSource(NARRATION_STEPS);
+    expect(source.totalDurationMs).toBe(11_200);
+    expect(source.stepIndexAt(3_499)).toBe(0);
+    expect(source.stepIndexAt(3_500)).toBe(1);
+    expect(source.startOfStep(2)).toBe(8_300);
+  });
+
+  it("tolerates extra fields on the input (a full NarrationStepDTO, not just a Cue)", () => {
+    const withExtras = NARRATION_STEPS.map((step) => ({
+      ...step,
+      audioUrl: `https://blob.example/${step.stepId}.mp3`,
+      audioUrlExpiresAt: new Date().toISOString(),
+      words: [],
+    }));
+    expect(narrationCueSource(withExtras).totalDurationMs).toBe(11_200);
+  });
+
+  it("survives no narration steps without throwing", () => {
+    const source = narrationCueSource([]);
+    expect(source.totalDurationMs).toBe(0);
+    expect(source.stepIndexAt(1_000)).toBe(0);
   });
 });

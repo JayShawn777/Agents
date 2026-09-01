@@ -200,6 +200,26 @@ describe("flagging a lesson (AC 18)", () => {
 // ─────────────────────────── AC 12's controls ───────────────────────────
 
 describe("the player controls (AC 12)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The captions toggle PATCHes endpoint 4 (AC 18); nothing in this describe
+    // asserts on the request itself, so a bare success response is enough to
+    // keep the toggle's own `startTransition` from hitting a real network call.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ ok: true, data: { student: { id: "st_1" } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   const state = (overrides: Partial<PlayerState> = {}): PlayerState => ({
     stepIndex: 1,
     stepCount: 6,
@@ -207,6 +227,9 @@ describe("the player controls (AC 12)", () => {
     atEnd: false,
     atStart: false,
     narration: "",
+    isMuted: false,
+    hasAudio: false,
+    toggleMute: vi.fn(),
     play: vi.fn(),
     pause: vi.fn(),
     next: vi.fn(),
@@ -215,9 +238,19 @@ describe("the player controls (AC 12)", () => {
     ...overrides,
   });
 
+  const renderControls = (player: PlayerState, extra: { captionsEnabled?: boolean } = {}) =>
+    render(
+      <PlayerControls
+        state={player}
+        studentId="st_1"
+        captionsEnabled={extra.captionsEnabled ?? true}
+        onCaptionsChange={vi.fn()}
+      />,
+    );
+
   it("calls straight into the player's state, deciding nothing itself", () => {
     const player = state();
-    render(<PlayerControls state={player} />);
+    renderControls(player);
 
     fireEvent.click(screen.getByRole("button", { name: "Play" }));
     fireEvent.click(screen.getByRole("button", { name: "Next step" }));
@@ -232,17 +265,31 @@ describe("the player controls (AC 12)", () => {
 
   it("shows pause while playing", () => {
     const player = state({ isPlaying: true });
-    render(<PlayerControls state={player} />);
+    renderControls(player);
 
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
     expect(player.pause).toHaveBeenCalledOnce();
   });
 
   it("disables stepping past either end", () => {
-    const { rerender } = render(<PlayerControls state={state({ atStart: true })} />);
+    const { rerender } = render(
+      <PlayerControls
+        state={state({ atStart: true })}
+        studentId="st_1"
+        captionsEnabled={true}
+        onCaptionsChange={vi.fn()}
+      />,
+    );
     expect(screen.getByRole("button", { name: "Previous step" })).toBeDisabled();
 
-    rerender(<PlayerControls state={state({ atEnd: true, atStart: false })} />);
+    rerender(
+      <PlayerControls
+        state={state({ atEnd: true, atStart: false })}
+        studentId="st_1"
+        captionsEnabled={true}
+        onCaptionsChange={vi.fn()}
+      />,
+    );
     expect(screen.getByRole("button", { name: "Next step" })).toBeDisabled();
   });
 
@@ -252,8 +299,33 @@ describe("the player controls (AC 12)", () => {
    * applying because the screen changed.
    */
   it("counts steps and renders no percentage or score", () => {
-    const { container } = render(<PlayerControls state={state()} />);
+    const { container } = renderControls(state());
     expect(screen.getByText("Step 2 of 6")).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/%|score|\d+\s*\/\s*\d+/);
+  });
+
+  /** AC 16: mute has nothing to mute without narration audio. */
+  it("disables mute when the lesson has no narration audio", () => {
+    renderControls(state({ hasAudio: false }));
+    expect(screen.getByRole("button", { name: "Mute" })).toBeDisabled();
+  });
+
+  it("calls toggleMute, and does not require narration to render", () => {
+    const player = state({ hasAudio: true });
+    renderControls(player);
+    fireEvent.click(screen.getByRole("button", { name: "Mute" }));
+    expect(player.toggleMute).toHaveBeenCalledOnce();
+  });
+
+  it("shows the caption toggle's current state and reflects a click optimistically", async () => {
+    const onCaptionsChange = vi.fn();
+    render(
+      <PlayerControls state={state()} studentId="st_1" captionsEnabled={true} onCaptionsChange={onCaptionsChange} />,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Turn off captions" });
+    fireEvent.click(toggle);
+
+    expect(onCaptionsChange).toHaveBeenCalledWith(false);
   });
 });

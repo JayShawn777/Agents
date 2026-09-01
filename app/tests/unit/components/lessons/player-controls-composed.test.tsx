@@ -37,8 +37,10 @@ const TIMELINE: Cue[] = [
 
 function renderComposed() {
   return render(
-    <LessonPlayer script={SCRIPT} timeline={TIMELINE}>
-      {(state) => <PlayerControls state={state} />}
+    <LessonPlayer script={SCRIPT} timeline={TIMELINE} captionsEnabled={true}>
+      {(state) => (
+        <PlayerControls state={state} studentId="st_1" captionsEnabled={true} onCaptionsChange={() => {}} />
+      )}
     </LessonPlayer>,
   );
 }
