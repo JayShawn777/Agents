@@ -290,6 +290,170 @@ model StudentProfile {
   /// M3 AC 16: chat sessions die with the profile.
   chatSessions      ChatSession[]
   lessons           Lesson[]
+
+  /// M5 AC 4. Null means "the default persona" (`DEFAULT_PERSONA_SLUG`) rather
+  /// than "no voice" — a child who never opens the picker still gets narration.
+  personaId         String?
+  /// M5 AC 18, and the owner's 2026-09-01 decision. ON by default, because a
+  /// deaf or hard-of-hearing child gets nothing at all from narration and a
+  /// default is what almost everyone keeps.
+  captionsEnabled   Boolean @default(true)
+
+  persona           Persona?         @relation(fields: [personaId], references: [id], onDelete: SetNull)
+  narrationAssets   NarrationAsset[]
+}
+
+// ───────────────────────────── M5: narration ─────────────────────────────
+
+/// M5 AC 1. App reference data — no student data, ever. The provider's voice id
+/// lives HERE and nowhere else: the stock voice set carries a published expiry
+/// (2026-12-31 for the legacy set), so an id compiled into application code is
+/// an outage with a calendar entry. AC 3 repoints this column; it can never
+/// repoint a constant.
+model Persona {
+  id              String  @id @default(cuid())
+  /// OURS, and stable across a voice remap. Config refers to a persona by slug.
+  slug            String  @unique
+  label           String
+  description     String
+  /// Preset artwork id (AC 2). Never an upload, never a likeness of a real person.
+  artworkId       String
+  /// The vendor's voice id. Seed data, written by a migration.
+  providerVoiceId String
+  ttsProvider     String  @default("elevenlabs")
+  sortOrder       Int
+  /// Personas are RETIRED, never deleted — a hard delete would orphan the
+  /// attribution on a child's cached audio. Nothing enforces that at the
+  /// database level, so both relations below are `SetNull`: a delete that
+  /// happens anyway destroys no audio.
+  retiredAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  profiles        StudentProfile[]
+  narrations      LessonNarration[]
+  narrationAssets NarrationAsset[]
+
+  @@index([retiredAt, sortOrder])
+}
+
+enum NarrationStatus {
+  /// The row exists and no TTS call has been made. Also the AC 21 budget grant.
+  PENDING
+  GENERATING
+  /// AC 6 — every step has an asset and a cue timeline.
+  READY
+  /// AC 17 — the lesson still plays, silently, with captions.
+  FAILED
+}
+
+/// One narration run for one `LessonScriptVersion`.
+///
+/// Narration belongs to a SCRIPT VERSION, not to a lesson: M4 AC 19 makes a new
+/// version on every regeneration, and narrating version 2 must not silently
+/// repoint version 1's audio.
+model LessonNarration {
+  id               String @id @default(cuid())
+  lessonId         String
+  versionId        String
+  studentProfileId String
+  /// Null only if the persona row was deleted, which is not supposed to happen.
+  personaId        String?
+
+  status           NarrationStatus @default(PENDING)
+  /// Recorded, never inferred — the measurement's own recommendation.
+  ttsModelId       String
+  providerVoiceId  String
+  cueFormatVersion String
+
+  failureCode      String?
+  stepCount        Int?
+  totalDurationMs  Int?
+  /// What this run actually sent to the vendor. Feeds the AC 21 budget.
+  charactersBilled Int?
+  /// How many steps were served from cache — the number that says whether AC 7
+  /// is doing anything at all. Nothing renders it.
+  cacheHits        Int?
+
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  lesson  Lesson                @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  persona Persona?              @relation(fields: [personaId], references: [id], onDelete: SetNull)
+  steps   LessonNarrationStep[]
+
+  /// One live narration per version. A retry (AC 17) and a persona change both
+  /// UPDATE this row rather than inserting a second; the assets they no longer
+  /// point at stay in the cache and cost nothing.
+  @@unique([versionId])
+  /// The stale-GENERATING reaper, the same query shape `reapIfStale` uses.
+  @@index([status, updatedAt])
+  /// The AC 21 daily budget query.
+  @@index([studentProfileId, createdAt])
+}
+
+/// The join that makes AC 13's timeline: a step id and an offset — nothing about
+/// the provider, and nothing that needs the raw payload at playback.
+model LessonNarrationStep {
+  id            String @id @default(cuid())
+  narrationId   String
+  /// The `LessonScript` step id (ADR-0014 §2 — stable across regenerations).
+  stepId        String
+  stepIndex     Int
+  assetId       String
+  /// Running sum of the durations of steps 0..k-1. AC 13's "start offset".
+  startOffsetMs Int
+  createdAt     DateTime @default(now())
+
+  narration LessonNarration @relation(fields: [narrationId], references: [id], onDelete: Cascade)
+  asset     NarrationAsset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([narrationId, stepIndex])
+  @@index([assetId])
+}
+
+/// ADR-0015. The narration cache — per student profile, never global.
+///
+/// **Stores no narration text.** The cache key is the hash and the script is the
+/// text, so this is one fewer copy of a sentence describing a child's homework.
+/// Captions read from the script M4 already renders, not from here.
+model NarrationAsset {
+  id               String @id @default(cuid())
+  studentProfileId String
+  personaId        String?
+
+  /// sha256(narrationText \0 providerVoiceId \0 ttsModelId) — AC 7 / AC 8.
+  cacheKey         String
+  /// Denormalised and never updated: M6 AC 19 deletes by voice id, and an asset
+  /// WAS generated with the id it carries even after AC 3 repoints the persona.
+  providerVoiceId  String
+  ttsModelId       String
+
+  /// `students/<profileId>/narration/<cacheKey>.mp3` — ADR-0015. The profile id
+  /// in this path is what makes M0's "delete everything for this child" work;
+  /// AC 12 was amended on 2026-09-01 to scope its no-identifier rule to the
+  /// OUTBOUND request, which is where the risk actually lives.
+  pathname         String @unique
+  contentType      String
+  sizeBytes        Int
+  durationMs       Int
+  characterCount   Int
+
+  /// ADR-0021. OUR normalised word cues, offsets relative to THIS file's start.
+  /// The provider payload is not stored and is not needed at playback.
+  cues             Json
+  cueFormatVersion String
+
+  createdAt        DateTime @default(now())
+
+  studentProfile StudentProfile        @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+  persona        Persona?              @relation(fields: [personaId], references: [id], onDelete: SetNull)
+  steps          LessonNarrationStep[]
+
+  @@unique([studentProfileId, cacheKey])
+  @@index([providerVoiceId])
 }
 
 /// AC 12–15. The §312.4 direct notice actually served to this account owner for this
@@ -862,6 +1026,9 @@ model Lesson {
   practiceProblem  PracticeProblem?  @relation(fields: [practiceProblemId], references: [id], onDelete: Cascade)
   versions         LessonScriptVersion[]
   flags            LessonFlag[]
+  /// M5. A narration run belongs to a script VERSION, but cascades from the
+  /// lesson so deleting a lesson takes its audio rows with it.
+  narrations       LessonNarration[]
 
   @@index([studentProfileId, createdAt])
   /// The stale-AUTHORING reaper on the status GET, the same query shape

@@ -71,6 +71,10 @@ const CATEGORY_LABELS: Record<RetentionCategoryKey, string> = {
   // M4. "Whiteboard lesson" is what a parent sees on the screen; naming it for
   // the three tables behind it would be naming it for us instead of for them.
   LESSON_CONTENT: "Whiteboard lessons",
+  // M5. Named for what a parent hears, and deliberately explicit that it is the
+  // app talking rather than their child being recorded — "audio" on a page about
+  // a child's data is a word that should answer its own worst reading.
+  NARRATION_AUDIO: "Spoken lesson narration (the tutor's voice, not your child's)",
 };
 
 /**

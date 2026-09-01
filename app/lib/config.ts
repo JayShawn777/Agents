@@ -722,6 +722,91 @@ export const MAX_LESSON_VERSIONS = 5;
  */
 export const LESSON_LABEL_MAX_WIDTH = 0.42;
 
+// ─────────────────────────── M5 narration ───────────────────────────
+
+/**
+ * The TTS vendor, recorded rather than assumed, so the cache row and the
+ * vendor-assessment record agree on one name.
+ */
+export const NARRATION_TTS_PROVIDER = "elevenlabs";
+
+/**
+ * Measured 2026-09-01 (`docs/research/m5-narration-measurement.md`): 976 ms and
+ * full character alignment. The fast model also returns alignment — 262 ms at
+ * half the credit cost — but M5 pre-generates and a child hears each line many
+ * times, so quality wins. The model is stamped on every cached row, never
+ * inferred, so switching it later is a data question rather than archaeology.
+ */
+export const NARRATION_MODEL_ID = "eleven_multilingual_v2";
+
+/** Universally decodable by `<audio>`, and available on the cheapest paid tier. */
+export const NARRATION_OUTPUT_FORMAT = "mp3_44100_128";
+
+/**
+ * AC 9. **The published floor, deliberately.** The API key is scoped without
+ * `user_read`, so the plan tier cannot be read back (it 401s) — and guessing
+ * high buys a 429 storm on a child's first lesson. Raise it with evidence.
+ */
+export const NARRATION_MAX_CONCURRENCY = 2;
+
+/** AC 9's retry, matching `MAX_EXTRACTION_ATTEMPTS`. */
+export const NARRATION_MAX_ATTEMPTS = 3;
+
+/** Exponential with jitter: 750 / 1500 / 3000. A guess. */
+export const NARRATION_BACKOFF_BASE_MS = 750;
+
+/**
+ * Anchored ABOVE the route's `maxDuration = 300`, exactly as
+ * `LESSON_AUTHORING_TIMEOUT_MS` is — and for the reason M4's review found the
+ * hard way: a timeout below `maxDuration` reaps a run that is still alive, tells
+ * the child it failed, and sells them a second paid one.
+ */
+export const NARRATION_TIMEOUT_MS = 330_000;
+
+/** A narration run cannot outnumber the lessons that can exist. */
+export const NARRATION_RUNS_PER_HOUR = 6;
+
+/**
+ * AC 21. Per profile per day, counted in characters actually SENT — a cache hit
+ * is free and must not count. Roughly 7 worst-case or 14 typical lessons.
+ *
+ * **A guess, and it is a spend control, not a ration.** It exists to stop a loop
+ * costing real money, not to stop a child learning. If a real child ever reaches
+ * it, the number is wrong and should be raised rather than defended.
+ */
+export const NARRATION_DAILY_BUDGET_CHARS = 20_000;
+
+/**
+ * AC 15. The spec's own assumption, still unmeasured: nobody has watched a child
+ * and found the point where the drawing feels out of step with the voice.
+ */
+export const NARRATION_SYNC_TOLERANCE_MS = 150;
+
+/**
+ * Signed read URLs live `SIGNED_URL_TTL_MS`; a twelve-step lesson can run
+ * longer than that. The player re-fetches this far before the earliest expiry
+ * rather than letting audio 404 mid-lesson.
+ */
+export const NARRATION_URL_REFRESH_MARGIN_MS = 60_000;
+
+/** ADR-0021. Stored per asset, so a cue-format change is a data question. */
+export const CUE_FORMAT_VERSION = "1";
+
+/**
+ * AC 3's fallback, and the persona for a profile that never opened the picker.
+ *
+ * **A slug of ours, never a vendor voice id** — which is what keeps this
+ * constant on the right side of AC 1. The voice behind this slug can be
+ * repointed in a migration without touching code.
+ */
+export const DEFAULT_PERSONA_SLUG = "professor-love";
+
+/**
+ * One place the reconciler, the purge and the cache agree on the prefix. Three
+ * modules deriving the same string separately is how one of them drifts.
+ */
+export const NARRATION_PATHNAME_PREFIX = "narration";
+
 // ─────────────────────────── auth ───────────────────────────
 
 /** M0 AC 4. Auth.js magic-link `maxAge`. */
@@ -907,6 +992,15 @@ export const RETENTION_POLICY = [
       "Lets an account owner read what their child was told, which is the only way to check the tutoring is any good. Windowed rather than kept for the life of the profile: it is the most sensitive record the app holds and the one whose usefulness fades fastest.",
     windowDays: CHAT_TRANSCRIPT_RETENTION_DAYS,
     anchor: "openedAt",
+  },
+  {
+    key: "NARRATION_AUDIO",
+    purpose:
+      "The spoken audio of a whiteboard lesson — the tutor's voice reading the explanation aloud, and the word timings that keep the drawing in step with it (LessonNarration, LessonNarrationStep, NarrationAsset).",
+    businessNeed:
+      "This is the lesson being spoken, kept for as long as the profile is active so a student can replay an explanation that helped. It is generated from the lesson's own narration text and contains no recording of the student: this app never captures audio from a child.",
+    windowDays: null,
+    note: "life of the ACTIVE profile",
   },
   {
     key: "LESSON_CONTENT",

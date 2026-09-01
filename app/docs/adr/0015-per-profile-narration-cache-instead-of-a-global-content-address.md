@@ -1,9 +1,47 @@
 # ADR-0015: Narration audio is cached per student profile, not globally content-addressed
 
-- **Status:** Proposed
+- **Status:** Proposed — recommended for acceptance alongside the M5 plan
 - **Date:** 2026-08-27
+- **Revised:** 2026-09-01 (see the revision note below — this ADR is `Proposed`,
+  so it is revised in place per `docs/README.md` rule 3)
 - **Deciders:** Jaysh (pending)
 - **Spec:** docs/specs/m5-narration-and-personas.md, docs/specs/m6-custom-voice.md
+
+## Revision note — 2026-09-01
+
+This ADR was written before M5 had a plan, before the vendor had been measured,
+and — this is the part that matters — **before anyone had read the code it
+describes.** Five things changed. The core decision, per-profile scoping, is
+unchanged and is now the load-bearing decision of the milestone.
+
+1. **The tense.** Everything this ADR said about `PROFILE_BLOB_SOURCES` and its
+   test was written as though the mechanism existed. It does not.
+   `lib/deletion/service.ts` reads exactly one table today. Those passages are
+   now in the future tense and name the slice that owns them
+   (`docs/plans/m5-narration-implementation.md` §5, slice 2). Retro lesson 23:
+   an ADR may not claim an acceptance criterion is bought by code that does not
+   exist, and this one did.
+2. **A wrong claim about the reconciler, corrected.** The original text said
+   narration objects living under `students/<profileId>/` meant the
+   store-enumerating reconciler "covers it with a prefix change rather than a
+   new mechanism". Reading `lib/jobs/reconcile-blobs.ts` shows the opposite:
+   it already enumerates the **whole** store and deletes any object with no
+   matching `Upload` row after `ORPHAN_THRESHOLD_MINUTES`. Left alone it would
+   delete every narration object an hour after it was written. See §"What the
+   reconciler actually does" below.
+3. **`onDelete: Cascade` from `Persona` was wrong** and is now `SetNull` on both
+   relations. A persona is app reference data; deleting one must never destroy a
+   child's cached audio. Personas are retired, not deleted.
+4. **The schema sketch is aligned with the migration** in the M5 plan §1:
+   `contentType`, `sizeBytes` and `cueFormatVersion` are added, `personaId`
+   becomes nullable, and there is deliberately **no narration text column** —
+   the cache key is the hash and the script is the text, so this table holds one
+   fewer copy of a sentence describing a child's homework.
+5. **Two conflicts the original did not know about are now named:** AC 12's
+   "no identifier in the resulting object's pathname" contradicts this ADR's
+   pathname scheme (plan §7.4, owner decision), and AC 20's "the narration audio
+   objects **for that lesson**" is not well-formed under a shared per-profile
+   cache (plan §7.3).
 
 ## Context
 
@@ -68,38 +106,67 @@ row cascades from `StudentProfile`.
 ```prisma
 model NarrationAsset {
   studentProfileId String
-  personaId        String
+  personaId        String?  // nullable: a persona row must never take audio with it
   cacheKey         String   // sha256(text \0 voiceId \0 modelId)  — M5 AC 7/8
   providerVoiceId  String   // denormalised: M6 AC 19 deletes by voice id
   ttsModelId       String
   pathname         String @unique      // students/<profileId>/narration/<cacheKey>.mp3
+  contentType      String
+  sizeBytes        Int
   durationMs       Int
-  cues             Json                // M5 AC 13 — OUR normalised format
+  cues             Json                // M5 AC 13 — OUR normalised format (ADR-0021)
+  cueFormatVersion String
   characterCount   Int
+  // Deliberately NO narration text column: the key is the hash, the script is
+  // the text, and one fewer copy of a child's homework is stored.
 
   studentProfile StudentProfile @relation(..., onDelete: Cascade)
-  persona        Persona        @relation(..., onDelete: Cascade)
+  persona        Persona?       @relation(..., onDelete: SetNull)
 
   @@unique([studentProfileId, cacheKey])
   @@index([providerVoiceId])
 }
 ```
 
+The full M5 migration — this model plus `Persona`, `LessonNarration` and
+`LessonNarrationStep` — is in `docs/plans/m5-narration-implementation.md` §1.
+This ADR owns only the keying and the deletion story.
+
 Three consequences are the point of the decision:
 
-1. **Deletion is a cascade plus a prefix.** `deleteStudentData` already walks
-   pathnames and deletes blobs before rows (ADR-0007 §1). Narration adds one more
-   pathname source and nothing else. There is no refcount, no shared object, and
-   no case where deleting one child's data affects another's.
+1. **Deletion is a cascade plus a prefix.** `deleteStudentData` already deletes
+   blobs before rows (ADR-0007 §1) — but it reads exactly one table, `Upload`.
+   Narration adds a second pathname source and nothing else conceptually; the
+   code change is real and is M5 slice 2's. There is no refcount, no shared
+   object, and no case where deleting one child's data affects another's.
 2. **M6 AC 19 is one indexed query.** `providerVoiceId` is denormalised onto the
    asset, so "delete every cached narration generated with this voice" is
    `findMany({ where: { providerVoiceId } })` → read pathnames → `storage.del()` →
    delete rows. Across accounts, because a custom voice belongs to one account
    anyway.
-3. **Every narration object sits under `students/<profileId>/`,** so the
-   store-enumerating reconciler (M0 AC 43) covers it with a prefix change rather
-   than a new mechanism, and an object whose row was never written is still
-   findable.
+3. **Every narration object sits under `students/<profileId>/`,** so an object
+   whose row was never written is attributable to a profile by inspection, and
+   the store-enumerating reconciler (M0 AC 43) can decide orphanhood without a
+   new mechanism. **What that costs is described in the next section, and the
+   original text of this ADR got it wrong.**
+
+### What the reconciler actually does (corrected 2026-09-01)
+
+`lib/jobs/reconcile-blobs.ts` does not scan a prefix. It enumerates the entire
+store with `storage.listAll()` and treats **any** pathname with no matching
+`Upload` row, older than `ORPHAN_THRESHOLD_MINUTES`, as an orphan to delete.
+
+So the first narration object written is deleted on the first cron run more than
+an hour later, leaving a `NarrationAsset` row pointing at nothing and every
+lesson playing a 404 — silently, with no failing test anywhere.
+
+The fix is not a prefix filter (which would exclude narration from
+reconciliation entirely, reintroducing exactly the invisible-orphan class M0
+AC 43 exists to close). It is to make "who claims this pathname" a small
+registry that both `Upload` and `NarrationAsset` are in, so an object is an
+orphan only when **no** table claims it. `docs/plans/m5-narration-implementation.md`
+§7.1 specifies it and M5 slice 2 will build it, **before** slice 5 writes the
+first object.
 
 ### What AC 7 actually still buys
 
@@ -117,12 +184,16 @@ What is given up is reuse **across students**, which AC 7 does not require and
 which M4's non-goals forbid at the lesson level anyway (*"No lesson reuse across
 students in M4, and no cross-student cache"*).
 
-### The registry that makes this not-forgettable
+### The registry that will make this not-forgettable
 
-Adding narration means `deleteStudentData` now has two pathname sources instead
-of one, and there will be a third (M6's voice sample, account-scoped). Rather
-than a second `findMany` bolted into a function whose ordering is already
-load-bearing, `lib/deletion/service.ts` gains an exported registry:
+**None of this exists yet.** `lib/deletion/service.ts` reads `Upload` and
+nothing else; there is no registry and no test. M5 slice 2 owns building it, and
+this section is written as intent.
+
+Adding narration means `deleteStudentData` will have two pathname sources
+instead of one, and there will be a third (M6's voice sample, account-scoped).
+Rather than a second `findMany` bolted into a function whose ordering is already
+load-bearing, `lib/deletion/service.ts` will gain an exported registry:
 
 ```ts
 export const PROFILE_BLOB_SOURCES = [
@@ -131,13 +202,17 @@ export const PROFILE_BLOB_SOURCES = [
 ] as const;
 ```
 
-with a unit test asserting that **every Prisma model carrying a `pathname` column
-and reachable from `StudentProfile` appears in the registry.** A future model with
-a blob and no registry entry fails CI rather than producing an orphan nobody
-finds until a parent asks.
+with a unit test — `tests/unit/lib/deletion/blob-sources.test.ts`, to be written
+in M5 slice 2 — that reads `prisma/schema.prisma` and asserts that **every model
+carrying both a `pathname` field and a `studentProfileId` field appears in the
+registry.** A future model with a blob and no registry entry would then fail CI
+rather than produce an orphan nobody finds until a parent asks. That is the same
+mechanism M4's review adopted for retention coverage, and for the same reason: a
+test that walks its own registry cannot see an omission (retro lesson 22).
 
-That test is the real deliverable of this ADR. The scoping decision makes
-deletion *possible*; the registry makes forgetting it *loud*.
+That test is the real deliverable of this ADR, and it is unbuilt. The scoping
+decision makes deletion *possible*; the registry is what will make forgetting it
+*loud*.
 
 ## Alternatives considered
 
@@ -204,15 +279,19 @@ deletion *possible*; the registry makes forgetting it *loud*.
 ## Consequences
 
 ### Positive
-- Every M0 deletion guarantee continues to hold with narration in the picture,
-  using the mechanism that already exists rather than a new one.
-- M6 AC 19 — delete every narration made with a revoked parent's voice — is one
-  indexed query, across the whole store, with no traversal.
-- Every narration object is under `students/<profileId>/`, so the
-  store-enumerating reconciler's coverage is a prefix, and M5's open question
-  about regenerated-lesson orphans is answered by the control M0 already built.
-- The `PROFILE_BLOB_SOURCES` registry plus its test means M6's voice sample and
-  anything after it cannot be silently omitted from the destructor.
+- Every M0 deletion guarantee **can** continue to hold with narration in the
+  picture, by extending the mechanism that already exists rather than inventing
+  one. The extension is M5 slice 2's work; nothing here is free.
+- M6 AC 19 — delete every narration made with a revoked parent's voice — will be
+  one indexed query, across the whole store, with no traversal, because
+  `providerVoiceId` is on the asset.
+- Every narration object will sit under `students/<profileId>/`, so an object
+  with no row is attributable to a profile by inspection, and M5's open question
+  about regenerated-lesson orphans is answered by extending M0 AC 43's
+  reconciler rather than by a new control.
+- The `PROFILE_BLOB_SOURCES` registry and its schema-reading test, once written,
+  will mean M6's voice sample and anything after it cannot be silently omitted
+  from the destructor.
 - The cache still eliminates the two expensive cases: replay, and re-narrating a
   regenerated lesson.
 
@@ -239,17 +318,46 @@ deletion *possible*; the registry makes forgetting it *loud*.
   but it would require answering the deletion question first, which is the whole
   reason it is not being done now.
 
+### Two criteria this decision does NOT satisfy on its own (added 2026-09-01)
+
+- **AC 12 says no identifier may appear in "the resulting object's pathname."**
+  This ADR requires a profile id in the pathname, because prefix scoping is what
+  makes deletion and reconciliation work. Both cannot be true as written. The M5
+  plan (§7.4) reads AC 12 as being about what reaches the **vendor** — our
+  private pathname never does, and a cuid carries no name and no email — and
+  asks the owner to confirm. If AC 12 is meant literally, **this ADR must be
+  reopened before the M5 migration is written**, and deletion needs a different
+  mechanism than a prefix.
+- **AC 20 says a lesson's narration objects are removed when the lesson is
+  deleted.** Under a per-profile cache one asset may serve several lessons, so
+  "this lesson's objects" is not well-formed. The M5 plan (§7.3) satisfies the
+  criterion with `purgeUnreferencedNarration(studentProfileId)` — delete assets
+  with no remaining `LessonNarrationStep` reference, blobs first — called from
+  the paths that can cascade a lesson away. It is a zero-reference sweep, not a
+  refcount, and it can under-delete (harmlessly, into a prefix that dies with the
+  profile) but never over-delete.
+
 ### Follow-up required
-- [ ] **Add the narration prefix to the reconciler's configuration** before M5
-      ships. M5's open question marks this blocking, and an audio object with no
-      row is invisible to every row-driven deletion path.
+- [ ] **Teach the reconciler that `NarrationAsset` claims pathnames too** —
+      before the first narration object is written, not before M5 "ships". As
+      written today it would delete them (see the corrected section above).
+      Owned by M5 slice 2.
 - [ ] Write the `PROFILE_BLOB_SOURCES` registry and its "every model with a
       pathname is listed" test **in M5's first commit**, before the first
       narration object is ever written.
-- [ ] Add `NARRATION_AUDIO` to M0's `RETENTION_POLICY` (life of the source
-      lesson), plus `VOICE_SAMPLE` and `VOICE_CONSENT_RECORDING` for M6. The
-      existing bijection test will fail until each windowed row has a job step,
-      which is the desired behaviour.
+- [ ] **Add `put()` to `StoragePort`.** Narration is the first server-side
+      write in this app; the port has no write method at all, and
+      `LocalFsStorage.put()` sits deliberately outside it. `lib/storage/vercel-blob.ts`
+      does not exist yet, so this adds one more method to what that file will
+      have to implement — worth recording on ADR-0003's follow-up list rather
+      than discovering during a deploy.
+- [ ] Add `NARRATION_AUDIO` to M0's `RETENTION_POLICY` (the plan proposes life
+      of the ACTIVE profile, matching `LESSON_CONTENT`; M0 owns the number),
+      plus `VOICE_SAMPLE` and `VOICE_CONSENT_RECORDING` for M6. Two tests will
+      fail until this is done, which is the desired behaviour: the bijection
+      test for a windowed key with no job step, and — since M4's review —
+      the schema-reading coverage test for **any** model with no classification
+      at all.
 - [ ] Name the TTS vendor in the §312.4 direct notice (M0 AC 12/13) and add a
       vendor assessment row (M0 AC 52) **before** the first narration request.
       That is an M0 edit, not an M5 one, and it is a hard precondition.

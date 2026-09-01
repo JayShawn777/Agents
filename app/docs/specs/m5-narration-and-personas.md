@@ -136,7 +136,28 @@ shape and makes no TTS call.
 12. **Given** a narration generation request, **when** the outbound request to the
     TTS provider is captured, **then** it carries the narration text and voice
     selection only — no student display name, no account email, no profile id, and
-    no identifier in the request metadata or the resulting object's pathname.
+    no identifier in the request metadata.
+
+    > **AMENDED by the owner, 2026-09-01.** This criterion used to end "...or the
+    > resulting object's pathname", which contradicted ADR-0015: narration
+    > objects live at `students/<profileId>/narration/<cacheKey>.mp3`, and that
+    > prefix is *how* M0's deletion guarantee works — "delete everything under
+    > this child's folder" needs the child's folder to exist.
+    >
+    > The clause was aimed at one risk — **an identifier reaching the vendor** —
+    > and that half is untouched and absolute: nothing about a child leaves this
+    > app except the sentence to be spoken. The pathname lives in our own
+    > private store and is never transmitted, so holding the literal reading
+    > would have weakened deletion to satisfy a rule written about a different
+    > threat.
+    >
+    > **The outbound half is now tested directly** rather than inferred: the
+    > provider module's request body is asserted to contain exactly the text and
+    > the voice id.
+
+    > **What this does NOT license.** The pathname may carry the opaque profile
+    > cuid and nothing else — no display name, no email, no grade, no lesson
+    > title. A cuid is a database key, not a fact about a child.
 
 ### Cues and synchronisation
 

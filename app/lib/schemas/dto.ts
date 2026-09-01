@@ -376,3 +376,80 @@ export type LessonDetailResponse = {
   /** The CURRENT version, or null before the first authoring run finishes. */
   version: LessonVersionDTO | null;
 };
+
+// ─────────────────────────── M5: narration ───────────────────────────
+
+/**
+ * The client-safe narration status. Mirrors the Prisma `NarrationStatus` enum
+ * through `lib/domain/enums`, which is the one seam where a database enum is
+ * allowed to reach the browser.
+ */
+export type NarrationStatusValue = "PENDING" | "GENERATING" | "READY" | "FAILED";
+
+/**
+ * One step's audio and its word timings.
+ *
+ * **Per step, not per lesson** — each step's drawing starts when its OWN file
+ * starts, which is what makes AC 15's "no cumulative drift, the last step as
+ * strictly as the first" structural rather than arithmetic.
+ */
+export type NarrationStepDTO = {
+  stepId: string;
+  stepIndex: number;
+  /** Running sum of steps 0..k-1. The lesson-relative offset (AC 13). */
+  startOffsetMs: number;
+  durationMs: number;
+  /**
+   * AC 11. A signed, expiring URL into OUR private store — never the vendor.
+   * Present only when the run is `READY`.
+   *
+   * **A bearer credential.** It must never be logged, put in an error report,
+   * or passed to `console.error`. Whoever holds it can fetch the audio.
+   */
+  audioUrl: string;
+  audioUrlExpiresAt: string;
+  /**
+   * ADR-0021. Word cues relative to THIS step's audio, not the lesson.
+   * Nothing renders them in M5 — AC 14 requires the data to exist; word-level
+   * highlighting is deliberately out of scope.
+   */
+  words: { text: string; startMs: number; endMs: number }[];
+};
+
+/**
+ * One narration run for one lesson script version.
+ *
+ * **What is deliberately absent, and must stay absent:** `providerVoiceId`,
+ * `ttsModelId`, `pathname`, `cacheKey`, `charactersBilled`, `failureCode` and
+ * `cacheHits`. Nothing in the browser needs any of them, and the voice id in
+ * particular is allowed to exist in exactly one place — a database row (AC 1).
+ */
+export type LessonNarrationDTO = {
+  id: string;
+  versionId: string;
+  status: NarrationStatusValue;
+  /** AC 19's "spoken by" label is built from this. */
+  persona: { id: string; slug: string; label: string } | null;
+  stepCount: number | null;
+  totalDurationMs: number | null;
+  /**
+   * From the allowlisted failure messages only, never a provider payload —
+   * M1 AC 24's rule, which M3's review confirmed the SDK can otherwise leak.
+   */
+  failureMessage: string | null;
+  /** Empty unless `READY`. */
+  steps: NarrationStepDTO[];
+};
+
+/** The persona picker's row. Carries no provider voice id, by AC 1. */
+export type PersonaDTO = {
+  id: string;
+  slug: string;
+  label: string;
+  description: string;
+  artworkId: string;
+};
+
+export type LessonNarrationResponse = {
+  narration: LessonNarrationDTO | null;
+};

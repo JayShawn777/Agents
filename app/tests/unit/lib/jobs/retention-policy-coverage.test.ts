@@ -106,6 +106,11 @@ const MODEL_RETENTION_KEY: Record<string, string> = {
   Lesson: "LESSON_CONTENT",
   LessonScriptVersion: "LESSON_CONTENT",
   LessonFlag: "LESSON_CONTENT",
+  // M5. The spoken lesson and its word timings. Derived from the lesson's own
+  // narration text — this app records no audio FROM a child, ever.
+  LessonNarration: "NARRATION_AUDIO",
+  LessonNarrationStep: "NARRATION_AUDIO",
+  NarrationAsset: "NARRATION_AUDIO",
   DirectNotice: "DIRECT_NOTICE",
   ParentalConsent: "CONSENT_FULL",
   ConsentAuditArtifact: "CONSENT_PSEUDONYM",
@@ -125,6 +130,11 @@ const MODELS_OUTSIDE_THE_POLICY: Record<string, string> = {
   VerificationToken: "Single-use magic-link token for the adult, deleted on redemption.",
   AdultAttestation: "The adult's own 18+ attestation, not data about a child.",
   ConsentVerificationChallenge: "Short-lived challenge in the adult's consent flow.",
+  // M5. App reference data: six named characters and the vendor voice id behind
+  // each. No student data of any kind — a Persona row is identical for every
+  // family, and a child's CHOICE of persona lives on StudentProfile, which is
+  // covered by PROFILE_FIELDS.
+  Persona: "App reference data — the tutor personas, identical for every family.",
 };
 
 describe("every Prisma model is classified against the retention policy", () => {
