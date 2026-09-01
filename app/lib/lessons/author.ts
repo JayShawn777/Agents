@@ -10,7 +10,7 @@ import { getAnthropicClient, MissingAnthropicApiKeyError } from "@/lib/ai/client
 import type { OutboundLearnerFacts } from "@/lib/ai/outbound";
 import { LessonScriptSchema } from "@/lib/lessons/script-schema";
 import { buildLessonUserPrompt, LESSON_PROMPT_VERSION, LESSON_SYSTEM_PROMPT } from "@/lib/lessons/prompt";
-import { deriveTimeline, validateScriptReferences } from "@/lib/lessons/validate";
+import { assertSpeakableNarration, deriveTimeline, validateScriptReferences } from "@/lib/lessons/validate";
 import { resolveSkill } from "@/lib/taxonomy";
 import type { LessonFailureCode } from "@/lib/errors";
 import {
@@ -141,6 +141,20 @@ export async function authorLesson(versionId: string): Promise<AuthorLessonResul
     if (issues.length > 0) {
       console.error(
         `authorLesson(${versionId}): script failed referential validation — ${issues.map((i) => i.code).join(", ")}`,
+      );
+      return finalizeFailed(version.id, version.lessonId, "INVALID_SCRIPT");
+    }
+
+    // M5 plan §8.1. Measured, not guessed: LaTeX in narration synthesises
+    // BELOW the plain-prose rate, which means it is being swallowed rather
+    // than spoken — a fluent, confidently WRONG explanation. Mapped to the
+    // SAME failure code as a referential violation: both mean the same thing
+    // to a child (the lesson would not have made sense), and both are worth
+    // a regeneration rather than an unspeakable line reaching a TTS vendor.
+    const speakableIssues = assertSpeakableNarration(script);
+    if (speakableIssues.length > 0) {
+      console.error(
+        `authorLesson(${versionId}): narration failed the speakable guard — ${speakableIssues.length} step(s)`,
       );
       return finalizeFailed(version.id, version.lessonId, "INVALID_SCRIPT");
     }

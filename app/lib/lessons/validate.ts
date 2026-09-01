@@ -3,6 +3,7 @@ import {
   type DrawOp,
   type LessonScript,
 } from "@/lib/lessons/script-schema";
+import { isSpeakableNarration } from "@/lib/narration/speakable";
 
 /**
  * The post-parse check ADR-0014's follow-up requires, and the reason a zod pass
@@ -76,6 +77,47 @@ export function validateScriptReferences(script: LessonScript): ScriptValidation
     });
   });
 
+  return issues;
+}
+
+export type SpeakableViolation = { stepIndex: number; detail: string };
+
+/**
+ * M5 plan §8.1. A step whose narration still carries LaTeX markup is a valid
+ * M4 script — `LessonStepSchema.narration` has no opinion on the CONTENT of
+ * the text, only its length — that a TTS vendor mangles into a fluent,
+ * confidently WRONG explanation of a child's homework. See
+ * `lib/narration/speakable.ts` for the measured finding this guards against.
+ *
+ * **Called ONLY from the authoring path** (`lib/lessons/author.ts`), and
+ * deliberately never folded into `LessonStepSchema` itself. `toLessonVersionDTO`
+ * re-parses the stored `script` JSON with `safeParse` and returns
+ * `script: null` on failure — so tightening the SHARED schema would not merely
+ * reject new scripts, it would turn every already-stored M4 lesson whose
+ * narration contains a backslash into a lesson with no script at all. That is
+ * an outage, not a stricter validation, and it would be invisible in a diff
+ * (plan §8.1 names this explicitly). A lesson authored before this guard
+ * existed instead surfaces the same failure mode later and more narrowly, as
+ * `NARRATION_FAILURE_CODES.UNSPEAKABLE` on the narration run alone — the
+ * lesson itself, and every OTHER step's narration, is untouched.
+ *
+ * Returns issues rather than throwing — the same convention
+ * `validateScriptReferences` above uses in this file, despite the "assert" in
+ * this function's name (kept because that is the name the plan and the
+ * authoring call site use): the caller turns a non-empty return into
+ * `INVALID_SCRIPT`, and a thrown error inside a validator is harder to
+ * attribute than a returned list.
+ */
+export function assertSpeakableNarration(script: LessonScript): SpeakableViolation[] {
+  const issues: SpeakableViolation[] = [];
+  script.steps.forEach((step, stepIndex) => {
+    if (!isSpeakableNarration(step.narration)) {
+      issues.push({
+        stepIndex,
+        detail: `step ${stepIndex}'s narration contains LaTeX markup, which a TTS vendor swallows rather than reads aloud`,
+      });
+    }
+  });
   return issues;
 }
 

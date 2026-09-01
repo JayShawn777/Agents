@@ -181,6 +181,33 @@ describe("failure classification", () => {
     expect(await authorLesson("ver_1")).toEqual({ status: "FAILED", failureCode: "INVALID_SCRIPT" });
   });
 
+  /**
+   * M5 plan §8.1. `assertSpeakableNarration` runs from THIS path only —
+   * `authorLesson`, right after the referential check — and never as part of
+   * `LessonStepSchema` itself: a schema-level rejection would apply to every
+   * ALREADY-STORED M4 script on re-parse too (`toLessonVersionDTO`'s
+   * `safeParse` → `script: null` on failure), turning a lesson that already
+   * has a backslash in its narration into a lesson with no script at all.
+   * Measured, not guessed: LaTeX synthesises BELOW the plain-prose rate
+   * (`docs/research/m5-narration-measurement.md`, Part 2, N3) — it is
+   * swallowed by the vendor, not read aloud.
+   */
+  it("rejects a freshly-authored script whose narration still carries LaTeX markup", async () => {
+    parseMock.mockResolvedValue(
+      response({
+        parsed_output: {
+          ...SCRIPT,
+          steps: [{ ...SCRIPT.steps[0], narration: "This is \\frac{1}{4} of the whole." }, ...SCRIPT.steps.slice(1)],
+        },
+      }),
+    );
+
+    expect(await authorLesson("ver_1")).toEqual({ status: "FAILED", failureCode: "INVALID_SCRIPT" });
+    const final = dbMock.lessonScriptVersion.update.mock.calls.at(-1)?.[0].data;
+    expect(final.status).toBe("FAILED");
+    expect(final.script).not.toEqual(SCRIPT);
+  });
+
   it("maps typed SDK errors most-specific-first", async () => {
     const cases: [Error, string][] = [
       [new MissingAnthropicApiKeyError(), "INTERNAL"],

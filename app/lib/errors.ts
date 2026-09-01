@@ -342,3 +342,32 @@ export const LESSON_FAILURE_MESSAGES: Record<LessonFailureCode, string> = {
   UPSTREAM: "A service we depend on is temporarily unavailable. Please try again shortly.",
   INTERNAL: "Something went wrong on our end. Please try again.",
 };
+
+// ─────────────────────────── M5: narration failures ───────────────────────────
+
+/**
+ * `LessonNarration.failureCode` is never returned verbatim — the same
+ * allowlist pattern as `LESSON_FAILURE_CODES` (M5 AC 10's equivalent). A
+ * narration run failing is a SOFTER failure than a lesson authoring failure:
+ * AC 17 says the lesson still plays, silently, with captions, so nothing
+ * here needs to be alarming.
+ *
+ * `UNSPEAKABLE` is M5-specific: the source script's narration still carries
+ * LaTeX markup a TTS vendor swallows into a fluent, confidently WRONG
+ * explanation (`lib/narration/speakable.ts`, measured in
+ * `docs/research/m5-narration-measurement.md` Part 2, N3). Reachable in
+ * practice only for a lesson authored before `assertSpeakableNarration`
+ * existed, or a script written by a bypassing path — a NEW lesson can never
+ * produce it, because the authoring guard maps the same underlying condition
+ * to `INVALID_SCRIPT` and regenerates before a narration row ever exists.
+ */
+export const NARRATION_FAILURE_CODES = ["UNSPEAKABLE", "TIMEOUT", "UPSTREAM", "INTERNAL"] as const;
+
+export type NarrationFailureCode = (typeof NARRATION_FAILURE_CODES)[number];
+
+export const NARRATION_FAILURE_MESSAGES: Record<NarrationFailureCode, string> = {
+  UNSPEAKABLE: "We couldn't add a spoken voice to this lesson. It will still play with captions.",
+  TIMEOUT: "Narration is taking longer than expected. This lesson will still play with captions for now.",
+  UPSTREAM: "The narration voice isn't available right now. This lesson will still play with captions.",
+  INTERNAL: "Something went wrong preparing the narration. This lesson will still play with captions.",
+};

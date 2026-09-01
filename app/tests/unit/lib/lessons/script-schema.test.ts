@@ -7,7 +7,7 @@ import {
   referencedIds,
   type LessonScript,
 } from "@/lib/lessons/script-schema";
-import { validateScriptReferences, deriveTimeline } from "@/lib/lessons/validate";
+import { assertSpeakableNarration, validateScriptReferences, deriveTimeline } from "@/lib/lessons/validate";
 import { LESSON_MAX_STEPS, LESSON_MIN_STEPS, NARRATION_CHAR_CAP } from "@/lib/config";
 
 /** `lib/lessons/script-schema.ts` + `validate.ts` — ADR-0014 §2. */
@@ -188,6 +188,43 @@ describe("referential integrity (the check zod cannot do)", () => {
       }),
     );
     expect(validateScriptReferences(bad).map((issue) => issue.code)).toEqual(["SELF_REFERENCE"]);
+  });
+});
+
+describe("the speakable guard (M5 plan §8.1) — authoring-path only, NOT a schema constraint", () => {
+  it("passes a script whose narration is plain prose, even with LaTeX in the `write` op's latex field", () => {
+    // `script()`'s `write` ops already carry LaTeX in `latex` — that field is
+    // never spoken, so its presence must not trip the guard.
+    expect(assertSpeakableNarration(LessonScriptSchema.parse(script()))).toEqual([]);
+  });
+
+  it("catches narration that still carries LaTeX markup", () => {
+    const bad = LessonScriptSchema.parse(
+      script({
+        steps: [
+          step("s1", [{ kind: "label", id: "a", text: "x", at: { x: 0.1, y: 0.1 } }], "This is \\frac{1}{4} of the whole."),
+          step("s2", [{ kind: "label", id: "b", text: "x", at: { x: 0.1, y: 0.1 } }]),
+          step("s3", [{ kind: "label", id: "c", text: "x", at: { x: 0.1, y: 0.1 } }]),
+        ] as never,
+      }),
+    );
+    const issues = assertSpeakableNarration(bad);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].stepIndex).toBe(0);
+  });
+
+  /** N3's measured finding: bare operators and coefficients are spoken correctly and must NOT be flagged. */
+  it("does not flag bare symbols and operators", () => {
+    const ok = LessonScriptSchema.parse(
+      script({
+        steps: [
+          step("s1", [{ kind: "label", id: "a", text: "x", at: { x: 0.1, y: 0.1 } }], "solve for x: 3x plus 5 equals 20"),
+          step("s2", [{ kind: "label", id: "b", text: "x", at: { x: 0.1, y: 0.1 } }]),
+          step("s3", [{ kind: "label", id: "c", text: "x", at: { x: 0.1, y: 0.1 } }]),
+        ] as never,
+      }),
+    );
+    expect(assertSpeakableNarration(ok)).toEqual([]);
   });
 });
 

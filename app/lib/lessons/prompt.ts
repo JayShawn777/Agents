@@ -65,7 +65,7 @@ Every operation gets an \`id\` — a short lowercase handle like \`sum\` or \`st
 A lesson is between ${LESSON_MIN_STEPS} and ${LESSON_MAX_STEPS} steps. Each step has:
 
 - \`id\` — a short lowercase handle.
-- \`narration\` — what a narrator says over this step. At most ${NARRATION_CHAR_CAP} characters. **It must make sense read on its own, with no canvas at all**, because some children read the lesson instead of watching it. So write "we add the two numerators, one plus one" — never "as you can see here" or "this bit".
+- \`narration\` — what a narrator says over this step. At most ${NARRATION_CHAR_CAP} characters. **It must make sense read on its own, with no canvas at all**, because some children read the lesson instead of watching it. So write "we add the two numerators, one plus one" — never "as you can see here" or "this bit". **This text is spoken aloud by a computer voice, not shown on the canvas** — write the words exactly as a person would say them out loud, and never use LaTeX or mathematical notation here: write "one quarter", never \`\\frac{1}{4}\`; write "x squared", never \`x^2\`.
 - \`ops\` — 1 to ${LESSON_MAX_OPS_PER_STEP} drawing operations.
 - \`durationMs\` — how long this step is on screen, between ${LESSON_MIN_STEP_MS} and ${LESSON_MAX_STEP_MS}. Match it to how long the narration takes to say, plus a beat.
 

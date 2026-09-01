@@ -1,0 +1,24 @@
+{
+  "_provenance": "A REAL response, not hand-invented (retro lesson 20). Captured 2026-09-01 by POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps — the exact endpoint and wire shape lib/narration/provider.ts calls — for the AC 14 fixture line, against voice id Xb7hH8MSUJpSbSDYk0k2 (Alice / professor-love, the seeded default persona's voice) and model eleven_multilingual_v2 (NARRATION_MODEL_ID). This supplements docs/research/m5-narration-measurement.md Part 2 N2/N4, which ran the same line against a different voice and reported the finding but did not persist the raw arrays anywhere in the repo.",
+  "text": "solve for x: 3x plus 5 equals 20",
+  "voiceId": "Xb7hH8MSUJpSbSDYk0k2",
+  "modelId": "eleven_multilingual_v2",
+  "alignment": {
+    "characters": [
+      "s", "o", "l", "v", "e", " ", "f", "o", "r", " ", "x", ":", " ", "3", "x", " ",
+      "p", "l", "u", "s", " ", "5", " ", "e", "q", "u", "a", "l", "s", " ", "2", "0"
+    ],
+    "character_start_times_seconds": [
+      0, 0.104, 0.255, 0.325, 0.383, 0.464, 0.522, 0.592, 0.639, 0.685, 0.859, 1.068,
+      1.115, 1.324, 1.602, 1.672, 1.718, 1.753, 1.8, 1.869, 1.927, 2.009, 2.252, 2.368,
+      2.461, 2.519, 2.577, 2.612, 2.682, 2.74, 2.81, 2.984
+    ],
+    "character_end_times_seconds": [
+      0.104, 0.255, 0.325, 0.383, 0.464, 0.522, 0.592, 0.639, 0.685, 0.859, 1.068, 1.115,
+      1.324, 1.602, 1.672, 1.718, 1.753, 1.8, 1.869, 1.927, 2.009, 2.252, 2.368, 2.461,
+      2.519, 2.577, 2.612, 2.682, 2.74, 2.81, 2.984, 3.622
+    ]
+  },
+  "normalizedAlignmentCharactersJoined": " solve for x: 3x plus 5 equals 20 ",
+  "audioBytesLength": 58976
+}
