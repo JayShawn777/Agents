@@ -20,6 +20,10 @@ const dbMock = {
       vi.fn<(args: { where: { studentProfileId: string; status?: { not: string } } }) => Promise<Array<{ pathname: string }>>>(),
     updateMany: vi.fn(),
   },
+  // M5 §7.2 — see tests/unit/lib/deletion/service.test.ts's own comment.
+  narrationAsset: {
+    findMany: vi.fn<(args: { where: { studentProfileId: string } }) => Promise<Array<{ pathname: string }>>>(),
+  },
   parentalConsent: {
     findMany: vi.fn(async () => [] as unknown[]),
     deleteMany: vi.fn(),
@@ -52,6 +56,7 @@ function withDelSpy(storage: LocalFsStorage): StoragePort & { calls: string[][] 
       calls.push(pathnames);
       await storage.del(pathnames);
     },
+    put: storage.put.bind(storage),
     listAll: storage.listAll.bind(storage),
   };
   return Object.assign(port, { calls });
@@ -67,6 +72,7 @@ function withFailingDel(storage: LocalFsStorage): StoragePort {
     del: async () => {
       throw new Error("simulated provider outage");
     },
+    put: storage.put.bind(storage),
     listAll: storage.listAll.bind(storage),
   };
 }
@@ -77,6 +83,7 @@ let real: LocalFsStorage;
 beforeEach(async () => {
   vi.clearAllMocks();
   dbMock.upload.findMany.mockResolvedValue([]);
+  dbMock.narrationAsset.findMany.mockResolvedValue([]);
   dbMock.parentalConsent.findMany.mockResolvedValue([]);
   dbMock.user.findMany.mockResolvedValue([]);
   rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "deletion-service-local-fs-"));

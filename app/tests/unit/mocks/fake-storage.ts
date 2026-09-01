@@ -33,6 +33,13 @@ export function createFakeStorage(
     del: vi.fn(async (pathnames: string[]) => {
       deletedBatches.push(pathnames);
     }),
+    // M5 §6. Not exercised by the jobs/deletion suites this mock originally
+    // served (none of them write objects) — a minimal, in-memory-consistent
+    // stub so `FakeStoragePort` keeps satisfying `StoragePort` structurally.
+    put: vi.fn(async (pathname: string, data: ArrayBuffer | Uint8Array) => ({
+      pathname,
+      sizeBytes: data.byteLength,
+    })),
     listAll: vi.fn(function listAll(prefix?: string) {
       async function* generate() {
         for (const obj of objects) {

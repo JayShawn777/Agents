@@ -19,10 +19,11 @@ import { ORPHAN_THRESHOLD_MINUTES, GRANT_PRUNE_AFTER_HOURS } from "@/lib/config"
  *
  * Three independent things happen per run, matching ADR-0007 §2 exactly:
  *
- *   1. Page through every object in the store. Any pathname with NO
- *      matching `Upload` row, and older than `ORPHAN_THRESHOLD_MINUTES`,
- *      is an orphan and is deleted from storage. An object that DOES have a
- *      row is left untouched, however old.
+ *   1. Page through every object in the store. Any pathname NO registered
+ *      `BLOB_CLAIMANTS` entry claims, and older than
+ *      `ORPHAN_THRESHOLD_MINUTES`, is an orphan and is deleted from
+ *      storage. An object that ANY claimant recognises is left untouched,
+ *      however old.
  *   2. Any `Upload` row still `PENDING` past the same threshold is flipped
  *      to `FAILED` — the confirm step never happened and never will, so the
  *      student should see a failed upload with a retry rather than a
@@ -31,9 +32,27 @@ import { ORPHAN_THRESHOLD_MINUTES, GRANT_PRUNE_AFTER_HOURS } from "@/lib/config"
  *      deleted — its only job was bounding token issuance for the hourly
  *      cap (M1 AC 17), and it has long since stopped mattering for that.
  *
- * The threshold on (1) exists because an upload legitimately in flight has
- * no `Upload` row yet — the object exists in the store before the confirm
- * request that creates the row ever arrives.
+ * The threshold on (1) exists because an object legitimately in flight has
+ * no owning row yet — e.g. an upload's bytes land in the store before the
+ * confirm request that creates its `Upload` row ever arrives.
+ *
+ * ## M5 §7.1 — the finding this file's history records
+ *
+ * This job used to enumerate the WHOLE store and treat any pathname with no
+ * matching `Upload` row as an orphan. That is correct for the upload prefix
+ * and actively destructive for any other one: M5 writes narration audio
+ * under `students/<id>/narration/...`, which has no `Upload` row by
+ * construction, so the first cron run past `ORPHAN_THRESHOLD_MINUTES` after
+ * the first narration object existed would have deleted every narration
+ * object in the store while the `NarrationAsset` rows survived pointing at
+ * nothing — every lesson then plays a 404, silently, with nothing failing
+ * loudly enough to notice.
+ *
+ * `BLOB_CLAIMANTS` below is the fix: a registry of "does any OWNER claim
+ * this pathname", not a single hard-coded table. An object is an orphan
+ * only if NO claimant returns it. Adding a third blob-writing model (M6's
+ * voice sample, most likely) is a new entry in this array, not an edit to
+ * the orphan logic.
  */
 
 export type ReconcileBlobsResult = {
@@ -44,13 +63,25 @@ export type ReconcileBlobsResult = {
 };
 
 /**
- * How many pathnames from `storage.listAll()` are batched into one
- * `db.upload.findMany({ where: { pathname: { in: ... } } })` lookup
- * (ADR-0007 §2: "pages through storage.listAll(), batches pathnames").
- * Implementation chunking, not a compliance tunable — deliberately not in
- * `lib/config.ts`.
+ * How many pathnames from `storage.listAll()` are batched into one round of
+ * `BLOB_CLAIMANTS` lookups (ADR-0007 §2: "pages through storage.listAll(),
+ * batches pathnames"). Implementation chunking, not a compliance tunable —
+ * deliberately not in `lib/config.ts`.
  */
 const LIST_BATCH_SIZE = 500;
+
+/**
+ * Every model that owns blob pathnames in this store, each answering "of
+ * these pathnames, which do you hold a row for" as a batched
+ * `findMany({ where: { pathname: { in: ... } } })` — the same query shape
+ * the single-table lookup always used, just one entry per owner instead of
+ * one hard-coded table. See the class docstring above (M5 §7.1) for why
+ * this exists as a registry rather than a second special case.
+ */
+const BLOB_CLAIMANTS: ReadonlyArray<(pathnames: string[]) => Promise<Array<{ pathname: string }>>> = [
+  (pathnames) => db.upload.findMany({ where: { pathname: { in: pathnames } }, select: { pathname: true } }),
+  (pathnames) => db.narrationAsset.findMany({ where: { pathname: { in: pathnames } }, select: { pathname: true } }),
+];
 
 export async function reconcileBlobs(storage: StoragePort, clock: Clock): Promise<ReconcileBlobsResult> {
   const now = clock();
@@ -63,11 +94,9 @@ export async function reconcileBlobs(storage: StoragePort, clock: Clock): Promis
   const flushBatch = async (): Promise<void> => {
     if (batch.length === 0) return;
     const pathnames = batch.map((obj) => obj.pathname);
-    const known = await db.upload.findMany({
-      where: { pathname: { in: pathnames } },
-      select: { pathname: true },
-    });
-    const knownPathnames = new Set(known.map((upload) => upload.pathname));
+    // An object is an orphan only if NO claimant claims it (M5 §7.1).
+    const claimedByAnyOwner = await Promise.all(BLOB_CLAIMANTS.map((claim) => claim(pathnames)));
+    const knownPathnames = new Set(claimedByAnyOwner.flat().map((row) => row.pathname));
 
     const orphans = batch
       .filter((obj) => !knownPathnames.has(obj.pathname))

@@ -50,8 +50,19 @@ import type { ClientUploadPolicy, StoragePort } from "@/lib/storage/port";
  * file bytes even in production (they carry only metadata; bytes travel
  * browser-to-CDN out of band), so no `StoragePort` implementation can move
  * bytes through this method alone. This adapter therefore also exposes
- * `put()` — NOT part of `StoragePort` — as the actual local write path, for
- * tests and for a future local-only upload route to call directly.
+ * `put()` as the actual local write path, for tests and for a future
+ * local-only upload route to call directly.
+ *
+ * ## `put()` — now part of `StoragePort` (M5 §6)
+ *
+ * M5 is the first feature to write an object server-side (narration audio
+ * from a vendor call), so `put` was promoted onto the port. This adapter's
+ * own signature is deliberately wider than the port's — it keeps an extra
+ * `options.uploadedAt` parameter, present only so tests can simulate an
+ * object's age (e.g. `ORPHAN_THRESHOLD_MINUTES` boundary tests) without
+ * sleeping; production code never passes it and the port's callers cannot
+ * see it. A method may always accept more optional parameters than its
+ * interface declares.
  */
 
 const objectMetadataSchema = z.object({
@@ -156,10 +167,12 @@ export class LocalFsStorage implements StoragePort {
   }
 
   /**
-   * The actual local write path. NOT part of `StoragePort` — see the class
-   * docstring for why the real protocol's `handleClientUpload` cannot carry
-   * bytes. Used by `tests/unit/lib/storage/local-fs.test.ts` to seed
-   * objects, and available to a future local-only upload route.
+   * The actual local write path — now also `StoragePort.put` (M5 §6). See
+   * the class docstring for why the real protocol's `handleClientUpload`
+   * cannot carry bytes, and for why this signature is wider than the
+   * port's. Used by `tests/unit/lib/storage/local-fs.test.ts` to seed
+   * objects, by narration generation (M5 slice 5) to write audio, and
+   * available to a future local-only upload route.
    */
   async put(
     pathname: string,

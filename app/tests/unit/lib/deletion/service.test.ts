@@ -28,6 +28,12 @@ const dbMock = {
       vi.fn<(args: { where: { studentProfileId: string; status?: { not: string } } }) => Promise<Array<{ pathname: string }>>>(),
     updateMany: vi.fn(),
   },
+  // M5 §7.2 — the second registered `PROFILE_BLOB_SOURCES` entry. A model
+  // whose rows are scoped to a profile and own a blob pathname, read
+  // unconditionally (no status column, no filter) just like `upload` is.
+  narrationAsset: {
+    findMany: vi.fn<(args: { where: { studentProfileId: string } }) => Promise<Array<{ pathname: string }>>>(),
+  },
   parentalConsent: {
     findMany: vi.fn(async () => [] as unknown[]),
     deleteMany: vi.fn(),
@@ -57,12 +63,14 @@ function fakeStorage(overrides?: { del?: (pathnames: string[]) => Promise<void> 
     readBytes: vi.fn(),
     del: vi.fn(overrides?.del ?? (async () => {})),
     listAll: vi.fn(),
+    put: vi.fn(),
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   dbMock.upload.findMany.mockResolvedValue([]);
+  dbMock.narrationAsset.findMany.mockResolvedValue([]);
   dbMock.parentalConsent.findMany.mockResolvedValue([]);
   dbMock.user.findMany.mockResolvedValue([]);
 });
@@ -331,5 +339,69 @@ describe("deleteStudentData — consent pseudonymisation (ADR-0007 §6, AC 50)",
     expect(dbMock.parentalConsent.deleteMany).not.toHaveBeenCalled();
     expect(dbMock.deletionAudit.create).toHaveBeenCalledTimes(1);
     expect(dbMock.studentProfile.delete).toHaveBeenCalledWith({ where: { id: "sp_1" } });
+  });
+});
+
+/**
+ * M5 §7.2. Before `PROFILE_BLOB_SOURCES`, step 1 read only `db.upload`, so a
+ * profile whose only blobs were narration audio (ADR-0015's per-profile
+ * cache) had those objects left behind in storage forever — invisible to
+ * every test that only checked the DATABASE afterward, because the
+ * `NarrationAsset` ROWS still cascade away with the `StudentProfile` delete
+ * regardless. These tests assert what `storage.del()` is actually called
+ * with, which is the only place the old gap was visible.
+ */
+describe("deleteStudentData — narration blobs (M5 §7.2, AC 20 / M0 AC 46-48)", () => {
+  it("reads NarrationAsset pathnames alongside Upload pathnames and deletes both from storage", async () => {
+    dbMock.upload.findMany.mockResolvedValue([{ pathname: "students/sp_1/uploads/a.jpg" }]);
+    dbMock.narrationAsset.findMany.mockResolvedValue([
+      { pathname: "students/sp_1/narration/one.mp3" },
+      { pathname: "students/sp_1/narration/two.mp3" },
+    ]);
+    const storage = fakeStorage();
+
+    const result = await deleteStudentData("sp_1", "PROFILE_DELETED", storage);
+
+    expect(result).toEqual({ ok: true });
+    expect(storage.del).toHaveBeenCalledTimes(1);
+    const [deletedPathnames] = storage.del.mock.calls[0] as [string[]];
+    expect(new Set(deletedPathnames)).toEqual(
+      new Set([
+        "students/sp_1/uploads/a.jpg",
+        "students/sp_1/narration/one.mp3",
+        "students/sp_1/narration/two.mp3",
+      ]),
+    );
+  });
+
+  it("deletes narration blobs even when the profile has zero Upload rows", async () => {
+    dbMock.upload.findMany.mockResolvedValue([]);
+    dbMock.narrationAsset.findMany.mockResolvedValue([{ pathname: "students/sp_1/narration/only.mp3" }]);
+    const storage = fakeStorage();
+
+    const result = await deleteStudentData("sp_1", "PROFILE_DELETED", storage);
+
+    expect(result).toEqual({ ok: true });
+    expect(storage.del).toHaveBeenCalledWith(["students/sp_1/narration/only.mp3"]);
+    // No Upload rows means no SOURCE_DELETED mark to write — see the
+    // docstring on `deleteStudentData` for why NarrationAsset has no
+    // equivalent mark.
+    expect(dbMock.upload.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("a storage failure deleting ONLY narration blobs still returns STORAGE_FAILURE and destroys no row", async () => {
+    dbMock.upload.findMany.mockResolvedValue([]);
+    dbMock.narrationAsset.findMany.mockResolvedValue([{ pathname: "students/sp_1/narration/only.mp3" }]);
+    const storage = fakeStorage({
+      del: async () => {
+        throw new Error("simulated provider outage");
+      },
+    });
+
+    const result = await deleteStudentData("sp_1", "PROFILE_DELETED", storage);
+
+    expect(result).toEqual({ ok: false, code: "STORAGE_FAILURE" });
+    expect(dbMock.$transaction).not.toHaveBeenCalled();
+    expect(dbMock.studentProfile.delete).not.toHaveBeenCalled();
   });
 });

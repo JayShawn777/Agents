@@ -19,6 +19,13 @@ const dbMock = {
     findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
     updateMany: vi.fn(async () => ({ count: 0 })),
   },
+  // M5 §7.1 — reconcileBlobs's second BLOB_CLAIMANTS entry. Never seeded
+  // with a row in this file: every fixture here is under the uploads
+  // prefix, so this claimant should always come back empty and never be
+  // the reason an object survives.
+  narrationAsset: {
+    findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
+  },
   uploadTokenGrant: {
     deleteMany: vi.fn(async () => ({ count: 0 })),
   },
@@ -47,6 +54,7 @@ function withDelSpy(storage: LocalFsStorage): StoragePort & { deletedBatches: st
       deletedBatches.push(pathnames);
       await storage.del(pathnames);
     },
+    put: storage.put.bind(storage),
     listAll: storage.listAll.bind(storage),
   };
   return Object.assign(port, { deletedBatches });
@@ -59,6 +67,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   dbMock.upload.findMany.mockResolvedValue([]);
   dbMock.upload.updateMany.mockResolvedValue({ count: 0 });
+  dbMock.narrationAsset.findMany.mockResolvedValue([]);
   dbMock.uploadTokenGrant.deleteMany.mockResolvedValue({ count: 0 });
   rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "reconcile-blobs-local-fs-"));
   real = new LocalFsStorage(rootDir);

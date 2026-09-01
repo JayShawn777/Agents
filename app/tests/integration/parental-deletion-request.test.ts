@@ -86,6 +86,9 @@ describe("deleteStudentData(kind: PARENTAL_DELETION_REQUEST) against the real da
       del: async () => {
         throw new Error("del() should not be called when there are no Upload rows");
       },
+      put: async () => {
+        throw new Error("not used by this test");
+      },
       listAll: async function* () {
         // no-op
       },

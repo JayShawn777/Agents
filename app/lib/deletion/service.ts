@@ -70,7 +70,67 @@ import { CONSENT_AUDIT_RETENTION_DAYS } from "@/lib/config";
  * `StoragePort` implementation exists yet (pending B15,
  * `lib/storage/vercel-blob.ts`). This also makes the ordering above
  * unit-testable against a fake (`tests/unit/lib/deletion/service.test.ts`).
+ *
+ * ## M5 §7.2 — step 1 used to read only `Upload`
+ *
+ * AC 20 and M0 AC 46/48 promise "delete everything for this child", and
+ * narration audio (`NarrationAsset`, ADR-0015) is data about that child —
+ * generated from their lesson, cached under their own profile prefix. Step
+ * 1 read only `db.upload.findMany` and so left every narration blob behind
+ * on every deletion, undetected because the `NarrationAsset` ROWS still
+ * cascade away with the profile (`onDelete: Cascade` in the schema) — only
+ * the blobs in the store were ever missed, which is invisible to any test
+ * that only checks the database afterward.
+ *
+ * `PROFILE_BLOB_SOURCES` is the fix, and it is a registry rather than a
+ * second hard-coded read for the same reason `BLOB_CLAIMANTS`
+ * (`lib/jobs/reconcile-blobs.ts`) is one: `tests/unit/lib/deletion/
+ * blob-sources.test.ts` reads `schema.prisma` and fails if a model with a
+ * `pathname` field and a `studentProfileId` field is missing from this
+ * array, so the next blob-writing model (M6's voice sample) is a
+ * registration, not a rediscovery of this same gap.
  */
+
+/**
+ * Every model whose rows are scoped to a `StudentProfile` AND own a blob
+ * pathname in storage. `deleteStudentData`'s step 1 unions the pathnames
+ * from every source here — never just `Upload` — before calling
+ * `storage.del()`. See `tests/unit/lib/deletion/blob-sources.test.ts` for
+ * the mechanism that keeps this list complete.
+ */
+export const PROFILE_BLOB_SOURCES = [
+  { model: "upload", where: (studentProfileId: string) => ({ studentProfileId }) },
+  { model: "narrationAsset", where: (studentProfileId: string) => ({ studentProfileId }) },
+] as const;
+
+type ProfileBlobSourceModel = (typeof PROFILE_BLOB_SOURCES)[number]["model"];
+
+/**
+ * Runs every registered `PROFILE_BLOB_SOURCES` query and returns each
+ * source's own pathnames, keyed by model name — driven by the manifest
+ * itself, not a hand-written call per model, so adding a source to the
+ * array is the whole change (M5 §7.2). Prisma's generated client has no
+ * shared "model delegate" type that spans arbitrary models generically, so
+ * this indexes `db` by the manifest's own literal model name and casts to
+ * the minimal shape every source needs
+ * (`findMany({ where, select: { pathname: true } })`); the manifest's
+ * completeness is what `tests/unit/lib/deletion/blob-sources.test.ts`
+ * guards, not this cast.
+ */
+async function readProfileBlobPathnamesBySource(
+  studentProfileId: string,
+): Promise<Record<ProfileBlobSourceModel, string[]>> {
+  const entries = await Promise.all(
+    PROFILE_BLOB_SOURCES.map(async (source) => {
+      const client = db[source.model] as unknown as {
+        findMany: (args: { where: unknown; select: { pathname: true } }) => Promise<Array<{ pathname: string }>>;
+      };
+      const rows = await client.findMany({ where: source.where(studentProfileId), select: { pathname: true } });
+      return [source.model, rows.map((row) => row.pathname)] as const;
+    }),
+  );
+  return Object.fromEntries(entries) as Record<ProfileBlobSourceModel, string[]>;
+}
 
 export type DeleteStudentDataResult = { ok: true } | { ok: false; code: "STORAGE_FAILURE" };
 
@@ -79,26 +139,32 @@ export async function deleteStudentData(
   kind: DeletionKind,
   storage: StoragePort,
 ): Promise<DeleteStudentDataResult> {
-  // Step 1 — read every pathname for this profile, unfiltered by `status`.
-  // See the docstring above: filtering this query the same way step 2 marks
-  // rows is the bug this function once had (orphans blobs on retry).
-  // `storage.del()` is required to tolerate an already-gone object, so
-  // reading the full set on every call — including on a retry — is safe.
-  const uploads = await db.upload.findMany({
-    where: { studentProfileId },
-    select: { pathname: true },
-  });
-  const pathnames = Array.from(new Set(uploads.map((upload) => upload.pathname)));
+  // Step 1 — read every pathname for this profile, from every registered
+  // blob source (M5 §7.2: `Upload` alone missed narration audio), unfiltered
+  // by any per-source status. See the docstring above: filtering this query
+  // the same way step 2 marks `Upload` rows is the bug this function once
+  // had for uploads (orphans blobs on retry) — `storage.del()` is required
+  // to tolerate an already-gone object, so reading the full set on every
+  // call, including on a retry, is safe for every source.
+  const bySource = await readProfileBlobPathnamesBySource(studentProfileId);
+  const uploadPathnames = bySource.upload;
+  const pathnames = Array.from(new Set(Object.values(bySource).flat()));
 
-  if (pathnames.length > 0) {
+  if (uploadPathnames.length > 0) {
     // Step 2 — mark + commit BEFORE the blob deletion call, so a reader in
     // between sees an honest "source file removed" rather than a live
-    // upload whose bytes are already gone (ADR-0007 §1).
+    // upload whose bytes are already gone (ADR-0007 §1). `NarrationAsset`
+    // has no analogous status column and no equivalent "still visible while
+    // deletion is in flight" reader to protect — its rows only ever
+    // disappear via the `StudentProfile` cascade below, so there is nothing
+    // to mark for it.
     await db.upload.updateMany({
       where: { studentProfileId, status: { not: "SOURCE_DELETED" } },
       data: { status: "SOURCE_DELETED", sourceDeletedAt: new Date() },
     });
+  }
 
+  if (pathnames.length > 0) {
     // Step 3.
     try {
       await storage.del(pathnames);

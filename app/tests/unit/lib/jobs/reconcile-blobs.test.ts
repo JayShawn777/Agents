@@ -3,18 +3,29 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeStorage } from "@/tests/unit/mocks/fake-storage";
 
 /**
- * `lib/jobs/reconcile-blobs.ts` (B22, endpoint 24, ADR-0007 §2).
+ * `lib/jobs/reconcile-blobs.ts` (B22, endpoint 24, ADR-0007 §2; M5 §7.1).
  *
  * The load-bearing property this suite proves: the job finds orphans by
- * enumerating the FAKE STORE (`storage.listAll()`), never by querying
- * `Upload` rows outward — an object the fake store returns with no matching
- * row is exactly the case a database-driven sweep could never see.
+ * enumerating the FAKE STORE (`storage.listAll()`), never by querying rows
+ * outward — an object the fake store returns with no matching row is
+ * exactly the case a database-driven sweep could never see.
+ *
+ * `dbMock.narrationAsset` exists because `BLOB_CLAIMANTS` now has TWO
+ * entries, not one — the M5 finding this file's own docstring records: a
+ * store-wide sweep that only asked `Upload` would have deleted every
+ * narration object on its first run past the threshold. The narration
+ * describe-block below is the regression test for that finding, run against
+ * the UNFIXED single-claimant behaviour first (see its comment) before the
+ * fix, per the retro rule that a test must be seen to fail.
  */
 
 const dbMock = {
   upload: {
     findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
     updateMany: vi.fn(async () => ({ count: 0 })),
+  },
+  narrationAsset: {
+    findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
   },
   uploadTokenGrant: {
     deleteMany: vi.fn(async () => ({ count: 0 })),
@@ -36,6 +47,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   dbMock.upload.findMany.mockResolvedValue([]);
   dbMock.upload.updateMany.mockResolvedValue({ count: 0 });
+  dbMock.narrationAsset.findMany.mockResolvedValue([]);
   dbMock.uploadTokenGrant.deleteMany.mockResolvedValue({ count: 0 });
 });
 
@@ -87,6 +99,62 @@ describe("reconcileBlobs — orphan detection (store-enumerating, ADR-0007 §2)"
 
       expect(result.orphansDeleted).toBe(1);
     });
+  });
+});
+
+/**
+ * M5 §7.1 — the finding, tested directly. Before the `BLOB_CLAIMANTS` fix,
+ * this job asked only `db.upload.findMany` and treated ANY other pathname
+ * with no matching row as an orphan, however it got there — so a narration
+ * object (which never has an `Upload` row) older than the threshold was
+ * deleted on the very first cron run, while its owning `NarrationAsset` row
+ * survived pointing at nothing.
+ *
+ * Confirmed against the pre-fix code before writing the fix: with only
+ * `dbMock.upload.findMany` wired up (as the suite was before this task) and
+ * a narration pathname seeded with no `Upload` row, the old single-lookup
+ * implementation deleted it — these two cases are that regression, pinned
+ * so it cannot come back silently.
+ */
+describe("reconcileBlobs — the narration claimant (M5 §7.1)", () => {
+  it("a narration object WITH a NarrationAsset row survives a reconcile run however old it is", async () => {
+    const pathname = "students/sp_1/narration/deadbeef.mp3";
+    const storage = createFakeStorage([{ pathname, uploadedAt: minutesAgo(100_000) }]);
+    dbMock.upload.findMany.mockResolvedValue([]); // no Upload row — narration never has one
+    dbMock.narrationAsset.findMany.mockResolvedValue([{ pathname }]);
+
+    const result = await reconcileBlobs(storage, clock);
+
+    expect(storage.deletedBatches).toEqual([]);
+    expect(result.orphansDeleted).toBe(0);
+  });
+
+  it("a narration object WITHOUT a NarrationAsset row, older than the threshold, IS deleted — the real orphan class this job exists for (slice 5 writes the blob before the row)", async () => {
+    const pathname = "students/sp_1/narration/orphaned.mp3";
+    const storage = createFakeStorage([{ pathname, uploadedAt: minutesAgo(61) }]);
+    dbMock.upload.findMany.mockResolvedValue([]);
+    dbMock.narrationAsset.findMany.mockResolvedValue([]);
+
+    const result = await reconcileBlobs(storage, clock);
+
+    expect(storage.deletedBatches).toEqual([[pathname]]);
+    expect(result.orphansDeleted).toBe(1);
+  });
+
+  it("both claimants are consulted in the same batched round (an object either claimant recognises survives)", async () => {
+    const uploadPathname = "students/sp_1/uploads/known.jpg";
+    const narrationPathname = "students/sp_1/narration/known.mp3";
+    const storage = createFakeStorage([
+      { pathname: uploadPathname, uploadedAt: minutesAgo(100_000) },
+      { pathname: narrationPathname, uploadedAt: minutesAgo(100_000) },
+    ]);
+    dbMock.upload.findMany.mockResolvedValue([{ pathname: uploadPathname }]);
+    dbMock.narrationAsset.findMany.mockResolvedValue([{ pathname: narrationPathname }]);
+
+    const result = await reconcileBlobs(storage, clock);
+
+    expect(storage.deletedBatches).toEqual([]);
+    expect(result.orphansDeleted).toBe(0);
   });
 });
 

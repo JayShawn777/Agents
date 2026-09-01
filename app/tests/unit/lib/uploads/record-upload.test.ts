@@ -44,6 +44,7 @@ function fakeStorage(overrides: Partial<Record<string, unknown>> = {}) {
     signedReadUrl: vi.fn(),
     readBytes: vi.fn(async () => new ArrayBuffer(8)),
     del: vi.fn(),
+    put: vi.fn(),
     listAll: vi.fn(),
     ...overrides,
   };

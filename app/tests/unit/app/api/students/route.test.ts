@@ -24,6 +24,11 @@ const dbMock = {
     findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
     updateMany: vi.fn(),
   },
+  // M5 §7.2 — the second PROFILE_BLOB_SOURCES entry. Defaults to no
+  // narration assets, matching every test below.
+  narrationAsset: {
+    findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
+  },
   user: { findMany: vi.fn(async () => [] as unknown[]) },
   consentAuditArtifact: { createMany: vi.fn() },
   deletionAudit: { create: vi.fn() },

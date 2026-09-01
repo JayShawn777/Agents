@@ -3,6 +3,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { Upload } from "@/lib/generated/prisma/client";
 import type { StoragePort } from "@/lib/storage/port";
+import { purgeUnreferencedNarration } from "@/lib/narration/purge";
 
 export type DeleteUploadResult = { ok: true } | { ok: false; code: "STORAGE_FAILURE" };
 
@@ -26,6 +27,19 @@ export type DeleteUploadResult = { ok: true } | { ok: false; code: "STORAGE_FAIL
  * the row stays `SOURCE_DELETED`, and calling this again re-attempts
  * `storage.del()` against the same pathname (idempotent by `StoragePort`
  * contract, matching `deleteStudentData`'s own retry story).
+ *
+ * ## M5 §7.3 — step 4, a narration sweep
+ *
+ * Deleting this upload's row can cascade away its `Extraction`, every
+ * `ExtractedProblem`, and any `Lesson` bound to one of them — which in turn
+ * cascades that lesson's `LessonNarration`/`LessonNarrationStep` rows. It
+ * does NOT reach the shared, profile-scoped `NarrationAsset` cache rows
+ * those steps pointed at (ADR-0015: the cache cannot cascade from a lesson
+ * it does not belong to). `purgeUnreferencedNarration` sweeps for now-
+ * unreferenced assets so a deleted lesson's audio does not just sit in the
+ * store forever. Best-effort and logged, not fatal to this call: the
+ * upload itself is already fully deleted by the time this runs, and a sweep
+ * failure here is a lingering cache entry, not a lost deletion guarantee.
  */
 export async function deleteUpload(upload: Upload, storage: StoragePort): Promise<DeleteUploadResult> {
   if (upload.status !== "SOURCE_DELETED") {
@@ -46,5 +60,16 @@ export async function deleteUpload(upload: Upload, storage: StoragePort): Promis
   }
 
   await db.upload.delete({ where: { id: upload.id } });
+
+  try {
+    await purgeUnreferencedNarration(upload.studentProfileId, storage);
+  } catch (err) {
+    console.error(
+      `deleteUpload: purgeUnreferencedNarration failed for studentProfileId=${upload.studentProfileId}; ` +
+        "any now-unreferenced NarrationAsset rows were left in place for a later sweep.",
+      err,
+    );
+  }
+
   return { ok: true };
 }

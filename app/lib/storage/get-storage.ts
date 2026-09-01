@@ -41,6 +41,7 @@ export function getStoragePort(): StoragePort {
     signedReadUrl: notImplemented,
     readBytes: notImplemented,
     del: notImplemented,
+    put: notImplemented,
     listAll: notImplemented,
   };
 }
