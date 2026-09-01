@@ -254,10 +254,45 @@ Deliberately deferred; leave the seams, do not build them:
   Sequencing note for whoever builds this: captions are the surface that makes
   M5 legible to a reviewer without listening to audio, so building them early
   makes every later step easier to check.
-- [ ] **How many personas, and who designs them?** **PRODUCT.** ASSUMPTION: four
-  to six, each with a name, a short description, a preset avatar in the existing
-  M0 avatar style, and a distinct voice. Non-blocking for the engineering, but the
-  list cannot ship empty.
+- [x] **How many personas, and who designs them?** **DECIDED by the owner,
+  2026-09-01: six**, designed by the owner and recorded below.
+
+  | # | Persona | Personality | Voice (name) | Voice id |
+  |---|---|---|---|---|
+  | 1 | **Smooth J** | Laid back, charismatic, intelligent, easygoing | Eric — Smooth, Trustworthy | `cjVigY5qzO86Huf0OWal` |
+  | 2 | **Professor Sunny** | Funny, upbeat, bright and warm; uses humour to get a student through a hard thing | Jessica — Playful, Bright, Warm | `cgSgspJ2msm6clMCkdW9` |
+  | 3 | **Coach Vale** | Brilliant, low-energy, near-monotone, strict, everything by the book | Matilda — Knowledgable, Professional | `XrExE9yKIg1WjnnlVkGX` |
+  | 4 | **Professor O** | Cool, bright, calm, dignified | Brian — Deep, Resonant, Comforting | `nPczCjzI2devNBz1zQrb` |
+  | 5 | **Professor Blaze** | Energetic, warm, hyper-motivational | Liam — Energetic | `TX3LPaxmHKxFdv7VOQHJ` |
+  | 6 | **Professor Love** | Clear, patient, encouraging | Alice — Clear, Engaging Educator | `Xb7hH8MSUJpSbSDYk0k2` |
+
+  **These voice ids are SEED DATA, not code.** AC 1 forbids a provider voice id
+  appearing as a literal in application code, and the reason is in the
+  measurement note: the stock voice set carries a published expiry, so an id
+  compiled into the app is an outage with a calendar entry. They belong in a
+  seed script or a data migration, where AC 3's fallback can repoint them.
+
+  **Three names were changed from the owner's first list, for one reason.**
+  "Barack Obama", "Professor Snoop" ("he's gonna sound like Snoop Dogg") and
+  "Professor Khaled" each named or evoked a real, living individual, which
+  **AC 2 of this very spec forbids** — and which right-of-publicity law and the
+  TTS vendor's own terms forbid independently. The *personalities* were kept
+  intact and only the identities dropped: cool-bright-calm became Professor O,
+  hyper-motivational became Professor Blaze, and the laid-back-cool character
+  was already covered by Smooth J, who was the same character described twice.
+
+  **Two are placeholders the owner may rename freely** — Professor Sunny and
+  Professor Blaze. The only constraint on any replacement is AC 2.
+
+  **Gender balance is deliberate.** The owner's first list was six male-coded
+  characters. Three of the six voices are now female (Jessica, Matilda, Alice),
+  because a nine-year-old picking the voice that teaches them every day should
+  not find that every option is a man. Seven female voices were available and
+  unused.
+
+  **Still to design: the artwork.** Each persona needs a preset avatar in the
+  existing M0 avatar style. AC 2 governs it as much as the name — no likeness of
+  a real person, including a likeness that merely evokes one.
 - [ ] **What is the per-profile narration budget in AC 21?** **PRODUCT.** It is a
   real cost control and also a usage cap a child will hit mid-lesson if set badly.
   ASSUMPTION: generous enough that a normal session never reaches it; the cap

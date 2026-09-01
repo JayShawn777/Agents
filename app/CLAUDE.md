@@ -578,11 +578,26 @@ generate graded practice from them. The retention jobs enforce what
    text view stays a separate, complete equivalent rather than a substitute
    either way.
 
-   **Still an owner decision before M5 can finish: the personas themselves** —
-   four to six, with original names, short descriptions and preset avatars in
-   the M0 style. The 21 vendor voices are an indirection BEHIND a persona, not
-   the persona, which is exactly what makes AC 3 survivable. The measurement
-   note lists six voice candidates worth hearing before naming anything.
+   **Owner decision, 2026-09-01: the six personas are chosen** and recorded in
+   the M5 spec's open questions with their voice ids — Smooth J, Professor
+   Sunny, Coach Vale, Professor O, Professor Blaze and Professor Love.
+
+   **The voice ids are SEED DATA, never code.** AC 1 forbids a provider voice id
+   as a literal in application code because the stock set carries a published
+   expiry — an id compiled into the app is an outage with a calendar entry.
+
+   **Three names in the owner's first list had to change, and the reason will
+   recur.** "Barack Obama", "Professor Snoop" ("gonna sound like Snoop Dogg")
+   and "Professor Khaled" each named or evoked a real living individual — barred
+   by this spec's own AC 2, by right-of-publicity law, and by the TTS vendor's
+   terms. The personalities were kept and only the identities dropped. Expect
+   this to come up again whenever personas are extended: **the vibe is always
+   free, the identity never is.** A single initial ("Professor O") is fine — it
+   identifies nobody — provided the artwork and description do not lean back
+   toward a likeness.
+
+   **Still to design: the persona artwork**, one preset avatar each in the M0
+   style. AC 2 governs the picture exactly as it governs the name.
 
    **Historical, kept because it explains the shape of the above:**
 
