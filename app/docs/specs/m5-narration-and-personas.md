@@ -228,9 +228,32 @@ Deliberately deferred; leave the seams, do not build them:
 - [ ] **What is the sync tolerance in AC 15?** **PRODUCT + TECHNICAL.**
   **ASSUMPTION: 150 ms.** Nobody has measured what feels wrong to a child. Needs
   one round of real testing; non-blocking provided it is configuration.
-- [ ] **Are captions on by default?** **PRODUCT.** ASSUMPTION: on. For a
-  struggling reader, following the text while hearing it may help; for another it
-  may be the clutter we set out to remove. Non-blocking.
+- [x] **Are captions on by default?** **DECIDED by the owner, 2026-09-01: ON.**
+
+  The assumption is confirmed, and the reason to hold it is stronger than the
+  one originally written down. The note framed this as a reading-support
+  trade-off — helpful for a struggling reader, clutter for another. The
+  decisive argument is narrower: **a deaf or hard-of-hearing child gets nothing
+  at all from narration.** Captions off by default would make the entire
+  milestone inaccessible to them by default, and a default is what almost
+  everyone keeps. Accessibility defaults belong on.
+
+  The attention-splitting worry in M5's own problem statement is real and is
+  answered by *how* captions are built rather than by switching them off:
+
+  - **A caption is the CURRENT step's line, not the script.** The thing M5 set
+    out to remove is a child reading a wall of text while watching a drawing.
+    One line, appearing with the audio it belongs to, is not that.
+  - **It must be toggleable, and the choice persisted per student profile** —
+    the same shape as the persona selection (AC 4). A child who finds it
+    cluttered turns it off once, not every lesson.
+  - AC 16's static text view remains the separate, complete, no-canvas
+    equivalent. Captions are not a substitute for it and it is not a substitute
+    for them.
+
+  Sequencing note for whoever builds this: captions are the surface that makes
+  M5 legible to a reviewer without listening to audio, so building them early
+  makes every later step easier to check.
 - [ ] **How many personas, and who designs them?** **PRODUCT.** ASSUMPTION: four
   to six, each with a name, a short description, a preset avatar in the existing
   M0 avatar style, and a distinct voice. Non-blocking for the engineering, but the

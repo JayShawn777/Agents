@@ -564,6 +564,26 @@ generate graded practice from them. The retention jobs enforce what
    only, no `user_read`. Keep it that way; a synthesis key has no business
    reading billing.
 
+   **Owner decision, 2026-09-01: captions are ON by default.** Recorded in the
+   M5 spec's open questions with the reasoning. The decisive argument is not the
+   reading-support trade-off the spec originally framed it as — it is that **a
+   deaf or hard-of-hearing child gets nothing from narration at all**, so
+   captions off by default makes the milestone inaccessible to them by default,
+   and a default is what almost everyone keeps.
+
+   Three constraints come with it, and they are what stop captions re-creating
+   the attention-splitting problem M5 exists to solve: a caption is the CURRENT
+   step's line and never the whole script; the toggle is persisted per student
+   profile, the same shape as the persona selection (AC 4); and AC 16's static
+   text view stays a separate, complete equivalent rather than a substitute
+   either way.
+
+   **Still an owner decision before M5 can finish: the personas themselves** —
+   four to six, with original names, short descriptions and preset avatars in
+   the M0 style. The 21 vendor voices are an indirection BEHIND a persona, not
+   the persona, which is exactly what makes AC 3 survivable. The measurement
+   note lists six voice candidates worth hearing before naming anything.
+
    **Historical, kept because it explains the shape of the above:**
 
    M5's first open question is blocking and says so: **"Nothing in M5 can be
