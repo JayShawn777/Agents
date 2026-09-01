@@ -533,7 +533,38 @@ generate graded practice from them. The retention jobs enforce what
    - **24 — scope a review by file list, not by milestone.** → both reviewers,
      and the dispatch rule below.
 
-   **NEXT: M5, narration — and it is BLOCKED on one owner action.**
+   **NEXT: M5, narration — UNBLOCKED as of 2026-09-01.** Both keys are set and
+   verified (`AUTH_SECRET` proved end-to-end: a seeded session cookie now returns
+   200 where it returned 401, and `MissingSecret` is gone from the log), and
+   **M5's gating measurement has RUN** —
+   [docs/research/m5-narration-measurement.md](docs/research/m5-narration-measurement.md).
+   The architect may now fix M5's shape; it could not before.
+
+   Two results, one of them opposite to what the design assumed:
+
+   - **The with-timestamps endpoint DOES work on the low-latency model** (200,
+     262ms, vs 976ms for the quality model — and at half the credit cost). The
+     research could not confirm this and the spec named it the one experiment
+     that constrains the architecture. It means choosing the quality model for
+     M5's pre-generated narration does **not** foreclose a live low-latency
+     synced voice later; M5's cache design needs no hedge against it.
+   - **The account has 21 current `premade` voices**, so the documented
+     2026-12-31 expiry of the legacy set does not bite. Personas can be
+     populated from something real — but a voice is an INDIRECTION behind a
+     persona (AC 1 is a database row, AC 3 is that row surviving a voice id that
+     stops resolving), so naming and designing four to six personas is still an
+     owner decision, not a vendor one.
+   - **Alignment is character-level, confirmed** — 59 characters, 59 timings, no
+     `words` array. Grouping into words is ours, which is why the spec asks for
+     an ADR on our own cue format. **The highest-risk unknown left in M5 is how
+     mathematics is read aloud**: the test sentence was prose, and M4's scripts
+     are full of LaTeX.
+
+   The API key is deliberately **scoped** — `voices_read` and `text_to_speech`
+   only, no `user_read`. Keep it that way; a synthesis key has no business
+   reading billing.
+
+   **Historical, kept because it explains the shape of the above:**
 
    M5's first open question is blocking and says so: **"Nothing in M5 can be
    built without this."** A TTS vendor is a **new major dependency**, which the
