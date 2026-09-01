@@ -116,3 +116,115 @@ is ever wanted in-app, that is a deliberate, separate grant.
 - **Nothing about the sync tolerance** in AC 15's replacement (the spec's 150 ms
   assumption). Still unmeasured, still configuration.
 - **The account's plan tier and quota**, per the permission note above.
+
+---
+
+# Part 2: how mathematics is read aloud (plan §8.1)
+
+- **Date:** 2026-09-01
+- **Gates:** backend slices 4 and 5. Run before either was written.
+- **Cost:** four calls, ~80 characters. Under two US cents.
+- **Verdict:** **all four questions answered, and the plan's stated default
+  survives.** Narration is sent verbatim and LaTeX is prevented at authoring
+  time, never repaired at speech time.
+
+## N1 — how much real narration is not plain words?
+
+**Zero API calls.** Every `narration` string available from real authored M4
+output (nine, across the three fixtures kept in `tests/e2e/fixtures/`) is clean
+prose. No backslash, no brace, no bare operator.
+
+**n is 9 and they are curated, so this is weak evidence** — and it does not
+matter, because it points the same way either way. A rate near zero makes the
+author-time guard a cheap assertion that almost never fires; a material rate
+would make it load-bearing. Cheap and load-bearing are the same code. What
+would change the design is a rate near zero **plus** a decision to skip the
+guard, and §8.1 explicitly does not do that.
+
+## N2 — is `alignment` index-aligned to the exact string we sent? **YES**
+
+This is ADR-0021's foundation, and it holds.
+
+```
+input:                     "solve for x: 3x plus 5 equals 20"
+alignment.characters.join: "solve for x: 3x plus 5 equals 20"   → identical
+start times monotonic:     true
+```
+
+**But `normalized_alignment` is NOT the same string.** It came back as
+`" solve for x: 3x plus 5 equals 20 "` — padded with a leading and trailing
+space. Its indices therefore do **not** correspond to our text.
+
+**Consequence, and it is a one-line trap:** word grouping must key off
+`alignment`, never `normalized_alignment`. The two fields differ by two
+characters, which is exactly the kind of difference that produces a cue
+timeline that is subtly, unfixably off by one word and looks like a sync bug.
+ADR-0021 should say this explicitly rather than leaving the next reader to pick
+the more official-sounding field name.
+
+## N3 — what does the vendor do with LaTeX, and with bare symbols?
+
+| input | chars | duration | seconds per character |
+|---|---|---|---|
+| `\frac{1}{4} is one quarter` | 26 | 2.368 s | **0.0911** |
+| `3x + 5 = 20` | 11 | 1.718 s | **0.1562** |
+| `one quarter` | 11 | 1.115 s | 0.1014 |
+
+**Bare symbols are expanded, and expanded well.** `3x + 5 = 20` takes 1.7
+seconds for eleven characters — half again the per-character rate of plain
+prose. That is the signature of "three x plus five equals twenty" being spoken:
+far more speech than eleven characters of text. **No normaliser is needed for
+`+`, `=` or a coefficient.**
+
+**LaTeX is the opposite, and worse than "read literally".** The LaTeX line runs
+at 0.0911 s/char — *below* plain prose. If `\frac{1}{4}` were being read out as
+"backslash frac open brace one close brace" the rate would be far higher, not
+lower. The markup is being largely **swallowed**: the child hears something like
+"one four is one quarter", or "frac one four is one quarter".
+
+That is the dangerous failure, not the loud one. A child who hears
+"backslash frac" knows something is broken. A child who hears "one four is one
+quarter" hears a confident, fluent, **wrong** explanation of their homework.
+
+**And it corrupts the cues as well as the audio.** The alignment still maps 1:1
+onto our input (N2), so characters that produce no audible speech — `\`, `{`,
+`}` — are still assigned real time spans. Any word-level timeline built over
+LaTeX is wrong in both directions at once.
+
+**So the default holds and is now evidence-backed:** narration must never
+contain LaTeX, and the place to stop it is authoring, where a violation can be
+regenerated — not speech, where it can only be papered over.
+
+## N4 — do expanded tokens produce degenerate spans? **NO**
+
+Over `"solve for x: 3x plus 5 equals 20"`: zero characters with `end < start`,
+eight whitespace-delimited words, zero with a non-positive span.
+
+```
+solve  0–383 ms      for  418–522 ms      x:  650–882 ms      3x  1057–1370 ms
+```
+
+Word grouping by whitespace works, and needs no repair pass. Note `x:` groups
+with its punctuation — irrelevant for M5, where nothing renders individual
+words, but ADR-0021 should say whether punctuation belongs to the word it
+trails before anything does render them.
+
+## What this changes in the plan
+
+Nothing structural — which is the useful outcome, because it means slices 4 and
+5 can be written as specified. Two amendments:
+
+1. **ADR-0021 must name `alignment` and rule out `normalized_alignment`**, with
+   the two-character difference as the reason.
+2. `assertSpeakableNarration` is confirmed as author-time only, for the reason
+   §8.1 gives: `toLessonVersionDTO` re-parses stored scripts and returns
+   `script: null` on failure, so tightening `LessonStepSchema` would turn every
+   already-stored lesson containing a backslash into a lesson with no script.
+
+## Still not answered
+
+**Nobody has listened to any of this audio.** Every conclusion above is drawn
+from durations and alignment arrays. The inference about LaTeX is strong — a
+sub-prose per-character rate has no other explanation — but "what does a child
+actually hear" is a question a human answers with headphones, and it is still
+open.
