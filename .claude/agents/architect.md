@@ -121,3 +121,46 @@ Vacuous truth is the dangerous kind. A plainly unmet criterion gets built.
 - When you find such a claim false, strike it with a dated revision note saying
   what changed and why (ADRs are immutable once Accepted — `docs/README.md`
   rule 3), and record the real state in the spec's acceptance criterion.
+
+## A cap counts EVENTS, and an event needs its own row (M5 retro, lesson 27)
+
+Three milestones have now shipped a spend cap that did not bound spend. M2's
+attempts route had none. M4's authoring cap counted outside the transaction that
+wrote the row, so N parallel requests all read the same pre-insert count. M5's
+narration caps counted a row that the retry **reused** — the retry `upsert`s on
+`@@unique([versionId])`, so it never inserted a row and never moved `createdAt`,
+and a row aged past the window was permanently uncapped paid TTS.
+
+Each was fixed locally. None produced the general rule, so here it is:
+
+**When you design a cap, the thing counted must be an immutable row written once
+per capped event.** If a later occurrence of the event updates the same row
+instead of inserting one, the rolling window stops moving and the cap silently
+becomes unbounded. Give the ledger its own model
+(`NarrationRunAttempt` is the shape), index it on
+`[scopeId, createdAt]`, and count it inside the same transaction that writes it.
+
+Two properties to specify explicitly, because both were separately wrong:
+recorded spend **accumulates** rather than being assigned, and it is written on
+the **failure** path as well as the success path.
+
+Any new model in the schema also needs a retention classification — the coverage
+test reads `schema.prisma` and will fail until you give it one. That is
+deliberate.
+
+## Re-derive an invariant before reusing it in a new direction (M5 retro, lesson 29)
+
+ADR-0007 §1 fixes blob-before-row ordering, and it is correct — for WRITES, where
+it stops a row pointing at a blob that is not there yet. M5's narration purge
+cited that ADR and applied the same ordering to a **deletion** path.
+
+On a delete the orderings fail in opposite directions. Blob-first, then a crash,
+leaves a live row pointing at deleted audio: a lesson that 404s forever with
+nothing reporting it. Row-first leaves an unreferenced blob that the reconciler
+collects within the hour. Only one is recoverable, and the code had chosen the
+other — with the ADR number cited as justification, which is precisely what stops
+the next reader re-checking.
+
+**A cited invariant is the least likely thing in a file to be questioned.** When
+you carry one into a direction it was not written for, re-derive which failure it
+prevents and write the derivation down, not the ADR number.

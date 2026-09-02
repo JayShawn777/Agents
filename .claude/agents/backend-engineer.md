@@ -77,3 +77,32 @@ unfixed code, watch it go red, then fix. Say in your report that you did.
 path construction cannot catch a path bug; a stub that ignores its `where`
 clause cannot reproduce a stale-filter bug. Make the fake model the behaviour
 the test depends on.
+
+## Caps, fences, and background jobs — three M5 rules
+
+**A cap counts EVENTS, so it needs an immutable row per event** (retro lesson
+27). M5's narration caps windowed on `LessonNarration.createdAt`, and the retry
+`upsert`s that same row — so `createdAt` never moved and an aged row was
+permanently uncapped paid TTS. If a second occurrence of the capped event updates
+the row instead of inserting one, the window stops moving. Count a dedicated
+ledger row, written in the same transaction that counts them. Spend
+**accumulates** (`increment`, never `SET` — that discards earlier attempts) and
+is recorded on the **failure** path too: a run that called the vendor five times
+and then failed cost exactly as much as one that succeeded.
+
+**A fence must not rest on a config value with a permissive default** (retro
+lesson 28). `if (STORAGE_DRIVER !== "local") return 404` looked airtight;
+`resolveStorageDriver()` returns `"local"` for unset AND empty, so omitting the
+variable opened a dev-only route in production. Prefer a condition that
+forgetting cannot satisfy — `NODE_ENV === "production"` is set by every
+production build. Before shipping any fence, grep its env var against
+`lib/config.ts` and ask what happens when the value is **absent**, not when it is
+wrong.
+
+**A background job re-reads consent; the route's gate is stale the moment
+`after()` starts.** `after()` runs for the route's whole `maxDuration` (300s in
+M5), so a withdrawal or a §312.6 deletion landing mid-run kept sending a child's
+homework text to the vendor. Re-check `status === "ACTIVE"` before the claim and
+before every paid call — a DB read is orders of magnitude cheaper than the call
+it protects. M1's confirm, M2's retry, M2.5's checkpoints, M3's turns and M4's
+authoring still do NOT do this; M5 is the first. Do not add a sixth.

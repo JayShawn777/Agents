@@ -148,10 +148,49 @@ account for**, with a message saying what to add. Then guard the parse itself
 (assert it found a plausible number of items), or a rename makes every
 assertion vacuously true.
 
-## Falsify a guard before trusting it
+## Falsify EVERY test that carries a claim, not just guards (M5 retro, lesson 25)
 
 For any test whose job is to catch an omission or an ordering, **mutate the code
 it guards and watch it go red.** Reading it proves nothing. In M4 a mutation
 showed that deleting an entire layout fix left 55/55 tests green — jsdom reports
 zero-sized rects, so the code under test never executed. The three guards added
 in M4 were each falsified this way before being kept.
+
+**That rule was written after M4 and M5 still shipped five tests that could not
+see what they claimed to test.** It was scoped too narrowly: everyone read
+"guard" as "the coverage test I am adding to catch omissions". Widen it.
+
+- Replacing `muted={isMuted}` with `muted={false}` kept all 39 player tests
+  green — the mute test asserted only the *initial* state and never pressed the
+  control, which the harness did not even expose.
+- Deleting an entire signed-URL refresh effect left 83/83 green, because the one
+  production caller never passed the prop and no test passed it either.
+- A reap guard-race test held ONE object as both the caller's snapshot and the
+  database row; mutating it flipped both, so the function returned at its first
+  early-exit and never reached the update the test is named for. It passed while
+  testing nothing, and leaked an unconsumed `mockResolvedValueOnce` that then
+  poisoned the next test in the file.
+
+**The cheapest, highest-yield moment is immediately after a fix: re-break it, run
+the test, confirm red, restore.** Thirty seconds each. Do this for every defect
+you fix and every test you write that names a behaviour. "I read the diff and it
+looks right" is not evidence — in M5, three of six pipeline defects had a comment
+directly above them asserting the opposite of what the code did.
+
+**And watch for shared mutable fixtures.** If a fixture object is also the row
+the code reads, mutating one mutates both and the test silently changes meaning.
+A `mockResolvedValueOnce` that its own test never consumes survives
+`vi.clearAllMocks()` and lands in whichever later test calls that mock next.
+
+## A test's NAME is an unchecked claim (M5 retro, lesson 26)
+
+A test titled *"also fences off an unset STORAGE_DRIVER"* set the variable to
+`"something-unexpected"` — a different case, and the safe one. The **unset** case
+was the broken one, and it stayed broken behind a test whose title said otherwise.
+
+A mistitled test is worse than a missing one. An absent test is a visible gap; a
+mistitled one reads as coverage in every list, every review, and every grep.
+
+**Name the INPUT, not the intent.** "404s when STORAGE_DRIVER is unset", never
+"fences off a bad driver". If the name says unset/empty/missing/default, the body
+must actually produce that value.

@@ -101,3 +101,34 @@ Since a brief can always be too big, protect against it from your side:
 - If the brief is plainly too large for one pass, **say so in your first
   response and propose a split**, then review the highest-risk slice rather than
   attempting all of it.
+
+## Read the BODY of any test whose title names a default (M5 retro, lesson 26)
+
+This project has now shipped a test titled *"also fences off an unset
+STORAGE_DRIVER"* whose body set `"something-unexpected"` — a different case, and
+the safe one. The unset case was the broken one, and it survived behind a name
+that said otherwise.
+
+A mistitled test is worse than a missing one: an absent test is a visible gap,
+while a mistitled one reads as coverage in every list, review and grep you do.
+
+**So test names are not evidence.** When deciding whether a behaviour is already
+covered, open the test. Prioritise any whose title claims an **unset, empty,
+missing, default or "somehow not"** value — those are the cases most often
+written as something else, because writing the real one is fiddlier.
+
+## Three of six M5 defects were contradicted by the comment above them
+
+Do not let a docstring stand in for reading the code. In M5:
+
+- a concurrency pool's docstring said only that "siblings already in flight are
+  not cancelled" — the workers actually drained the whole queue after a failure;
+- `writeNarrationAsset`'s docstring said the P2002 loser's blob "remains at its
+  own path, unreferenced" — both racers derived the *same* path, so the loser
+  overwrote the winner's bytes;
+- `purgeUnreferencedNarration`'s docstring said "it cannot over-delete" — it had
+  no transaction and could delete a live run's steps and blob.
+
+**A confident comment asserting a property is a place to LOOK, not a reason to
+skip.** The more precisely a docstring claims an invariant, the more it is worth
+verifying — a vague comment invites checking; a specific one suppresses it.

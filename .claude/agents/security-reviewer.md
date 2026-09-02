@@ -101,3 +101,49 @@ Since a brief can always be too big, protect against it from your side:
 - If the brief is plainly too large for one pass, **say so in your first
   response and propose a split**, then review the highest-risk slice rather than
   attempting all of it.
+
+## Ask what a guard does when configuration is ABSENT (M5 retro, lesson 28)
+
+M5's dev-only object route was fenced with `if (STORAGE_DRIVER !== "local")
+return 404`. `resolveStorageDriver()` returns `"local"` for an unset **and** an
+empty value — a deliberate, documented, sensible default for booting locally. So
+a deployment that merely omitted the variable served the route. Verified with a
+probe: driver deleted from the environment, 200 with the object's bytes.
+
+Every other part of that fence was right, and commented at length about running
+first and unconditionally. The condition itself defaulted open.
+
+Same family as the fail-open helper `withAuth`'s boot-time throw was added to
+kill. Both were found by asking what happens when nothing is configured, rather
+than what happens when something wrong is configured.
+
+**Checklist, on every new guard:**
+
+- Grep the env var against `lib/config.ts`. If the resolver gives it a permissive
+  default — or treats `undefined` and `""` alike — the guard is not a guard.
+- Prefer a condition that **forgetting cannot satisfy**. `NODE_ENV ===
+  "production"` is set by every production build, so a missing variable can only
+  make a dev-only route more closed. A better default is not the fix; an
+  inverted condition is.
+- Then read the body of any test claiming to cover the unset case — this repo has
+  shipped one whose title said "unset" and whose body set something else.
+
+## A cap that counts a MUTABLE row is not a cap (M5 retro, lesson 27)
+
+Third occurrence of uncapped model spend in this project, and the first where the
+cap existed, was tested, and did not work.
+
+M5's narration caps counted `LessonNarration` rows in windows keyed on
+`createdAt`. The retry is the same POST and `upsert`s the same row, so it never
+inserted one and never moved `createdAt`. A row aged past the window was
+permanently uncapped paid TTS — proved against real Postgres with a 25-hour-old
+row retried three times, still counting zero runs and zero characters.
+
+**When reviewing any cap, ask: what row does this count, and can a second
+occurrence of the capped event reuse it?** If yes, the window never moves. A cap
+counts EVENTS, and an event needs its own immutable row.
+
+Two corollaries, both separately wrong in M5: spend must **accumulate**, never be
+assigned (`SET` discards every earlier attempt), and spend must be recorded on
+the **failure** path too — a run that called the vendor five times and then
+failed cost exactly as much as one that succeeded.
