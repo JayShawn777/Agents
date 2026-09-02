@@ -10,3 +10,6 @@
 - [Local filesystem StoragePort adapter](local-fs-storage-adapter.md) — unblocks M1 pre-Vercel; handleClientUpload can't honestly carry bytes in ANY non-CDN provider.
 - [lib/uploads path collision with frontend](lib-uploads-path-collision.md) — plan gave both tracks `lib/uploads/pdf-page-count.ts`; backend's moved to `server-pdf-page-count.ts`.
 - [next/server after() needs request scope](next-after-requires-request-scope.md) — mock `next/server`'s `after` in any Vitest test exercising confirm/retry.
+- [Narration purge fully wired](narration-purge-fully-wired.md) — all 3 M5 §7.3 paths now call `purgeUnreferencedNarration`; docstring in purge.ts is the source of truth.
+- [Dev-only route fence pattern](dev-only-route-fence-pattern.md) — local-upload/local-object share: fence-first 404, session required anyway, zod+regex+ownership on any pathname.
+- [Narration LaTeX guard scope](narration-latex-guard-scope.md) — assertSpeakableNarration is authoring-path-only (lib/lessons/author.ts), never in LessonStepSchema; re-parse-to-null is why.

@@ -1,3 +1,6 @@
 - [Milestone review blind spots](project_milestone-review-blind-spots.md) — new models forget RETENTION_POLICY + /retention disclosure; e2e .mjs fixtures have no local-DB guard.
 - [Recurring defect classes](project_recurring-defect-classes.md) — the four hole classes this app has actually shipped, and where to look for each first.
 - [Live DB constraint check](reference_live_db_constraint_check.md) — prove a CHECK or cascade is really in Postgres, not just in a migration file.
+- [M5 narration cap bypass](project_m5-narration-cap-bypass.md) — retry upserts the same row, so createdAt-windowed run/budget caps read zero forever.
+- [M5 data lifecycle findings](project_m5-data-lifecycle-findings.md) — vendor not named in the §312.4 notice, purge over-delete race, invisible local-fs objects, fail-open claimant registry.
+- [M5 route surface findings](project_m5-route-surface-findings.md) — dev-object fence defaults open, generation job never re-checks consent, profile creation uncapped.

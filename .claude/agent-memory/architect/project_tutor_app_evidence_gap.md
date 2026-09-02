@@ -1,6 +1,6 @@
 ---
 name: project-tutor-app-evidence-gap
-description: M1 extraction accuracy has never been measured and M2 mastery, M7's parent report and every product claim compound on top of it — treat this as the project's load-bearing unknown
+description: M1 extraction accuracy is barely measured while mastery and the parent report compound on it; plus the two repeat traps — every new model needs a retention row, and every new writer to the blob store must be declared to the reconciler
 metadata:
   type: project
 ---
@@ -33,7 +33,17 @@ Separately and durably: **M0's `RETENTION_POLICY` in `lib/config.ts` had no row
 for practice, attempts, mastery, transcripts, lesson scripts, playback,
 narration, voice samples, learner profiles or activity sessions.** Every M2–M7
 spec correctly declined to state its own window because M0 owns them, so the gap
-was invisible from any single spec. Check that array against any new model that
-stores something.
+was invisible from any single spec. This is now MECHANISED (M4's review added a
+test that reads `schema.prisma` and fails on any unclassified model), so a new
+model must be classified in the same commit — design for that, don't rediscover
+it.
+
+**The same shape bit again in M5 and is worth generalising: when a milestone
+adds a SECOND writer to a shared store, re-read the existing store-enumerating
+job's assumptions.** `lib/jobs/reconcile-blobs.ts` treats every object with no
+`Upload` row as an orphan, so the first narration object would have been deleted
+an hour after it was written — silently, with no failing test. A background
+reaper written when there was one kind of data is a booby trap for the second
+kind.
 
 Related: [[feedback-say-the-uncomfortable-thing]].

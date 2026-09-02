@@ -81,13 +81,16 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [ADR-0012](adr/0012-bounded-chat-sessions-with-a-snapshotted-learner-context.md) — Chat sessions are bounded at open, and the learner context is snapshotted onto the session row (Proposed)
 - [ADR-0013](adr/0013-ndjson-chat-streaming-with-client-supplied-turn-keys.md) — Chat streams as NDJSON from a route handler, and a turn is idempotent on a client-supplied key (Proposed)
 - [ADR-0014](adr/0014-lessonscript-as-one-versioned-validated-json-document.md) — A LessonScript is one validated JSON document on a version row, over a closed primitive vocabulary and a normalised canvas (Proposed)
-- [ADR-0015](adr/0015-per-profile-narration-cache-instead-of-a-global-content-address.md) — Narration audio is cached per student profile, not globally content-addressed (Proposed)
+- [ADR-0015](adr/0015-per-profile-narration-cache-instead-of-a-global-content-address.md) — Narration audio is cached per student profile, not globally content-addressed (Proposed, revised 2026-09-01 against the code it describes)
+- [ADR-0020](adr/0020-elevenlabs-behind-a-persona-indirection-called-with-fetch.md) — ElevenLabs is called with `fetch`, behind a persona row that owns the voice id (Proposed)
+- [ADR-0021](adr/0021-narration-cues-are-our-own-word-timeline-derived-from-character-alignment.md) — Narration cues are our own millisecond word timeline, derived once from character alignment (Proposed)
 
 ### Plans
 - [m0-m1-implementation.md](plans/m0-m1-implementation.md) — Schema, API contract, component tree, build order, and the storage spike
 - [m2-m7-implementation.md](plans/m2-m7-implementation.md) — Schema for all six remaining milestones; full contract for M2-M3, shape only beyond (revised 2026-08-26 against the 52-AC M0 spec)
 - [m2-5-checkpoints-implementation.md](plans/m2-5-checkpoints-implementation.md) — Checkpoints and the foreign-language column
 - [m4-lessons-implementation.md](plans/m4-lessons-implementation.md) — M4's contract, written after plan §9.2's five measurements returned. Schema, six endpoints, component tree, nine slices
+- [m5-narration-implementation.md](plans/m5-narration-implementation.md) — M5's contract, written after the 2026-09-01 vendor measurement. Four models, two new routes, twelve slices, and the mathematics-read-aloud experiment
 
 ### Retros
 - [m0-m4.md](retros/m0-m4.md) — Twenty-four lessons across M0-M4, and what changed because of each. A running document: each milestone's retro is appended and the file is renamed.
@@ -97,6 +100,7 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [file-upload-storage.md](research/file-upload-storage.md) — Where uploaded schoolwork lives; why client-direct upload is mandatory
 - [vercel-blob-verified.md](research/vercel-blob-verified.md) — **Supersedes the storage signatures above**, read from the installed types
 - [elevenlabs-tts.md](research/elevenlabs-tts.md) — Narration, character-level timing data, and consent-gated voice cloning
+- [m5-narration-measurement.md](research/m5-narration-measurement.md) — **The TTS vendor, measured against the real account 2026-09-01.** Supersedes the file above wherever they disagree
 - [coppa-childrens-privacy.md](research/coppa-childrens-privacy.md) — **Verifiable parental consent, retention, and BIPA.** Read before touching the consent flow
 - [distress-message-review-request.md](research/distress-message-review-request.md) — What the tutor says to a child in distress, packaged for a qualified non-engineer reviewer. AWAITING REVIEW
 - [m4-authoring-measurement.md](research/m4-authoring-measurement.md) — Plan §9.2's five measurements, and what each one settled

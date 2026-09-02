@@ -2,3 +2,5 @@
 - [Probe, don't read](feedback_review-probe-technique.md) — for AI and background-job paths, construct the violation as a throwaway test, run it, delete it.
 - [Layout review technique](feedback_review_technique.md) — mutate the implementation and stub getBoundingClientRect; jsdom's 0x0 rects hide every stage code path.
 - [SDK parse_failed branch is dead](project_sdk-parse-failed-branch.md) — zodOutputFormat THROWS on schema failure and never yields parsed_output === null.
+- [M5 playback findings](project_m5-playback-findings.md) — signed-URL refresh never wired, poller untested, mute unproven; all confirmed by mutation.
+- [M5 generation pipeline findings](project_m5-generation-pipeline-findings.md) — the pool bills a whole lesson after the run FAILED; three comments claim safeguards the code lacks.
