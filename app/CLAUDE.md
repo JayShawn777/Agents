@@ -57,8 +57,85 @@ generate graded practice from them. The retention jobs enforce what
 | **M3** chat tutor | **done and REVIEWED** 2026-08-28 — all five endpoints (35-39), the NDJSON transport, `lib/chat/safety.ts` (AC 21), the whole UI with both entry points wired, and the chat path verified against the real API. Three review findings, all fixed. |
 | **M4** whiteboard lessons | **BUILT and REVIEWED** 2026-08-28 — nine slices: migration + CHECK, authoring status machine, six endpoints (40-45), cascades, stage + player, controls/text view/flag, and the entry point wired into practice and chat. Browser measurement RAN; four reviews found 4 blockers, 1 HIGH and 8 more, all fixed. |
 | **M5** TTS narration + personas | **BUILT and REVIEWED** 2026-09-02 — twelve slices: the ledger migration, storage/reconciler/purge, the `fetch`-based ElevenLabs client (no SDK dependency), cue derivation, the generation pipeline, endpoints 46/47, the persona picker, the audio player, AC 15's reinstated `prefers-reduced-motion`, and both entry points. ADRs 0020/0021. Four reviews found 15 findings; 14 fixed, the notice bump left to the owner. Slice 12 is an owner-run browser measurement. |
-| **M6–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009-0015. Not built. |
+| **M6** custom voice | **IN PROGRESS** — architecture approved (`docs/plans/m6-custom-voice-implementation.md`), slices 1-4 of 10 built and pushed. See "M6 is mid-build" below. |
+| **M7** | spec written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009-0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
+
+### M6 is mid-build — start at slice 5
+
+Slices 1-4 are committed and pushed; the tree is clean and the gates are green
+(1284 passed / 13 skipped, verified 2026-09-02). **Next is slice 5: sample
+capture, endpoint 50, plus the browser-direct upload slice 4 deliberately left
+for it** — both need the same transport and half-building it twice was the worse
+option. Follow `docs/plans/m6-custom-voice-implementation.md` rather than
+re-deriving it; it is approved.
+
+| Slice | What | State |
+|---|---|---|
+| 1 | Persona visibility scoping — closes a cross-account IDOR | ✅ `9ae2550` |
+| 2 | Schema: 3 models, `PersonaStatus`, `VOICE_CLONING`, retention rows | ✅ `8fbae9d` |
+| 3 | Vendor client — `fetch` create/delete, two-key support | ✅ `f8dd0b0` |
+| 4 | Consent recording — endpoints 48/49, versioned wording | ✅ `e785522` |
+| 5 | Sample capture — endpoint 50 + the browser-direct upload | next |
+| 6 | Creation — endpoint 51, caps, audit row, sample deletion | |
+| 7 | **Deletion/revocation — 4 paths must reach the vendor** | highest risk |
+| 8 | The recorder/consent/review UI | |
+| 9 | **THE ENTRY POINT** — account-page card + disclosure | the M2.5 lesson |
+| 10 | §312.4 notice + privacy copy for voice data | |
+
+**Three M6 decisions that are settled — do not reopen them without new
+information.**
+
+1. **The consent wording is versioned, and line 1 is not ours to reword.**
+   `VOICE_CONSENT_WORDING_VERSION = "2026-09-02.2"` in `lib/voice/consent-copy.ts`.
+   Line 1 is Microsoft's published Azure custom-voice consent statement, adopted
+   verbatim on 2026-09-02 after researching the alternatives (ElevenLabs' "voice
+   captcha" is a random anti-spoofing phrase, not consent; Descript's is
+   unpublished). Lines 2-6 remain because Microsoft's statement alone does not
+   establish adulthood, ownership of the voice, the limit on use, or
+   revocability. `tests/unit/lib/voice/consent-copy.test.ts` guards both the
+   verbatim line and the deliberately-unnamed vendor. **Changing a word means
+   bumping the version in the same diff.** A lawyer has NOT reviewed it —
+   pre-launch task, not pre-build.
+
+2. **M6 writes no `ParentalConsent` row, and that is correct.** That table needs
+   a `studentProfileId` and a `directNoticeId` — it is COPPA machinery about a
+   *child*, and COPPA's verifiable-consent regime governs personal information
+   collected *from a child under 13*. Voice cloning is an adult consenting about
+   *themselves*, at account level. Confirmed 2026-09-02 against the closest
+   production analogue: Azure models voice consent as its own dedicated entity
+   holding the talent name, company name, locale and audio — which is exactly
+   what `VoiceConsentRecording` is. `parentalConsentId` stays on the row as a
+   seam. If we ever localize, revisit storing the spoken locale alongside it.
+
+3. **One consent recording authorises exactly ONE clone.**
+   `findUsableConsentRecording` filters on the current wording version AND
+   `customVoice: { is: null }`. A second voice needs its own spoken consent.
+
+**AC 4's honest limit, so nobody overclaims it.** A server-chosen pathname plus a
+single-use grant refuses the attack AC 4 literally describes — pointing us at
+some other stored object. It **cannot prove the bytes came from a microphone**,
+and we do not claim it does. The real control against a child cloning a
+classmate is AC 2/AC 3: no student-facing entry point, every endpoint
+owner-scoped.
+
+### How to run tests — agreed 2026-09-02, follow this
+
+A previous session crashed three times running the full ~2min suite after almost
+every change. That is the habit to drop.
+
+- **During a slice** — only what you touched:
+  `pnpm exec vitest run --project unit tests/unit/lib/<area>/`
+- **Once, at the end of a slice, before committing** — the full chain:
+  `pnpm typecheck && pnpm lint && pnpm test --run`
+- **Do not** re-run a passing full suite to "confirm" it. It passed.
+- Mutation-testing a fix (break it, watch the test fail, restore) is still
+  expected — scope it to the affected test file, not the suite.
+
+**If `pnpm test` dies in global setup complaining about `localhost:51214`, that
+is NOT a code failure** — the local Prisma server stopped. Run
+`pnpm exec prisma dev start app` and re-run. This is the single most common
+time-waster in this repo.
 
 ### Start here, in this order
 
@@ -601,13 +678,39 @@ generate graded practice from them. The retention jobs enforce what
      for a malformed body, not the 401 `missing_permissions` the same API returns
      when a scope is absent. The key can therefore CREATE and DELETE voices.
 
-   **That is worth an owner decision.** The everyday synthesis key can delete
-   every voice on the account. It also means M6 needs no second key, which is
-   convenient and is not the same as correct — the argument that a synthesis key
-   has no business reading billing applies at least as strongly to a synthesis
-   key that can destroy voices. Either narrow this key to `voices_read` +
-   `text_to_speech` and issue a separate write-scoped key for M6, or decide
-   deliberately to keep one key and record why.
+   **DECIDED 2026-09-02, and the owner is doing it: split the key.** The
+   everyday synthesis key could delete every voice on the account, and with
+   `VOICE_SAMPLE_RETENTION_DAYS = 0` a deleted voice cannot be regenerated. The
+   argument that a synthesis key has no business reading billing applies at
+   least as strongly to a synthesis key that can destroy voices.
+
+   - `ELEVENLABS_API_KEY` — the **narration** key, restricted to text-to-speech,
+     no `voices_write`. This is the one that runs thousands of times a day, and
+     the one to put a credit quota on. `lib/narration/provider.ts` reads this and
+     ONLY this.
+   - `ELEVENLABS_VOICE_ADMIN_KEY` — create/delete, used a handful of times per
+     account. `lib/voice/provider.ts`'s `resolveVoiceAdminKey()` prefers it and
+     falls back to `ELEVENLABS_API_KEY`, so the split is already implemented in
+     code; it was only ever a `.env` gap. **Once the narration key is narrowed
+     the fallback stops working, which is the point** — a missing admin key must
+     fail loudly rather than quietly borrowing a key that can no longer do the
+     job.
+   - On a multi-seat plan, make these **service account** keys: they do not
+     expire and survive membership changes, unlike user keys.
+
+   **The vendor voice cap: decided 2026-09-02 not to read it at all.** Two caps
+   were being conflated. Ours is `MAX_CUSTOM_VOICES_PER_USER = 1` in
+   `lib/config.ts` and is the one that matters. The vendor's account-wide pool is
+   the unknown, and `user_read` is what it would take to query — **do not add
+   that scope.** It widens the admin key in the same breath we are narrowing the
+   other one, it is a second call on the critical path for a number that goes
+   stale when the plan changes, and a pre-flight check can pass and still lose
+   the race. Handle the vendor's limit-exceeded response as a typed failure in
+   `lib/voice/provider.ts` and write an audit row. Note we call `/v1/voices/add`,
+   i.e. **Instant** Voice Cloning, so the scarce PVC slot limits (1 on
+   Creator/Pro) do not apply to us; the IVC pool is far larger. If the number is
+   ever wanted for capacity planning, read it off the dashboard — it is a
+   business question, not a runtime one.
 
    Do not restate a key's scope from this file without re-running the probe:
    `RUN_LIVE_AI=1 pnpm vitest run tests/unit/live/voice-clone.live.test.ts --project unit`
