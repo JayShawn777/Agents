@@ -12,12 +12,31 @@ app reads it, generates similar practice, tutors them through it in chat,
 explains with interactive whiteboard lessons narrated by a chosen voice, and
 adapts to that student over time.
 
-## Where the build is (2026-08-28)
+## Where the build is (2026-09-02)
 
-**M0-M3 done and reviewed. M4 BUILT — all nine slices, backend and UI, reachable
-from two entry points, slice 9's browser measurement has RUN, and **M4 is now
-REVIEWED** — four narrow reviews, thirteen findings fixed. 999 tests, 4 live
-tests skipped by default. All gates green. The M4 retro is not done.**
+**M0-M4 done, reviewed and retro'd. M5 BUILT, REVIEWED and its findings FIXED —
+all twelve slices, the vendor measured before the architecture, four narrow
+reviews, fifteen findings, fourteen fixed. 1208 tests, 6 live tests skipped by
+default. All gates green. The M5 retro is done
+([docs/retros/m0-m5.md](docs/retros/m0-m5.md)).**
+
+**One M5 finding is deliberately open, and it is an owner decision: the §312.4
+direct notice does not name the TTS vendor.** `DIRECT_NOTICE_COPY.thirdParties`
+lists Anthropic, Vercel, Neon and the email provider; `DIRECT_NOTICE_VERSION` is
+still `2026-08-26.1`, from before M5; and `lib/narration/provider.ts` POSTs a
+sentence describing a specific child's homework to ElevenLabs. ADR-0015 calls
+naming the vendor a hard precondition before the first narration request. Bumping
+the version re-consents **every existing parent**, so the timing is a product
+call, not an engineering one. The code change is small.
+
+**Slice 12 was NOT automated, deliberately.** This environment does not enforce
+an autoplay policy — `play()` resolves with no user gesture even with
+`--autoplay-policy=user-gesture-required` and with Playwright's own override
+stripped — so a playback test passes trivially and means nothing. The autoplay
+and seam-gap questions are **owner-run measurements needing a real browser**.
+Everything downstream of "does one `<audio>` element keep user activation across
+`src` changes" is still an assumption; the fallback is concatenation at
+generation time, which the plan calls a material redesign.
 
 **The vision path is verified.** On 2026-08-28 a real worksheet went to the real
 model for the first time: 35 of 35 problems, every addend pair correct, labels
@@ -37,7 +56,8 @@ generate graded practice from them. The retention jobs enforce what
 | **M2.5** checkpoints (quizzes) | **done and reviewed** 2026-08-27 — all 7 slices, spec, plan, ADRs 0016/0017/0018 |
 | **M3** chat tutor | **done and REVIEWED** 2026-08-28 — all five endpoints (35-39), the NDJSON transport, `lib/chat/safety.ts` (AC 21), the whole UI with both entry points wired, and the chat path verified against the real API. Three review findings, all fixed. |
 | **M4** whiteboard lessons | **BUILT and REVIEWED** 2026-08-28 — nine slices: migration + CHECK, authoring status machine, six endpoints (40-45), cascades, stage + player, controls/text view/flag, and the entry point wired into practice and chat. Browser measurement RAN; four reviews found 4 blockers, 1 HIGH and 8 more, all fixed. |
-| **M5–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009-0015. Not built. |
+| **M5** TTS narration + personas | **BUILT and REVIEWED** 2026-09-02 — twelve slices: the ledger migration, storage/reconciler/purge, the `fetch`-based ElevenLabs client (no SDK dependency), cue derivation, the generation pipeline, endpoints 46/47, the persona picker, the audio player, AC 15's reinstated `prefers-reduced-motion`, and both entry points. ADRs 0020/0021. Four reviews found 15 findings; 14 fixed, the notice bump left to the owner. Slice 12 is an owner-run browser measurement. |
+| **M6–M7** | specs written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009-0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
 ### Start here, in this order
@@ -264,7 +284,7 @@ generate graded practice from them. The retention jobs enforce what
    the generation cap already listed under "Known gaps".
 
    **The M3 retro is done** (2026-08-28, appended to
-   [docs/retros/m0-m4.md](docs/retros/m0-m4.md) — a running document, renamed
+   [docs/retros/m0-m5.md](docs/retros/m0-m5.md) — a running document, renamed
    per milestone). Three lessons, two of which changed an agent definition:
 
    - **17 — a mock stands in for exactly the thing in doubt.** Twice now (M1's
@@ -514,7 +534,7 @@ generate graded practice from them. The retention jobs enforce what
      step's `ops` array.
 
    **THE M4 RETRO IS DONE** (2026-08-28,
-   [docs/retros/m0-m4.md](docs/retros/m0-m4.md) — the running document, renamed
+   [docs/retros/m0-m5.md](docs/retros/m0-m5.md) — the running document, renamed
    per milestone). Five lessons, 20-24, four of which changed an agent
    definition:
 
@@ -830,7 +850,7 @@ Storage runs on a local filesystem adapter (`STORAGE_DRIVER=local`); the Vercel
 Blob implementation is unbuilt and its placeholder throws.
 
 Start at [docs/README.md](docs/README.md); read
-[docs/retros/m0-m4.md](docs/retros/m0-m4.md) before running the pipeline —
+[docs/retros/m0-m5.md](docs/retros/m0-m5.md) before running the pipeline —
 it now runs through M3.
 
 Because the app tutors minors, anything touching student data carries **COPPA**

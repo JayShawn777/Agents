@@ -93,7 +93,7 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [m5-narration-implementation.md](plans/m5-narration-implementation.md) — M5's contract, written after the 2026-09-01 vendor measurement. Four models, two new routes, twelve slices, and the mathematics-read-aloud experiment
 
 ### Retros
-- [m0-m4.md](retros/m0-m4.md) — Twenty-four lessons across M0-M4, and what changed because of each. A running document: each milestone's retro is appended and the file is renamed.
+- [m0-m5.md](retros/m0-m5.md) — Twenty-nine lessons across M0-M5, and what changed because of each. A running document: each milestone's retro is appended and the file is renamed.
 
 ### Research
 - [anthropic-api.md](research/anthropic-api.md) — Claude API: vision, PDF, structured output, streaming, caching, pricing
