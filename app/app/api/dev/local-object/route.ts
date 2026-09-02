@@ -18,11 +18,23 @@ import { getStoragePort } from "@/lib/storage/get-storage";
  * nobody has yet heard a single word of it.
  *
  * **THE FENCE — must run first, unconditionally, before session or any other
- * check.** `if (STORAGE_DRIVER !== "local") return 404` — not 403 — so a
- * probe against a production deployment (where `STORAGE_DRIVER=vercel-blob`)
- * gets the exact same response a nonexistent route would, and cannot even
- * confirm this path exists. There is no other guard in front of it; this
- * check IS the fence.
+ * check.** 404, not 403, so a probe against a production deployment gets the
+ * exact same response a nonexistent route would and cannot even confirm this
+ * path exists. There is no other guard in front of it; this check IS the fence.
+ *
+ * **It is TWO conditions, and the second one is the point.** The fence used to
+ * be `STORAGE_DRIVER !== "local"` alone, which defaulted OPEN: `lib/config.ts`'s
+ * `resolveStorageDriver()` returns `"local"` for an unset AND an empty
+ * `STORAGE_DRIVER`, so a deployment that simply omitted the variable served this
+ * route. The 2026-09-02 security review verified it — driver deleted from the
+ * environment, 200 with the object's bytes. A dev-only route whose fence is
+ * satisfied by a missing environment variable is not a fence.
+ *
+ * `NODE_ENV === "production"` is the condition that cannot be satisfied by
+ * omission: Next.js sets it on every production build, so forgetting to
+ * configure something can only ever make this route MORE closed, never less.
+ * The driver check stays as the second half — a non-production deployment
+ * running against real blob storage has no business serving local files either.
  *
  * **Why this route still requires a session, even though it is dev-only.**
  * "Dev-only" is not "unauthenticated" — narration audio is generated from a
@@ -64,8 +76,9 @@ const querySchema = z.object({
 });
 
 export async function GET(req: Request): Promise<Response> {
-  // THE FENCE. Must run before anything else, unconditionally.
-  if (STORAGE_DRIVER !== "local") {
+  // THE FENCE. Must run before anything else, unconditionally. Fails CLOSED on
+  // an unset/misconfigured environment — see the docstring above.
+  if (process.env.NODE_ENV === "production" || STORAGE_DRIVER !== "local") {
     return errorResponse(apiErr("NOT_FOUND"));
   }
 

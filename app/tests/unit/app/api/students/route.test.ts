@@ -7,6 +7,13 @@ const dbMock = {
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    // The 2026-09-02 profile-creation cap (`MAX_STUDENT_PROFILES_PER_USER` and
+    // `STUDENT_PROFILE_CREATES_PER_HOUR`). Defaults to zero existing profiles,
+    // so every pre-existing test in this file is unaffected.
+    // Typed parameter, not `() => 0` — the cap test below reads
+    // `count.mock.calls[0]` to prove the query is scoped to the calling account,
+    // and a zero-arity mock makes that tuple `[]` with nothing to read.
+    count: vi.fn<(args: { where: { userId: string; createdAt?: { gte: Date } } }) => Promise<number>>(async () => 0),
   },
   directNotice: { findFirst: vi.fn() },
   parentalConsent: {
@@ -277,5 +284,95 @@ describe("GET/PATCH/DELETE /api/students/[studentId] (endpoints 3-5)", () => {
     const profileDeleteOrder = dbMock.studentProfile.delete.mock.invocationCallOrder[0];
     expect(createManyOrder).toBeLessThan(deleteManyOrder);
     expect(deleteManyOrder).toBeLessThan(profileDeleteOrder);
+  });
+});
+
+/**
+ * ─────────── the 2026-09-02 review: profile creation was uncapped ───────────
+ *
+ * `POST /api/students` had no `rateLimit` and no ceiling. That matters far more
+ * than it looks, because EVERY other cap in this app is scoped per
+ * `studentProfileId` — the narration runs and daily character budget, the lesson
+ * authoring cap, the flag cap. An account that can mint unlimited profiles
+ * multiplies all of them by a number it chooses, which means none of them are
+ * caps. There is still no `middleware.ts` and no IP limiter anywhere in the repo,
+ * so this route's own bound is the whole defence.
+ */
+describe("the profile-creation cap (2026-09-02)", () => {
+  it("429s at the standing ceiling, and creates nothing", async () => {
+    const { MAX_STUDENT_PROFILES_PER_USER } = await import("@/lib/config");
+    dbMock.studentProfile.count.mockResolvedValue(MAX_STUDENT_PROFILES_PER_USER);
+
+    const res = await POST(req({ method: "POST", body: { ageBand: "UNDER_13" } }), ctx());
+
+    expect(res.status).toBe(429);
+    expect(dbMock.studentProfile.create).not.toHaveBeenCalled();
+  });
+
+  it("429s on the hourly rate even when well under the ceiling", async () => {
+    const { STUDENT_PROFILE_CREATES_PER_HOUR } = await import("@/lib/config");
+    // First count (total) is under the ceiling; second count (last hour) is at
+    // the rate limit. A burst cannot walk straight up to the ceiling.
+    dbMock.studentProfile.count
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(STUDENT_PROFILE_CREATES_PER_HOUR);
+
+    const res = await POST(req({ method: "POST", body: { ageBand: "UNDER_13" } }), ctx());
+
+    expect(res.status).toBe(429);
+    expect(dbMock.studentProfile.create).not.toHaveBeenCalled();
+  });
+
+  it("counts are scoped to the calling account, never global", async () => {
+    dbMock.studentProfile.count.mockResolvedValue(0);
+    dbMock.studentProfile.create.mockResolvedValue({
+      id: "sp_new",
+      userId: SESSION.userId,
+      ageBand: "UNDER_13",
+      status: "NOTICE_PENDING",
+      displayName: null,
+      gradeLevel: null,
+      subjects: [],
+      avatarId: null,
+      activatedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      personaId: null,
+      captionsEnabled: true,
+    });
+
+    await POST(req({ method: "POST", body: { ageBand: "UNDER_13" } }), ctx());
+
+    // A cap keyed on anything but the caller would either throttle strangers or
+    // be trivially escaped; assert the scoping rather than trusting it. The
+    // length assertion first, so the loop below cannot pass by running zero times.
+    expect(dbMock.studentProfile.count.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const call of dbMock.studentProfile.count.mock.calls) {
+      expect(call[0].where.userId).toBe(SESSION.userId);
+    }
+  });
+
+  it("lets an ordinary first profile through — the cap must not break the happy path", async () => {
+    dbMock.studentProfile.count.mockResolvedValue(0);
+    dbMock.studentProfile.create.mockResolvedValue({
+      id: "sp_new",
+      userId: SESSION.userId,
+      ageBand: "UNDER_13",
+      status: "NOTICE_PENDING",
+      displayName: null,
+      gradeLevel: null,
+      subjects: [],
+      avatarId: null,
+      activatedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      personaId: null,
+      captionsEnabled: true,
+    });
+
+    const res = await POST(req({ method: "POST", body: { ageBand: "UNDER_13" } }), ctx());
+
+    expect(res.status).toBe(201);
+    expect(dbMock.studentProfile.create).toHaveBeenCalled();
   });
 });

@@ -178,6 +178,22 @@ export const STORAGE_DRIVER: StorageDriver = resolveStorageDriver();
 
 // ─────────────────────────── uploads ───────────────────────────
 
+/**
+ * 2026-09-02 security review. `POST /api/students` had no cap of any kind, so a
+ * signed-in account could mint unlimited `StudentProfile` rows — and EVERY
+ * per-profile cap in this app (the narration runs/budget, the authoring cap, the
+ * flag cap) is scoped by `studentProfileId`. An uncapped profile count multiplies
+ * every one of them by a number the attacker picks, which makes them not caps.
+ *
+ * `MAX_STUDENT_PROFILES_PER_USER` is the standing ceiling; the hourly limit is
+ * what stops a burst from reaching it in one second. Both are deliberately far
+ * above any real family — the point is a bound, not a product constraint.
+ */
+export const MAX_STUDENT_PROFILES_PER_USER = 20;
+
+/** Companion to the above: new profiles per account per rolling hour. */
+export const STUDENT_PROFILE_CREATES_PER_HOUR = 10;
+
 /** M0 AC 37 (product assumption). */
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 

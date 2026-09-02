@@ -69,12 +69,86 @@ describe("the fence: STORAGE_DRIVER !== 'local'", () => {
     expect(readBytesMock).not.toHaveBeenCalled();
   });
 
-  it("also fences off an unset STORAGE_DRIVER that somehow isn't 'local' (defensive: only an exact 'local' match opens this route)", async () => {
+  it("refuses to boot at all under a typo'd STORAGE_DRIVER", async () => {
     process.env.STORAGE_DRIVER = "something-unexpected";
-    // lib/config.ts's own zod validation throws on an unrecognized value at
-    // import time — confirming there is no silent fallthrough that could
-    // open this route under a typo'd env value.
+    // `lib/config.ts`'s zod validation throws on an unrecognised value at import
+    // time. Renamed: this test used to be titled "also fences off an UNSET
+    // STORAGE_DRIVER", which is a different case entirely and the one that was
+    // actually broken — see the block below. A test whose title names a case its
+    // body never exercises is worse than no test, because it reads like coverage.
     await expect(import("@/app/api/dev/local-object/route")).rejects.toThrow();
+  });
+});
+
+/**
+ * ─────────── the 2026-09-02 review: the fence defaulted OPEN ───────────
+ *
+ * `resolveStorageDriver()` returns `"local"` for BOTH an unset and an empty
+ * `STORAGE_DRIVER`, so `STORAGE_DRIVER !== "local"` was satisfied by simply
+ * omitting the variable — a deployment that forgot to configure it served this
+ * route, verified with a probe returning 200 and the object's bytes.
+ *
+ * The fence now also checks `NODE_ENV === "production"`, which is the condition
+ * that cannot be satisfied by omission.
+ */
+describe("the fence fails CLOSED on a missing environment (2026-09-02)", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) delete (process.env as Record<string, string | undefined>).NODE_ENV;
+    else (process.env as Record<string, string | undefined>).NODE_ENV = originalNodeEnv;
+  });
+
+  it("404s in production even when STORAGE_DRIVER is unset (the measured hole)", async () => {
+    delete process.env.STORAGE_DRIVER;
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+    const { GET } = await import("@/app/api/dev/local-object/route");
+
+    const res = await GET(localObjectRequest(VALID_PATHNAME));
+
+    expect(res.status).toBe(404);
+    expect(dalMock.verifySession).not.toHaveBeenCalled();
+    expect(readBytesMock).not.toHaveBeenCalled();
+  });
+
+  it("404s in production even when STORAGE_DRIVER is the empty string", async () => {
+    process.env.STORAGE_DRIVER = "";
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+    const { GET } = await import("@/app/api/dev/local-object/route");
+
+    const res = await GET(localObjectRequest(VALID_PATHNAME));
+
+    expect(res.status).toBe(404);
+    expect(readBytesMock).not.toHaveBeenCalled();
+  });
+
+  it("404s in production even when STORAGE_DRIVER is explicitly 'local'", async () => {
+    // Belt and braces: "we are in production" alone closes the route, whatever
+    // the driver says. A dev-only route has no production configuration.
+    process.env.STORAGE_DRIVER = "local";
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+    const { GET } = await import("@/app/api/dev/local-object/route");
+
+    const res = await GET(localObjectRequest(VALID_PATHNAME));
+
+    expect(res.status).toBe(404);
+    expect(readBytesMock).not.toHaveBeenCalled();
+  });
+
+  it("still SERVES outside production with an unset STORAGE_DRIVER — the local default that makes narration audible", async () => {
+    delete process.env.STORAGE_DRIVER;
+    (process.env as Record<string, string | undefined>).NODE_ENV = "development";
+    dalMock.requireStudentProfile.mockResolvedValue({ id: "c000000000000000000000001" });
+    headMock.mockResolvedValue({ contentType: "audio/mpeg", sizeBytes: 3 });
+    readBytesMock.mockResolvedValue(new Uint8Array([1, 2, 3]).buffer);
+    const { GET } = await import("@/app/api/dev/local-object/route");
+
+    const res = await GET(localObjectRequest(VALID_PATHNAME));
+
+    // The fix must not close the route in the environment it exists for —
+    // otherwise nobody can hear a word of the narration locally.
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("audio/mpeg");
   });
 });
 
