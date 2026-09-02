@@ -298,10 +298,20 @@ describe.skipIf(!WRITE_ENABLED)("M6 measurement — the BLOCKING question, with 
     }
     const del = await call(`/v1/voices/${createdVoiceId}`, { method: "DELETE" });
     const after = await call(`/v1/voices/${createdVoiceId}`);
+
+    // The vendor signals "gone" with HTTP 400 and a typed `voice_not_found`
+    // body, NOT the 404 this check originally demanded — measured 2026-09-02,
+    // where a genuinely successful deletion was reported as UNCERTAIN by this
+    // very test. Key on the typed code as well as the status, because the status
+    // alone is the thing that was wrong.
+    const afterBody = after.json as { detail?: { status?: string } } | null;
+    const gone = after.status === 404 || afterBody?.detail?.status === "voice_not_found";
+
     record(
       "Does vendor-side deletion actually remove the voice (AC 19/20)?",
-      del.ok && after.status === 404
-        ? "YES — deleted, and a subsequent read is 404."
+      del.ok && gone
+        ? `YES — delete returned ${del.status}, and a subsequent read reports the voice does not exist ` +
+            `(HTTP ${after.status}, voice_not_found).`
         : `UNCERTAIN — delete HTTP ${del.status}, follow-up read HTTP ${after.status}. ` +
             `M6 cannot promise "delete means delete" until this is understood.`,
       { deleteBody: del.text.slice(0, 300), readAfter: after.text.slice(0, 300) },
@@ -309,7 +319,7 @@ describe.skipIf(!WRITE_ENABLED)("M6 measurement — the BLOCKING question, with 
 
     // Loud, because a leaked voice model of a real person is the worst possible
     // residue of a test run.
-    if (!del.ok) {
+    if (!del.ok || !gone) {
       console.error(
         `\n[M6] !!! A voice (${createdVoiceId}) may still exist at the vendor. Delete it manually. !!!\n`,
       );

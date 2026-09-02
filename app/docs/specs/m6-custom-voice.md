@@ -202,18 +202,23 @@ Deliberately deferred; leave the seams, do not build them:
 
 ## Open questions
 
-- [ ] **Is a voice created through the API immediately usable, or blocked pending
-  a manual verification step?** **TECHNICAL UNKNOWN, and the research calls it the
-  highest-risk unknown in the whole integration.** If a human must complete a
-  captcha in the vendor's own dashboard, the parent-facing flow as designed does
-  not work and M6 needs rethinking. AC 13 makes the pending case survivable
-  rather than assuming it away. **Resolve with a real API call on a paid account
-  before any implementation.** **BLOCKING for the design, not for the criteria.**
+- [x] **Is a voice created through the API immediately usable, or blocked pending
+  a manual verification step?** **ANSWERED 2026-09-02 — IMMEDIATELY USABLE.**
+  Measured against the real account on two independent runs
+  ([m6-voice-clone-measurement.md](../research/m6-voice-clone-measurement.md)):
+  creation returns `requires_verification: false`, and synthesis with the new
+  voice succeeds straight away with no dashboard step. **The parent-facing flow
+  as designed works, and M6 does not need rethinking.** AC 13's pending state
+  stays as a defensive branch — a vendor can change this — but it is DEMOTED from
+  the expected path and must not shape the primary UI flow. The architect is
+  unblocked.
 - [ ] **How many cloned voices does the vendor plan allow per account?**
-  **TECHNICAL UNKNOWN.** The research could not confirm per-tier caps. If the cap
-  is low and account-wide rather than per-customer, it is a hard ceiling on how
-  many families can ever use this feature. **Verify before promising it to
-  anyone.** Blocking for scale, not for a first build.
+  **STILL UNKNOWN, and now blocked on a key scope rather than on effort.**
+  `GET /v1/user/subscription` returns 401 — the key deliberately lacks
+  `user_read`, and that absence is correct (a synthesis key has no business
+  reading billing). Answering this needs a widened or second key, which is an
+  owner decision recorded in `app/CLAUDE.md`. **Verify before promising the
+  feature to anyone.** Blocking for scale, not for a first build.
 - [ ] **How long is the raw voice sample kept after the clone exists?**
   **PRODUCT — needs a row in M0's retention table, not a number here.** The
   argument for deleting it within days is strong: once the vendor has the voice,
@@ -237,7 +242,11 @@ Deliberately deferred; leave the seams, do not build them:
   so a replay regenerates in a stock voice — which is correct for deletion and
   may be startling for a child. ASSUMPTION: accept it, and say so at the deletion
   confirmation. Non-blocking.
-- [ ] **Does the sample need a quality check before it is sent?** **TECHNICAL.**
+- [ ] **Does the sample need a quality check before it is sent?** **TECHNICAL,
+  and UNTOUCHED by the 2026-09-02 measurement.** That run established only that
+  an 18.4-second sample is ACCEPTED and produces a voice that synthesizes —
+  nobody listened critically to the result, so it says nothing about whether a
+  short or noisy sample sounds like the person, which is the entire point.
   A noisy or too-quiet recording produces a bad clone the parent then blames on
   us, and the vendor's own noise removal is documented to make clean audio worse.
   AC 10's listen-back is the only control specified. Measure on real recordings

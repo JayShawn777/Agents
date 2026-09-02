@@ -101,6 +101,7 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [vercel-blob-verified.md](research/vercel-blob-verified.md) — **Supersedes the storage signatures above**, read from the installed types
 - [elevenlabs-tts.md](research/elevenlabs-tts.md) — Narration, character-level timing data, and consent-gated voice cloning
 - [m5-narration-measurement.md](research/m5-narration-measurement.md) — **The TTS vendor, measured against the real account 2026-09-01.** Supersedes the file above wherever they disagree
+- [m6-voice-clone-measurement.md](research/m6-voice-clone-measurement.md) — **M6's gating measurement, run 2026-09-02.** The blocking question answered: an API-created voice IS immediately usable, no manual verification step
 - [coppa-childrens-privacy.md](research/coppa-childrens-privacy.md) — **Verifiable parental consent, retention, and BIPA.** Read before touching the consent flow
 - [distress-message-review-request.md](research/distress-message-review-request.md) — What the tutor says to a child in distress, packaged for a qualified non-engineer reviewer. AWAITING REVIEW
 - [m4-authoring-measurement.md](research/m4-authoring-measurement.md) — Plan §9.2's five measurements, and what each one settled
