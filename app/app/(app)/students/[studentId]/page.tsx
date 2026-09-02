@@ -11,8 +11,10 @@ import { PracticeSetList } from "@/components/practice/practice-set-list";
 import { StudentStatusBadge } from "@/components/students/student-status-badge";
 import { UploadList, type UploadListRow } from "@/components/uploads/upload-list";
 import { requireStudentProfile } from "@/lib/auth/dal";
+import { DEFAULT_PERSONA_SLUG } from "@/lib/config";
 import { toPracticeSetDTO, toSkillMasteryDTO } from "@/lib/practice/dto";
 import { db } from "@/lib/db";
+import { findPersonaById, findPersonaBySlug } from "@/lib/personas/dal";
 import { toStudentProfileDTO } from "@/lib/students/dto";
 import { toUploadDTO } from "@/lib/uploads/dto";
 import type { PracticeSetDTO, SkillMasteryDTO, StudentProfileDTO } from "@/lib/schemas/dto";
@@ -131,6 +133,22 @@ export default async function StudentHomePage({
       ? null
       : (MISSING_STEP_COPY[student.nextStep] ?? null);
 
+  // M5 AC 4 / slice 11 — the child's way IN to the persona picker (previously
+  // reachable only by typing `/students/[id]/voice`). `personaId` reads
+  // straight off `profileRow`, the raw `StudentProfile` row `requireStudentProfile`
+  // already returned — `StudentProfileDTO` carries no `personaId` (plan §3's
+  // DTO shape), and `lessons/[lessonId]/page.tsx` resolves the same way for the
+  // same reason. `personaId: null` is the DEFAULT persona, never "no voice" —
+  // AC 4 — so this reads the default's own label rather than telling a child
+  // they have nothing chosen, gated the same as uploading (`canUpload`) because
+  // the picker page itself redirects a non-ACTIVE profile straight back here.
+  const chosenPersona = student.canUpload
+    ? await (profileRow.personaId
+        ? findPersonaById(profileRow.personaId)
+        : findPersonaBySlug(DEFAULT_PERSONA_SLUG))
+    : null;
+  const personaIsChosen = Boolean(profileRow.personaId);
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-10 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -214,6 +232,25 @@ export default async function StudentHomePage({
           Read the conversations
         </Link>
       </div>
+
+      {student.canUpload ? (
+        <div className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-foreground">Tutor&apos;s voice</h2>
+          <p className="text-sm text-muted-foreground">
+            {personaIsChosen && chosenPersona
+              ? `${chosenPersona.label} reads ${student.displayName ?? "this student"}'s lessons aloud.`
+              : chosenPersona
+                ? `${chosenPersona.label} reads lessons aloud by default — pick a different voice any time.`
+                : "Every lesson can be read aloud. Choose who reads it."}
+          </p>
+          <Link
+            href={`/students/${studentId}/voice`}
+            className="w-fit rounded-lg border border-border px-4 py-2 text-sm text-foreground transition-colors hover:bg-muted/40"
+          >
+            {personaIsChosen ? "Change your tutor's voice" : "Choose your tutor's voice"}
+          </Link>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-foreground">Check-in</h2>

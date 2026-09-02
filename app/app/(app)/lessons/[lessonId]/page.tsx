@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AiVoiceDisclosure } from "@/components/lessons/ai-voice-disclosure";
@@ -109,7 +110,22 @@ export default async function LessonPage({ params }: PageProps<"/lessons/[lesson
 
       {playable && version?.script && version.timeline ? (
         <>
-          <AiVoiceDisclosure personaLabel={personaLabel} />
+          {/*
+            Slice 11 — a child who dislikes the voice mid-lesson can act on
+            that where they feel it, right next to the disclosure naming who
+            is speaking, rather than only from the student page (M2.5's own
+            lesson: an entry point that exists nowhere a child is already
+            looking might as well not exist).
+          */}
+          <div className="flex items-center justify-between gap-3">
+            <AiVoiceDisclosure personaLabel={personaLabel} />
+            <Link
+              href={`/students/${lessonRow.studentProfile.id}/voice`}
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              Change voice
+            </Link>
+          </div>
 
           <NarrationState
             lessonId={lesson.id}
