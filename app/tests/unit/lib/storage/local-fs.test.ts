@@ -235,3 +235,55 @@ describe("LocalFsStorage — handleClientUpload", () => {
     expect(json.alreadyPersisted).toBe(true);
   });
 });
+
+/**
+ * ─────────── the 2026-09-02 review: the sidecar-less object ───────────
+ *
+ * `put()` writes `objects/<p>` and THEN `meta/<p>.json`. `listAll()` used to
+ * skip any object whose sidecar was missing, commented as a race with a
+ * concurrent `del()`. It also silently swallowed a crash between those two
+ * writes — and `listAll()` is the only call in the codebase that enumerates the
+ * STORE rather than walking from a database row, so such an object was
+ * invisible to `reconcile-blobs` forever: bytes derived from a child's
+ * schoolwork that no deletion path could ever reach.
+ */
+describe("LocalFsStorage — an object whose meta sidecar is missing (2026-09-02)", () => {
+  async function removeSidecar(pathname: string) {
+    await fs.rm(path.join(rootDir, "meta", `${pathname}.json`), { force: true });
+  }
+
+  it("still yields the object from listAll(), so the reconciler can see it", async () => {
+    await storage.put("students/sp_1/narration/orphan.mp3", new Uint8Array([1, 2, 3]), "audio/mpeg");
+    await removeSidecar("students/sp_1/narration/orphan.mp3");
+
+    const seen: string[] = [];
+    for await (const obj of storage.listAll()) seen.push(obj.pathname);
+
+    expect(seen).toContain("students/sp_1/narration/orphan.mp3");
+  });
+
+  it("dates it from the file's own mtime, so the orphan threshold still applies", async () => {
+    await storage.put("students/sp_1/narration/orphan.mp3", new Uint8Array([1]), "audio/mpeg");
+    await removeSidecar("students/sp_1/narration/orphan.mp3");
+
+    const entries: Array<{ pathname: string; uploadedAt: Date }> = [];
+    for await (const obj of storage.listAll()) entries.push(obj);
+
+    const entry = entries.find((e) => e.pathname === "students/sp_1/narration/orphan.mp3");
+    expect(entry).toBeDefined();
+    expect(entry!.uploadedAt).toBeInstanceOf(Date);
+    expect(Number.isNaN(entry!.uploadedAt.getTime())).toBe(false);
+  });
+
+  it("still skips an object that genuinely vanished, which is the case the old comment described", async () => {
+    await storage.put("students/sp_1/narration/gone.mp3", new Uint8Array([1]), "audio/mpeg");
+    // Remove the bytes but leave the sidecar: `walk()` enumerates `objects/`,
+    // so this simply is not listed — and the stat fallback must not resurrect it.
+    await fs.rm(path.join(rootDir, "objects", "students/sp_1/narration/gone.mp3"), { force: true });
+
+    const seen: string[] = [];
+    for await (const obj of storage.listAll()) seen.push(obj.pathname);
+
+    expect(seen).not.toContain("students/sp_1/narration/gone.mp3");
+  });
+});

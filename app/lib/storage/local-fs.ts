@@ -316,10 +316,28 @@ export class LocalFsStorage implements StoragePort {
         page.map(async (pathname) => ({ pathname, meta: await this.readMeta(pathname) })),
       );
       for (const { pathname, meta } of withMeta) {
-        // A race between listing and a concurrent `del()` — treat as "gone",
-        // not an error, matching `del`'s own idempotence.
-        if (!meta) continue;
-        yield { pathname, uploadedAt: new Date(meta.uploadedAt) };
+        if (meta) {
+          yield { pathname, uploadedAt: new Date(meta.uploadedAt) };
+          continue;
+        }
+
+        // NO SIDECAR, but the object itself is right there in `objects/` — the
+        // walk above is what found it. This used to `continue`, described as a
+        // race with a concurrent `del()`. The 2026-09-02 security review showed
+        // what else it silently swallowed: `put()` writes the object and THEN
+        // the sidecar, so a crash between the two writes hid the object from
+        // `listAll()` — and `listAll()` is the only call in the codebase that
+        // enumerates the store rather than walking from a database row, so a
+        // sidecar-less object was invisible to `reconcile-blobs` FOREVER. Bytes
+        // derived from a child's schoolwork, unreachable by every deletion path.
+        //
+        // Falling back to `stat` makes it visible and therefore reapable. If the
+        // object really did vanish under a concurrent `del()`, `stat` throws
+        // ENOENT and we skip it, which is the idempotence the old comment
+        // claimed — now actually distinguished from the case it was hiding.
+        const stat = await fs.stat(this.objectPath(pathname)).catch(() => null);
+        if (!stat) continue;
+        yield { pathname, uploadedAt: stat.mtime };
       }
     }
   }

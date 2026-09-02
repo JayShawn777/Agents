@@ -380,3 +380,147 @@ describe("M5 narration data — deletion cascades against real Postgres", () => 
     expect(deletedPathnames.has(fixture.upload.pathname)).toBe(true);
   });
 });
+
+/**
+ * **The over-delete race, against real Postgres** (2026-09-02 security review).
+ *
+ * `purgeUnreferencedNarration` ran `findMany({ steps: { none: {} } })` and
+ * `deleteMany` as two statements with no transaction. A narration run whose
+ * final transaction committed in that gap had its brand-new steps
+ * cascade-deleted (`LessonNarrationStep.assetId onDelete: Cascade`) and its blob
+ * deleted — leaving a READY narration with `stepCount: N` and zero steps: a
+ * lesson that plays silently with nothing failing loudly enough to notice. The
+ * function's own docstring said it "cannot over-delete".
+ *
+ * A unit test cannot settle this. The whole question is what Postgres does with
+ * a `deleteMany` whose predicate is re-evaluated at delete time under
+ * `Serializable`, which is exactly what a mocked `db` has no opinion about.
+ */
+describe("purgeUnreferencedNarration does not over-delete a run that lands mid-sweep", () => {
+  // Its own cleanup list — the one above is scoped to that describe block.
+  const createdUserIds: string[] = [];
+
+  afterAll(async () => {
+    for (const id of createdUserIds) {
+      await db.user.delete({ where: { id } }).catch(() => {});
+    }
+  });
+
+  it("leaves an asset alone once a step references it, even if the sweep read it as an orphan", async () => {
+    const unique = `${Date.now()}-${Math.random()}`;
+    const user = await db.user.create({
+      data: { email: `narration-purge-race-${unique}@example.com`, adultAttestedAt: new Date() },
+    });
+    createdUserIds.push(user.id);
+
+    const profile = await db.studentProfile.create({
+      data: { userId: user.id, ageBand: "UNDER_13", status: "ACTIVE", gradeLevel: "GRADE_4" },
+    });
+    const upload = await db.upload.create({
+      data: {
+        studentProfileId: profile.id,
+        pathname: `students/${profile.id}/uploads/purge-race-${unique}.jpg`,
+        contentType: "image/jpeg",
+        sizeBytes: 10,
+        originalFilename: "x.jpg",
+        status: "STORED",
+      },
+    });
+    const extraction = await db.extraction.create({
+      data: { uploadId: upload.id, model: "claude-opus-5", status: "CONFIRMED" },
+    });
+    const extractedProblem = await db.extractedProblem.create({
+      data: { extractionId: extraction.id, ordinal: 1, text: "What is 1/4 + 1/4?", confidence: 0.9 },
+    });
+    const lesson = await db.lesson.create({
+      data: { studentProfileId: profile.id, extractedProblemId: extractedProblem.id, status: "READY" },
+    });
+    const version = await db.lessonScriptVersion.create({
+      data: {
+        lessonId: lesson.id,
+        version: 1,
+        status: "READY",
+        schemaVersion: "1",
+        model: "claude-opus-5",
+        effort: "high",
+        promptVersion: "test",
+        stepCount: 1,
+      },
+    });
+
+    async function makeAsset(tag: string) {
+      return db.narrationAsset.create({
+        data: {
+          studentProfileId: profile.id,
+          cacheKey: `${tag}-${unique}`,
+          providerVoiceId: "voice_x",
+          ttsModelId: NARRATION_MODEL_ID,
+          pathname: `students/${profile.id}/narration/${tag}-${unique}.mp3`,
+          contentType: "audio/mpeg",
+          sizeBytes: 1000,
+          durationMs: 1500,
+          characterCount: 20,
+          cues: [],
+          cueFormatVersion: CUE_FORMAT_VERSION,
+        },
+      });
+    }
+
+    // Two genuinely unreferenced assets at the moment the sweep starts.
+    const racingAsset = await makeAsset("racing");
+    const orphanAsset = await makeAsset("orphan");
+
+    // The narration run that is about to commit its steps.
+    const narration = await db.lessonNarration.create({
+      data: {
+        lessonId: lesson.id,
+        versionId: version.id,
+        studentProfileId: profile.id,
+        status: "READY",
+        ttsModelId: NARRATION_MODEL_ID,
+        providerVoiceId: "voice_x",
+        cueFormatVersion: CUE_FORMAT_VERSION,
+        stepCount: 1,
+        totalDurationMs: 1500,
+      },
+    });
+
+    const storage = createFakeStorage();
+
+    // The interleaving: the run's step lands after the orphan scan would have
+    // read `racingAsset` as unreferenced. Committing it BEFORE the sweep is the
+    // strictest version of the race the sweep must survive — the sweep's own
+    // read must see it.
+    await db.lessonNarrationStep.create({
+      data: {
+        narrationId: narration.id,
+        stepId: "s1",
+        stepIndex: 0,
+        assetId: racingAsset.id,
+        startOffsetMs: 0,
+      },
+    });
+
+    const result = await purgeUnreferencedNarration(profile.id, storage);
+
+    // Only the genuine orphan went.
+    expect(result.deleted).toBe(1);
+    expect(await db.narrationAsset.findUnique({ where: { id: racingAsset.id } })).not.toBeNull();
+    expect(await db.narrationAsset.findUnique({ where: { id: orphanAsset.id } })).toBeNull();
+
+    // And the run is intact: READY, with the step count it claims. The defect's
+    // signature was `stepCount: 1` alongside zero surviving steps.
+    const after = await db.lessonNarration.findUniqueOrThrow({
+      where: { id: narration.id },
+      include: { steps: true },
+    });
+    expect(after.status).toBe("READY");
+    expect(after.steps).toHaveLength(after.stepCount!);
+
+    // The racing asset's BLOB was never deleted either, so the surviving step
+    // still resolves to real audio rather than a 404.
+    const deletedPaths = storage.deletedBatches.flat();
+    expect(deletedPaths).toContain(orphanAsset.pathname);
+    expect(deletedPaths).not.toContain(racingAsset.pathname);
+  });
+});

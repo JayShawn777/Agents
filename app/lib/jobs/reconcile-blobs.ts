@@ -78,10 +78,37 @@ const LIST_BATCH_SIZE = 500;
  * one hard-coded table. See the class docstring above (M5 §7.1) for why
  * this exists as a registry rather than a second special case.
  */
-const BLOB_CLAIMANTS: ReadonlyArray<(pathnames: string[]) => Promise<Array<{ pathname: string }>>> = [
-  (pathnames) => db.upload.findMany({ where: { pathname: { in: pathnames } }, select: { pathname: true } }),
-  (pathnames) => db.narrationAsset.findMany({ where: { pathname: { in: pathnames } }, select: { pathname: true } }),
-];
+export const BLOB_CLAIMANTS = [
+  { model: "upload" },
+  { model: "narrationAsset" },
+] as const;
+
+export type BlobClaimantModel = (typeof BLOB_CLAIMANTS)[number]["model"];
+
+/**
+ * **`BLOB_CLAIMANTS` carries model NAMES, not bare closures** (2026-09-02
+ * security review). It used to be an array of anonymous functions, which no
+ * test could introspect — so unlike `PROFILE_BLOB_SOURCES` it had no
+ * completeness check at all, and a missing registration fails toward DELETING a
+ * live blob. Naming the models makes the registry readable by
+ * `tests/unit/lib/jobs/blob-claimants.test.ts`, which reads `schema.prisma` and
+ * fails on any model owning a `pathname` that is not listed here.
+ *
+ * The claim query is driven by the manifest rather than hand-written per model,
+ * the same indexing-and-casting shape `readProfileBlobPathnamesBySource`
+ * (`lib/deletion/service.ts`) uses and for the same reason: Prisma's generated
+ * client has no delegate type spanning arbitrary models. The manifest's
+ * completeness is what the test guards, not this cast.
+ */
+function claimPathnames(model: BlobClaimantModel, pathnames: string[]): Promise<Array<{ pathname: string }>> {
+  const delegate = db[model] as unknown as {
+    findMany: (args: {
+      where: { pathname: { in: string[] } };
+      select: { pathname: true };
+    }) => Promise<Array<{ pathname: string }>>;
+  };
+  return delegate.findMany({ where: { pathname: { in: pathnames } }, select: { pathname: true } });
+}
 
 export async function reconcileBlobs(storage: StoragePort, clock: Clock): Promise<ReconcileBlobsResult> {
   const now = clock();
@@ -95,7 +122,9 @@ export async function reconcileBlobs(storage: StoragePort, clock: Clock): Promis
     if (batch.length === 0) return;
     const pathnames = batch.map((obj) => obj.pathname);
     // An object is an orphan only if NO claimant claims it (M5 §7.1).
-    const claimedByAnyOwner = await Promise.all(BLOB_CLAIMANTS.map((claim) => claim(pathnames)));
+    const claimedByAnyOwner = await Promise.all(
+      BLOB_CLAIMANTS.map((claimant) => claimPathnames(claimant.model, pathnames)),
+    );
     const knownPathnames = new Set(claimedByAnyOwner.flat().map((row) => row.pathname));
 
     const orphans = batch
