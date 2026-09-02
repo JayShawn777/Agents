@@ -5,6 +5,8 @@ import type { StoragePort } from "@/lib/storage/port";
 import type { Clock } from "@/lib/jobs/clock";
 import {
   CHAT_TRANSCRIPT_RETENTION_DAYS,
+  VOICE_SAMPLE_RETENTION_DAYS,
+  VOICE_CONSENT_RECORDING_RETENTION_DAYS,
   SOURCE_FILE_RETENTION_DAYS_AFTER_EXTRACTION,
   DELETION_AUDIT_RETENTION_DAYS,
   RETENTION_POLICY,
@@ -139,6 +141,60 @@ export async function enforceRetention(storage: StoragePort, clock: Clock): Prom
     where: { openedAt: { lte: chatCutoff } },
   });
 
+  // ── VOICE_SAMPLE ── M6. The raw recording of an account owner's voice.
+  //
+  // The happy path deletes this inline the moment vendor creation succeeds
+  // (`VOICE_SAMPLE_RETENTION_DAYS` is 0), so this sweep exists for the samples
+  // that inline deletion never reached: a creation that failed after upload, a
+  // function killed between the vendor call and the delete, a row whose blob
+  // delete threw. Without it those are permanent, and this is the most
+  // sensitive object the application holds.
+  //
+  // BLOBS FIRST, then the column — the opposite direction to
+  // `purgeUnreferencedNarration`, and deliberately so. There the risk was a live
+  // row pointing at deleted audio; here nothing reads `samplePathname` except
+  // this sweep, and the failure that matters is bytes of a real person's voice
+  // outliving their retention row. If the blob delete throws, the column is left
+  // set and the next run tries again.
+  const sampleCutoff = new Date(now.getTime() - VOICE_SAMPLE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const staleSamples = await db.customVoice.findMany({
+    where: { samplePathname: { not: null }, createdAt: { lte: sampleCutoff } },
+    select: { id: true, samplePathname: true },
+  });
+  let voiceSampleCount = 0;
+  if (staleSamples.length > 0) {
+    await storage.del(staleSamples.map((row) => row.samplePathname as string));
+    const cleared = await db.customVoice.updateMany({
+      where: { id: { in: staleSamples.map((row) => row.id) } },
+      data: { samplePathname: null, sampleDeletedAt: now },
+    });
+    voiceSampleCount = cleared.count;
+  }
+
+  // ── VOICE_CONSENT_RECORDING ── M6. The account owner saying aloud that they
+  // consented. Kept far longer than the sample, because the question it answers
+  // — "was this authorised" — outlives the voice it authorised.
+  //
+  // Deleting the row leaves the `ParentalConsent` row it references untouched:
+  // that relation is `Restrict` in the other direction, and the consent record
+  // has its own published window. What expires here is the AUDIO, not the fact
+  // that consent was given.
+  const consentAudioCutoff = new Date(
+    now.getTime() - VOICE_CONSENT_RECORDING_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  );
+  const staleConsentAudio = await db.voiceConsentRecording.findMany({
+    where: { createdAt: { lte: consentAudioCutoff } },
+    select: { id: true, pathname: true },
+  });
+  let voiceConsentCount = 0;
+  if (staleConsentAudio.length > 0) {
+    await storage.del(staleConsentAudio.map((row) => row.pathname));
+    const deleted = await db.voiceConsentRecording.deleteMany({
+      where: { id: { in: staleConsentAudio.map((row) => row.id) } },
+    });
+    voiceConsentCount = deleted.count;
+  }
+
   // ── Unconsumed consent challenges (endpoint 27's extra scope, not a
   // RETENTION_POLICY entry — see docstring). ──
   const challengeResult = await db.consentVerificationChallenge.deleteMany({
@@ -153,6 +209,8 @@ export async function enforceRetention(storage: StoragePort, clock: Clock): Prom
       CONSENT_PSEUDONYM: pseudonymResult.count,
       DELETION_AUDIT: auditResult.count,
       CHAT_TRANSCRIPT: chatResult.count,
+      VOICE_SAMPLE: voiceSampleCount,
+      VOICE_CONSENT_RECORDING: voiceConsentCount,
       CONSENT_CHALLENGE_EXPIRED: challengeResult.count,
     },
   };

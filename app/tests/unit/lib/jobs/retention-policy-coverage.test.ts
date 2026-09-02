@@ -23,6 +23,12 @@ const JOB_STEP_BY_RETENTION_KEY: Record<string, string> = {
   CLOSED_ACCOUNT: "purge-closed-accounts.ts — deleteStudentData per profile, then the User row",
   DELETION_AUDIT: "enforce-retention.ts — DeletionAudit.completedAt",
   CHAT_TRANSCRIPT: "enforce-retention.ts — ChatSession.openedAt; ChatMessage cascades",
+  VOICE_SAMPLE:
+    "enforce-retention.ts — CustomVoice.samplePathname cleared, blob deleted. The happy path deletes " +
+    "inline on creation success (window is 0); this sweep catches what that never reached.",
+  VOICE_CONSENT_RECORDING:
+    "enforce-retention.ts — VoiceConsentRecording rows and their blobs past the window. The audio " +
+    "expires; the ParentalConsent row it evidences has its own window.",
 };
 
 /**
@@ -117,6 +123,12 @@ const MODEL_RETENTION_KEY: Record<string, string> = {
   // to the same published category as the audio it bounds. Cascades with the
   // profile and with the narration row.
   NarrationRunAttempt: "NARRATION_AUDIO",
+  // M6. All three are about the ACCOUNT OWNER, an adult, not about a child —
+  // differently governed rather than lower risk. The consent recording and the
+  // sample each have their own published row; `CustomVoice` is the join that
+  // holds the sample's pathname, so it is covered by VOICE_SAMPLE.
+  VoiceConsentRecording: "VOICE_CONSENT_RECORDING",
+  CustomVoice: "VOICE_SAMPLE",
   DirectNotice: "DIRECT_NOTICE",
   ParentalConsent: "CONSENT_FULL",
   ConsentAuditArtifact: "CONSENT_PSEUDONYM",
@@ -140,7 +152,16 @@ const MODELS_OUTSIDE_THE_POLICY: Record<string, string> = {
   // each. No student data of any kind — a Persona row is identical for every
   // family, and a child's CHOICE of persona lives on StudentProfile, which is
   // covered by PROFILE_FIELDS.
-  Persona: "App reference data — the tutor personas, identical for every family.",
+  Persona:
+    "App reference data for the shared six, identical for every family. M6 adds account-OWNED personas " +
+    "(`ownerUserId`), but the row still holds no student data: a label, a preset artwork id and a vendor " +
+    "voice id belonging to the account holder. The recordings behind it are covered by VOICE_SAMPLE and " +
+    "VOICE_CONSENT_RECORDING; the row itself cascades with the account.",
+  // M6 AC 21. Deliberately outside the policy for the same reason DeletionAudit
+  // is: it exists to survive the deletion it records, carries no student data,
+  // and its `userId` is nulled on account purge leaving only an HMAC.
+  VoiceCreationAudit:
+    "Forensic audit of voice creation/deletion (AC 21). No student data; userId nulled on purge, actorHash survives.",
 };
 
 describe("every Prisma model is classified against the retention policy", () => {

@@ -70,9 +70,16 @@ enum ConsentRelationship {
   SELF
 }
 
-/// Append a value here for M6 voice cloning. Never rewrite existing rows. (ADR-0007)
+/// Append-only. A scope is legal evidence of what a parent agreed to; removing
+/// or reordering a value rewrites history (ADR-0007).
 enum ConsentScope {
   DATA_PROCESSING
+  /// M6 AC 8. The account owner consenting to a model of THEIR OWN voice being
+  /// created and used to narrate lessons. Deliberately a separate scope rather
+  /// than an extension of DATA_PROCESSING: it is consent about an ADULT, given
+  /// by that adult about themselves, and it is independently withdrawable
+  /// (AC 18) without touching a child's data-processing consent.
+  VOICE_CLONING
 }
 
 /// Method shapes enumerated in 16 CFR §312.5(b)(2)(i)-(ix), confirmed verbatim
@@ -190,6 +197,8 @@ model User {
   /// M6. Personas this account OWNS — a cloned voice of the account holder.
   /// The shared six have `ownerUserId: null` and belong to nobody.
   personas        Persona[]
+  voiceConsents   VoiceConsentRecording[]
+  customVoices    CustomVoice[]
 
   @@index([closureRequestedAt])
 }
@@ -350,7 +359,14 @@ model Persona {
   /// local half; the vendor-side half is M6 slice 7).
   ownerUserId     String?
 
+  /// M6. This persona's OWN lifecycle, distinct from `retiredAt`, which means
+  /// "the app withdrew this stock voice". A REVOKED custom voice is not retired:
+  /// the account still owns it, it simply may not be selected or generated with
+  /// (AC 18). Shared personas are always ACTIVE.
+  status          PersonaStatus     @default(ACTIVE)
+
   owner           User?             @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  customVoice     CustomVoice?
   profiles        StudentProfile[]
   narrations      LessonNarration[]
   narrationAssets NarrationAsset[]
@@ -358,6 +374,21 @@ model Persona {
   @@index([retiredAt, sortOrder])
   /// The visibility clause every persona read composes.
   @@index([ownerUserId])
+  @@index([ownerUserId, status])
+}
+
+/// M6. A custom voice's lifecycle. `PENDING_VERIFICATION` is a DEFENSIVE branch,
+/// not the expected path: the 2026-09-02 measurement established that this
+/// vendor returns `requires_verification: false` and that a created voice
+/// synthesizes immediately. It exists because a vendor can change that without
+/// telling us, and because per-account policy may differ.
+enum PersonaStatus {
+  ACTIVE
+  /// AC 13. Persisted, NOT selectable, and the owner is told what is outstanding.
+  PENDING_VERIFICATION
+  /// AC 18. Consent withdrawn: unselectable and never generated with again.
+  /// Already-cached narration still plays — deleting it is AC 19's separate act.
+  REVOKED
 }
 
 enum NarrationStatus {
@@ -447,6 +478,111 @@ model NarrationRunAttempt {
   /// Both AC 21 window queries: the hourly run count and the daily character sum.
   @@index([studentProfileId, createdAt])
   @@index([narrationId])
+}
+
+// ─────────────────────── M6: custom voice ───────────────────────
+
+/// AC 21. What happened to a cloned voice, and who did it.
+enum VoiceAuditEvent {
+  CREATED
+  REVOKED
+  DELETED
+  /// The vendor call failed during a deletion that succeeded locally. Recorded
+  /// LOUDLY rather than swallowed: a voice model of a real person still existing
+  /// at a third party after we told its owner it was gone is the worst residue
+  /// this milestone can leave.
+  VENDOR_DELETE_FAILED
+}
+
+/// AC 5/6/7. The recorded spoken consent statement — the account owner saying
+/// out loud who they are, that this is their voice, and that it may be recreated
+/// to narrate lessons for their children.
+///
+/// **It is NEVER transmitted to the TTS vendor.** It is our own artifact, held
+/// for our own account: never played to a student, never transcribed, never
+/// analysed (the spec's out-of-scope list says all three). It exists to answer
+/// "was this authorised", after the fact, to someone who was not there.
+///
+/// Recorded BEFORE the voice sample, not after — AC 5's ordering is deliberate.
+/// A consent statement obtained after the sample already exists is a formality;
+/// obtained first, it is the gate.
+model VoiceConsentRecording {
+  id                       String   @id @default(cuid())
+  userId                   String
+  /// `users/<userId>/voice-consent/<cuid>.<ext>`. A pathname, never a URL, and
+  /// NEVER in a DTO — the same rule as every other blob in this app.
+  pathname                 String   @unique
+  /// Versioned like the §312.4 notice: new wording, new version, so an existing
+  /// recording keeps saying which words were actually read aloud.
+  consentWordingVersion    String
+  durationMs               Int
+  /// AC 7: read SERVER-side from headers, never accepted from the body — the
+  /// same rule as ParentalConsent.ipAddress (ADR-0007 §3).
+  ipAddress                String?
+  userAgent                String?
+  /// AC 7: stamped once vendor creation succeeds. NULL means "consent was
+  /// recorded but no voice resulted", which is a real and unremarkable state.
+  resultingProviderVoiceId String?
+  /// AC 8: the appended ParentalConsent row carrying ConsentScope.VOICE_CLONING.
+  /// Restrict, not Cascade — a consent record may not vanish out from under the
+  /// recording that evidences it, the same reasoning DirectNotice uses.
+  parentalConsentId        String?  @unique
+  createdAt                DateTime @default(now())
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentalConsent ParentalConsent? @relation(fields: [parentalConsentId], references: [id], onDelete: Restrict)
+  customVoice     CustomVoice?
+
+  @@index([userId, createdAt])
+}
+
+/// The join between an account, its consent recording, the vendor's voice, and
+/// the Persona row that makes it selectable. One row per cloned voice.
+model CustomVoice {
+  id                      String    @id @default(cuid())
+  userId                  String
+  personaId               String    @unique
+  voiceConsentRecordingId String    @unique
+  /// AC 11. The raw sample, uploaded browser-direct to private blob storage.
+  /// NULLED once deleted per M0's VOICE_SAMPLE retention row: once the vendor
+  /// holds the voice, the sample has no further business need, and it is the
+  /// most sensitive object this application will ever hold.
+  samplePathname          String?   @unique
+  sampleDeletedAt         DateTime?
+  /// The handle to a model of a real person's voice, held by a third party.
+  /// AC 19/20 exist because deleting this row does not delete that.
+  providerVoiceId         String
+  /// AC 13. Defaults false — the 2026-09-02 measurement found this vendor
+  /// returns `requires_verification: false` and synthesizes immediately.
+  requiresVerification    Boolean   @default(false)
+  createdAt               DateTime  @default(now())
+
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  persona          Persona               @relation(fields: [personaId], references: [id], onDelete: Cascade)
+  consentRecording VoiceConsentRecording @relation(fields: [voiceConsentRecordingId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([providerVoiceId])
+}
+
+/// AC 21: "durable enough to answer 'who cloned this' after the fact."
+///
+/// Like DeletionAudit (ADR-0007 §4) it has **no foreign keys**, so it survives
+/// the deletion it exists to record. `userId` is a plain nullable string, nulled
+/// by account purge; `actorHash` is an HMAC under the same AUDIT_PSEUDONYM_KEY
+/// as ConsentAuditArtifact and survives it. An audit row that cascades away with
+/// its subject answers nothing.
+model VoiceCreationAudit {
+  id                    String          @id @default(cuid())
+  event                 VoiceAuditEvent
+  userId                String?
+  actorHash             String
+  providerVoiceId       String
+  consentWordingVersion String?
+  occurredAt            DateTime        @default(now())
+
+  @@index([providerVoiceId])
+  @@index([event, occurredAt])
 }
 
 /// The join that makes AC 13's timeline: a step id and an offset — nothing about
@@ -586,6 +722,8 @@ model ParentalConsent {
   user           User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
   directNotice   DirectNotice                  @relation(fields: [directNoticeId], references: [id], onDelete: Restrict)
   challenge      ConsentVerificationChallenge?
+  /// M6 AC 7/8. The recorded statement evidencing a VOICE_CLONING consent row.
+  voiceRecording VoiceConsentRecording?
 
   @@index([studentProfileId, submittedAt])
   @@index([verifiedAt])

@@ -79,8 +79,16 @@ const LIST_BATCH_SIZE = 500;
  * this exists as a registry rather than a second special case.
  */
 export const BLOB_CLAIMANTS = [
-  { model: "upload" },
-  { model: "narrationAsset" },
+  { model: "upload", column: "pathname" },
+  { model: "narrationAsset", column: "pathname" },
+  // M6. Both were caught by `blob-claimants.test.ts` before they could be
+  // reaped — and `CustomVoice` is why this registry now carries a COLUMN NAME.
+  // Its blob lives in `samplePathname`, not `pathname`, so the completeness
+  // check's original `^pathname` pattern could not see it at all: an unregistered
+  // claimant whose column is merely NAMED differently would have had the raw
+  // recording of a real person's voice deleted an hour after it was uploaded.
+  { model: "voiceConsentRecording", column: "pathname" },
+  { model: "customVoice", column: "samplePathname" },
 ] as const;
 
 export type BlobClaimantModel = (typeof BLOB_CLAIMANTS)[number]["model"];
@@ -100,14 +108,25 @@ export type BlobClaimantModel = (typeof BLOB_CLAIMANTS)[number]["model"];
  * client has no delegate type spanning arbitrary models. The manifest's
  * completeness is what the test guards, not this cast.
  */
-function claimPathnames(model: BlobClaimantModel, pathnames: string[]): Promise<Array<{ pathname: string }>> {
+async function claimPathnames(
+  model: BlobClaimantModel,
+  column: string,
+  pathnames: string[],
+): Promise<string[]> {
   const delegate = db[model] as unknown as {
     findMany: (args: {
-      where: { pathname: { in: string[] } };
-      select: { pathname: true };
-    }) => Promise<Array<{ pathname: string }>>;
+      where: Record<string, { in: string[] }>;
+      select: Record<string, true>;
+    }) => Promise<Array<Record<string, string | null>>>;
   };
-  return delegate.findMany({ where: { pathname: { in: pathnames } }, select: { pathname: true } });
+  const rows = await delegate.findMany({
+    where: { [column]: { in: pathnames } },
+    select: { [column]: true },
+  });
+  // `samplePathname` is nullable — a CustomVoice whose sample has been deleted
+  // claims nothing, which is correct: the object is gone and any bytes still
+  // sitting there ARE an orphan.
+  return rows.map((row) => row[column]).filter((value): value is string => typeof value === "string");
 }
 
 export async function reconcileBlobs(storage: StoragePort, clock: Clock): Promise<ReconcileBlobsResult> {
@@ -123,9 +142,9 @@ export async function reconcileBlobs(storage: StoragePort, clock: Clock): Promis
     const pathnames = batch.map((obj) => obj.pathname);
     // An object is an orphan only if NO claimant claims it (M5 §7.1).
     const claimedByAnyOwner = await Promise.all(
-      BLOB_CLAIMANTS.map((claimant) => claimPathnames(claimant.model, pathnames)),
+      BLOB_CLAIMANTS.map((claimant) => claimPathnames(claimant.model, claimant.column, pathnames)),
     );
-    const knownPathnames = new Set(claimedByAnyOwner.flat().map((row) => row.pathname));
+    const knownPathnames = new Set(claimedByAnyOwner.flat());
 
     const orphans = batch
       .filter((obj) => !knownPathnames.has(obj.pathname))

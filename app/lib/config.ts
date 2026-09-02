@@ -126,6 +126,60 @@ export const CHAT_TRANSCRIPT_RETENTION_DAYS = 180;
 /** M0 AC 47 — ASSUMPTION. How long a `DeletionAudit` row survives after `completedAt`. */
 export const DELETION_AUDIT_RETENTION_DAYS = 365;
 
+// ─────────────────────────── M6: custom voice ───────────────────────────
+
+/**
+ * M6. How long the RAW VOICE SAMPLE is kept after the clone exists.
+ *
+ * **Zero: deleted as soon as vendor creation succeeds.** Once the vendor holds
+ * the voice, the sample has no further business need, and it is the single most
+ * sensitive object this application will ever hold — a biometric-adjacent
+ * recording that uniquely identifies a named adult. Keeping it "in case" would
+ * be keeping it for no stated purpose, which is the thing the retention table
+ * exists to prevent.
+ *
+ * The window is configuration rather than a hard-coded delete so that a future
+ * need (a re-clone flow, say) has somewhere to be argued rather than smuggled in.
+ */
+export const VOICE_SAMPLE_RETENTION_DAYS = 0;
+
+/**
+ * M6. How long the RECORDED CONSENT STATEMENT is kept.
+ *
+ * Longer than the sample, and for a different reason: it is the artifact that
+ * answers "was this authorised", so it must outlive the voice it authorised.
+ * Matched to `DELETION_AUDIT_RETENTION_DAYS` because it is evidence of the same
+ * kind — and, like that row, it is a recording of an ADULT, which is not nothing.
+ */
+export const VOICE_CONSENT_RECORDING_RETENTION_DAYS = DELETION_AUDIT_RETENTION_DAYS;
+
+/**
+ * M6 AC 15. The spec assumes one, and one is what this ships with. A second
+ * voice per account is a product decision with a per-child assignment UI behind
+ * it (explicitly out of scope), not a number to raise casually.
+ */
+export const MAX_CUSTOM_VOICES_PER_USER = 1;
+
+/**
+ * M6 AC 9. Sample duration bounds, enforced in the browser AND at the API
+ * boundary. The lower bound is not the vendor's — the 2026-09-02 measurement
+ * produced a working clone from 18.4 seconds — but a short sample makes a poor
+ * voice, and the failure a parent experiences is "it does not sound like me".
+ */
+export const VOICE_SAMPLE_MIN_MS = 30_000;
+export const VOICE_SAMPLE_MAX_MS = 180_000;
+
+/** M6 AC 5. The spoken consent statement's own bounds. */
+export const VOICE_CONSENT_MIN_MS = 3_000;
+export const VOICE_CONSENT_MAX_MS = 60_000;
+
+/** M6 AC 15. Creation attempts per account per rolling window. */
+export const VOICE_ATTEMPTS_PER_WINDOW = 5;
+export const VOICE_ATTEMPT_WINDOW_MS = 60 * 60 * 1000;
+
+/** M6. The preset artwork every custom voice uses. Never an upload, never a likeness (AC 2). */
+export const CUSTOM_VOICE_ARTWORK_ID = "preset-custom-voice";
+
 /**
  * ADR-0008 §4/§5, and a finding from the M0 consent-flow review: caps
  * attempts per caller IP against the public, session-free, token-authenticated
@@ -901,6 +955,22 @@ export type RetentionPolicyEntry = {
  * compliance artifact.
  */
 export const RETENTION_POLICY = [
+  {
+    key: "VOICE_SAMPLE",
+    purpose: "The recording an account owner makes of their own voice, used once to create a custom tutor voice.",
+    businessNeed:
+      "Needed only to create the voice. Once the voice exists the recording serves no further purpose, so it is deleted immediately.",
+    windowDays: VOICE_SAMPLE_RETENTION_DAYS,
+    anchor: "createdAt",
+  },
+  {
+    key: "VOICE_CONSENT_RECORDING",
+    purpose: "The recording of an account owner saying aloud that they consent to their voice being recreated.",
+    businessNeed:
+      "Evidence that the person whose voice was recreated agreed to it. Kept longer than the voice itself, because the question it answers outlives the voice.",
+    windowDays: VOICE_CONSENT_RECORDING_RETENTION_DAYS,
+    anchor: "createdAt",
+  },
   {
     key: "PRE_CONSENT",
     purpose:

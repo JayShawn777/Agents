@@ -26,6 +26,14 @@ const dbMock = {
   narrationAsset: {
     findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
   },
+  // M6 claimants. Both default to claiming nothing, so every pre-existing test
+  // in this file behaves exactly as before.
+  voiceConsentRecording: {
+    findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
+  },
+  customVoice: {
+    findMany: vi.fn(async () => [] as Array<{ samplePathname: string | null }>),
+  },
   uploadTokenGrant: {
     deleteMany: vi.fn(async () => ({ count: 0 })),
   },
@@ -68,6 +76,8 @@ beforeEach(async () => {
   dbMock.upload.findMany.mockResolvedValue([]);
   dbMock.upload.updateMany.mockResolvedValue({ count: 0 });
   dbMock.narrationAsset.findMany.mockResolvedValue([]);
+  dbMock.voiceConsentRecording.findMany.mockResolvedValue([]);
+  dbMock.customVoice.findMany.mockResolvedValue([]);
   dbMock.uploadTokenGrant.deleteMany.mockResolvedValue({ count: 0 });
   rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "reconcile-blobs-local-fs-"));
   real = new LocalFsStorage(rootDir);

@@ -27,6 +27,15 @@ const dbMock = {
   narrationAsset: {
     findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
   },
+  // M6. Two more claimants, and `customVoice` is the reason the registry now
+  // carries a COLUMN NAME: its blob lives in `samplePathname`. Both default to
+  // claiming nothing, so every pre-existing test here is unaffected.
+  voiceConsentRecording: {
+    findMany: vi.fn(async () => [] as Array<{ pathname: string }>),
+  },
+  customVoice: {
+    findMany: vi.fn(async () => [] as Array<{ samplePathname: string | null }>),
+  },
   uploadTokenGrant: {
     deleteMany: vi.fn(async () => ({ count: 0 })),
   },
@@ -48,6 +57,8 @@ beforeEach(() => {
   dbMock.upload.findMany.mockResolvedValue([]);
   dbMock.upload.updateMany.mockResolvedValue({ count: 0 });
   dbMock.narrationAsset.findMany.mockResolvedValue([]);
+  dbMock.voiceConsentRecording.findMany.mockResolvedValue([]);
+  dbMock.customVoice.findMany.mockResolvedValue([]);
   dbMock.uploadTokenGrant.deleteMany.mockResolvedValue({ count: 0 });
 });
 
@@ -184,5 +195,54 @@ describe("reconcileBlobs — UploadTokenGrant pruning (ADR-0007 §2)", () => {
       where: { createdAt: { lte: new Date(NOW.getTime() - 24 * 60 * 60 * 1000) } },
     });
     expect(result.grantsPruned).toBe(2);
+  });
+});
+
+
+/**
+ * ─────────── M6: the two voice claimants ───────────
+ *
+ * Same finding as M5 §7.1, one milestone later and caught by the completeness
+ * test rather than by a review: an unregistered claimant's live blobs are
+ * treated as orphans and deleted an hour after they appear. Here those blobs are
+ * a recording of a real person's voice and the recorded statement consenting to
+ * it — the two most sensitive objects this application holds.
+ */
+describe("M6 voice blobs are claimed, not reaped", () => {
+  it("leaves a consent recording's object alone, however old", async () => {
+    const pathname = "users/u1/voice-consent/abc.m4a";
+    dbMock.voiceConsentRecording.findMany.mockResolvedValue([{ pathname }]);
+    const storage = createFakeStorage([{ pathname, uploadedAt: minutesAgo(60 * 24 * 400) }]);
+
+    const result = await reconcileBlobs(storage, clock);
+
+    expect(storage.deletedBatches).toEqual([]);
+    expect(result.orphansDeleted).toBe(0);
+  });
+
+  it("leaves a voice SAMPLE alone — claimed through samplePathname, not pathname", async () => {
+    const samplePathname = "users/u1/voice-sample/abc.m4a";
+    dbMock.customVoice.findMany.mockResolvedValue([{ samplePathname }]);
+    const storage = createFakeStorage([{ pathname: samplePathname, uploadedAt: minutesAgo(60 * 24) }]);
+
+    const result = await reconcileBlobs(storage, clock);
+
+    // The whole point of the column name in the registry. Claiming through
+    // `pathname` would have found nothing and deleted this.
+    expect(storage.deletedBatches).toEqual([]);
+    expect(result.orphansDeleted).toBe(0);
+  });
+
+  it("DOES reap a sample whose row has already had its pathname cleared", async () => {
+    // Retention nulls `samplePathname` after deleting the blob. If bytes are
+    // still there, they are a genuine orphan and this sweep is the backstop.
+    const orphan = "users/u1/voice-sample/left-behind.m4a";
+    dbMock.customVoice.findMany.mockResolvedValue([{ samplePathname: null }]);
+    const storage = createFakeStorage([{ pathname: orphan, uploadedAt: minutesAgo(60 * 24) }]);
+
+    const result = await reconcileBlobs(storage, clock);
+
+    expect(storage.deletedBatches).toEqual([[orphan]]);
+    expect(result.orphansDeleted).toBe(1);
   });
 });

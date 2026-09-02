@@ -46,6 +46,12 @@ export const metadata: Metadata = {
  * typecheck failure, not a raw enum key rendered to the public.
  */
 const CATEGORY_LABELS: Record<RetentionCategoryKey, string> = {
+  // M6. Both are recordings of the ACCOUNT OWNER — an adult — rather than of a
+  // child, which does not make them lower risk, only differently governed. The
+  // labels say whose voice it is, because "voice sample" alone would read to a
+  // parent as though we had recorded their child.
+  VOICE_SAMPLE: "Your recorded voice sample (used once to create a custom voice)",
+  VOICE_CONSENT_RECORDING: "Your recorded consent to your voice being recreated",
   PRE_CONSENT: "Age band collected before consent",
   SOURCE_FILE: "Uploaded schoolwork (photo or PDF)",
   EXTRACTED_TEXT: "Extracted problem text",

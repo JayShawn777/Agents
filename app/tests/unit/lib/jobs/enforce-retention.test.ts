@@ -40,13 +40,39 @@ const dbMock = {
     deleteMany:
       vi.fn<(args: { where: { openedAt: { lte: Date } } }) => Promise<{ count: number }>>(async () => ({ count: 0 })),
   },
+  // M6. Both default to "nothing stale", so every pre-existing test in this file
+  // is unaffected by the two new steps.
+  customVoice: {
+    findMany:
+      vi.fn<(args: { where: { createdAt: { lte: Date } } }) => Promise<Array<{ id: string; samplePathname: string }>>>(
+        async () => [],
+      ),
+    updateMany:
+      vi.fn<
+        (args: { where: { id: { in: string[] } }; data: { samplePathname: null; sampleDeletedAt: Date } }) => Promise<{
+          count: number;
+        }>
+      >(async () => ({ count: 0 })),
+  },
+  voiceConsentRecording: {
+    findMany:
+      vi.fn<(args: { where: { createdAt: { lte: Date } } }) => Promise<Array<{ id: string; pathname: string }>>>(
+        async () => [],
+      ),
+    deleteMany: vi.fn(async () => ({ count: 0 })),
+  },
 };
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 
 const { enforceRetention } = await import("@/lib/jobs/enforce-retention");
-const { SOURCE_FILE_RETENTION_DAYS_AFTER_EXTRACTION, DELETION_AUDIT_RETENTION_DAYS, CHAT_TRANSCRIPT_RETENTION_DAYS } =
-  await import("@/lib/config");
+const {
+  SOURCE_FILE_RETENTION_DAYS_AFTER_EXTRACTION,
+  DELETION_AUDIT_RETENTION_DAYS,
+  CHAT_TRANSCRIPT_RETENTION_DAYS,
+  VOICE_SAMPLE_RETENTION_DAYS,
+  VOICE_CONSENT_RECORDING_RETENTION_DAYS,
+} = await import("@/lib/config");
 
 const NOW = new Date("2026-08-27T12:00:00.000Z");
 const clock = () => NOW;
@@ -256,4 +282,91 @@ describe("CHAT_TRANSCRIPT", () => {
     expect(where.openedAt.lte.getTime()).toBe(expected);
   });
 
+});
+
+
+
+/**
+ * ─────────── M6: the two voice retention steps ───────────
+ *
+ * Both categories are recordings of the ACCOUNT OWNER — an adult — and are the
+ * most sensitive objects this application holds. `/retention` publishes a window
+ * for each; these prove the code keeps that promise. A published window nothing
+ * enforces makes the disclosure inaccurate in exactly the way M4's retro found
+ * the OMITTED category did, just in the other direction.
+ */
+describe("VOICE_SAMPLE (M6)", () => {
+  it("deletes the blob BEFORE clearing the column, so a failed delete retries next run", async () => {
+    dbMock.customVoice.findMany.mockResolvedValue([{ id: "cv_1", samplePathname: "users/u1/voice-sample/a.m4a" }]);
+    dbMock.customVoice.updateMany.mockResolvedValue({ count: 1 });
+    const storage = createFakeStorage([]);
+
+    const result = await enforceRetention(storage, clock);
+
+    expect(storage.deletedBatches).toEqual([["users/u1/voice-sample/a.m4a"]]);
+    expect(result.byCategory.VOICE_SAMPLE).toBe(1);
+  });
+
+  it("clears samplePathname and stamps sampleDeletedAt rather than deleting the CustomVoice row", async () => {
+    dbMock.customVoice.findMany.mockResolvedValue([{ id: "cv_1", samplePathname: "users/u1/voice-sample/a.m4a" }]);
+    dbMock.customVoice.updateMany.mockResolvedValue({ count: 1 });
+
+    await enforceRetention(createFakeStorage([]), clock);
+
+    // The voice itself survives — only the raw recording expires. Deleting the
+    // row would take the persona and the consent binding with it.
+    const update = dbMock.customVoice.updateMany.mock.calls[0][0];
+    expect(update.data.samplePathname).toBeNull();
+    expect(update.data.sampleDeletedAt).toBeInstanceOf(Date);
+    expect(dbMock.customVoice.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("touches nothing when no sample is past its window", async () => {
+    dbMock.customVoice.findMany.mockResolvedValue([]);
+    const storage = createFakeStorage([]);
+
+    const result = await enforceRetention(storage, clock);
+
+    expect(dbMock.customVoice.updateMany).not.toHaveBeenCalled();
+    expect(storage.deletedBatches).toEqual([]);
+    expect(result.byCategory.VOICE_SAMPLE).toBe(0);
+  });
+
+  it("only considers rows that still HAVE a sample", async () => {
+    await enforceRetention(createFakeStorage([]), clock);
+
+    const where = dbMock.customVoice.findMany.mock.calls[0][0].where as { samplePathname?: unknown };
+    // Without this clause the sweep would re-select already-cleared rows on
+    // every run and hand `storage.del` a list of nulls, forever.
+    expect(where.samplePathname).toEqual({ not: null });
+  });
+});
+
+describe("VOICE_CONSENT_RECORDING (M6)", () => {
+  it("deletes the audio and the row, blob first", async () => {
+    dbMock.voiceConsentRecording.findMany.mockResolvedValue([
+      { id: "vcr_1", pathname: "users/u1/voice-consent/a.m4a" },
+    ]);
+    dbMock.voiceConsentRecording.deleteMany.mockResolvedValue({ count: 1 });
+    const storage = createFakeStorage([]);
+
+    const result = await enforceRetention(storage, clock);
+
+    expect(storage.deletedBatches).toEqual([["users/u1/voice-consent/a.m4a"]]);
+    expect(result.byCategory.VOICE_CONSENT_RECORDING).toBe(1);
+  });
+
+  it("cuts off exactly VOICE_CONSENT_RECORDING_RETENTION_DAYS before now", async () => {
+    await enforceRetention(createFakeStorage([]), clock);
+
+    const where = dbMock.voiceConsentRecording.findMany.mock.calls[0][0].where as { createdAt: { lte: Date } };
+    const expected = new Date(NOW.getTime() - VOICE_CONSENT_RECORDING_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    expect(where.createdAt.lte).toEqual(expected);
+  });
+
+  it("keeps the consent recording far longer than the sample it evidences", () => {
+    // The relationship is the point, not the numbers: the artifact answering
+    // "was this authorised" must outlive the voice it authorised.
+    expect(VOICE_CONSENT_RECORDING_RETENTION_DAYS).toBeGreaterThan(VOICE_SAMPLE_RETENTION_DAYS);
+  });
 });
