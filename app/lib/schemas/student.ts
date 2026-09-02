@@ -10,6 +10,10 @@
 import { z } from "zod";
 import { AgeBand, AVATAR_IDS, GradeLevel, Subject } from "@/lib/domain/enums";
 
+// The persona id: `z.cuid()` is checked for FORM, not membership — whether
+// it resolves to an existing, non-retired `Persona` row is a database
+// question (the route's 409, M5 plan §3 row 4†), not a zod one.
+
 // ─────────────────────────── POST /api/students (#2) ───────────────────────────
 
 /**
@@ -49,6 +53,15 @@ export const updateStudentInputSchema = z
       .refine(isUniqueArray, { message: "Subjects must not contain duplicates." })
       .optional(),
     avatarId: z.enum(AVATAR_IDS).optional(),
+    /**
+     * M5 AC 3/4 (plan §3 row 4†). Never `null` here — there is no "unset back
+     * to the default persona" affordance in this milestone, only "choose
+     * one". `lib/config.ts`'s `DEFAULT_PERSONA_SLUG` is what a profile that
+     * has never PATCHed this field gets at generation time.
+     */
+    personaId: z.cuid().optional(),
+    /** M5 AC 18. */
+    captionsEnabled: z.boolean().optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {

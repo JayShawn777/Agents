@@ -32,9 +32,17 @@ import type { ConsentDTO, DirectNoticeDTO, StudentProfileDTO } from "@/lib/schem
  */
 export function toStudentProfileDTO(
   profile: StudentProfile,
-  opts: { hasNotice: boolean },
+  opts: {
+    hasNotice: boolean;
+    /**
+     * M5 AC 3/19. Optional and defaults to `null` — every call site written
+     * before M5 (GET, the consent routes, both server pages) keeps working
+     * unchanged; only the PATCH route (endpoint 4) resolves and passes this.
+     */
+    persona?: { id: string; slug: string; label: string } | null;
+  },
 ): StudentProfileDTO {
-  const { hasNotice } = opts;
+  const { hasNotice, persona = null } = opts;
   return {
     id: profile.id,
     ageBand: profile.ageBand,
@@ -46,6 +54,11 @@ export function toStudentProfileDTO(
     nextStep: deriveNextStep(profile.status, profile.displayName, hasNotice),
     canUpload: profile.status === "ACTIVE",
     createdAt: profile.createdAt.toISOString(),
+    persona,
+    // M5 AC 18. Directly off the row — `StudentProfile.captionsEnabled`
+    // defaults `true` in the schema, so this is never undefined even for a
+    // profile that predates the column.
+    captionsEnabled: profile.captionsEnabled,
   };
 }
 

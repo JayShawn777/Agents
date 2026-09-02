@@ -120,4 +120,57 @@ describe("never in this DTO", () => {
       expect(serialised).not.toContain(forbidden);
     }
   });
+
+  /**
+   * **The exact key set, not a denylist — and both levels of it.**
+   *
+   * The test above names six forbidden fields. That only ever catches the
+   * fields somebody thought to name: add a column to `NarrationAsset` or
+   * `LessonNarration` tomorrow, spread it into this DTO, and the denylist stays
+   * green while the new field ships to the browser. M4's review found this
+   * exact weakness in the lesson DTO tests — top-level only, one edit from
+   * leaking — and the fix there was to pin the key set.
+   *
+   * Pinning it inverts the burden: a new field fails this test until somebody
+   * decides, deliberately, that a child's browser should see it.
+   *
+   * The NESTED assertion is the half that matters most, because `dto.steps` is
+   * where the row-shaped data lives — a step carries the asset's timings, and
+   * an asset row is the thing that knows about voice ids, pathnames and cache
+   * keys.
+   */
+  it("pins the exact key set at BOTH levels, so a new field cannot ride along", async () => {
+    const dto = await toLessonNarrationDTO(storageMock() as never, readyNarration());
+
+    expect(Object.keys(dto).sort()).toEqual(
+      [
+        "failureMessage",
+        "id",
+        "persona",
+        "status",
+        "stepCount",
+        "steps",
+        "totalDurationMs",
+        "versionId",
+      ].sort(),
+    );
+
+    expect(dto.steps.length).toBeGreaterThan(0);
+    for (const step of dto.steps) {
+      expect(Object.keys(step).sort()).toEqual(
+        [
+          "audioUrl",
+          "audioUrlExpiresAt",
+          "durationMs",
+          "startOffsetMs",
+          "stepId",
+          "stepIndex",
+          "words",
+        ].sort(),
+      );
+      for (const word of step.words) {
+        expect(Object.keys(word).sort()).toEqual(["endMs", "startMs", "text"].sort());
+      }
+    }
+  });
 });

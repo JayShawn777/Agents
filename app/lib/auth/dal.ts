@@ -12,6 +12,10 @@ import type {
   ChatSession,
   Lesson,
   LessonScriptVersion,
+  LessonNarration,
+  LessonNarrationStep,
+  NarrationAsset,
+  Persona,
   Extraction,
   ExtractedProblem,
   PracticeAnswerKey,
@@ -401,5 +405,55 @@ export async function requireLesson(lessonId: string): Promise<LessonWithVersion
       studentProfile: { select: { id: true, status: true, gradeLevel: true } },
       versions: { orderBy: { version: "asc" } },
     },
+  });
+}
+
+/** A `LessonNarration` row plus just enough of its relations to build `LessonNarrationDTO` (`lib/narration/dto.ts`'s `toLessonNarrationDTO`). */
+export type LessonNarrationWithRelations = LessonNarration & {
+  persona: Pick<Persona, "id" | "slug" | "label"> | null;
+  steps: (LessonNarrationStep & { asset: Pick<NarrationAsset, "pathname" | "durationMs" | "cues"> })[];
+};
+
+/** A `LessonWithVersions` plus the CURRENT version's narration run, if any. */
+export type LessonForNarration = LessonWithVersions & {
+  narration: LessonNarrationWithRelations | null;
+};
+
+const NARRATION_RELATIONS_INCLUDE = {
+  persona: { select: { id: true, slug: true, label: true } },
+  steps: { include: { asset: { select: { pathname: true, durationMs: true, cues: true } } } },
+} as const;
+
+/**
+ * `requireLesson` plus the current version's narration run — M5 endpoints
+ * 46/47 (`app/api/lessons/[lessonId]/narration/route.ts`). Scoped by the
+ * SAME `requireLesson` ownership join, so a cross-account id is still a 404
+ * before this function's own query ever runs.
+ *
+ * **Narration belongs to a SCRIPT VERSION, not a lesson** (M5 plan §1) — the
+ * lookup is keyed on `lesson.currentVersionId`, never on the lesson id, so
+ * narrating version 2 never surfaces version 1's audio. `narration` is
+ * `null` when there is no current version yet, or none has ever been
+ * requested for it.
+ */
+export async function requireLessonForNarration(lessonId: string): Promise<LessonForNarration | null> {
+  const lesson = await requireLesson(lessonId);
+  if (!lesson) return null;
+
+  const narration = lesson.currentVersionId
+    ? await db.lessonNarration.findUnique({
+        where: { versionId: lesson.currentVersionId },
+        include: NARRATION_RELATIONS_INCLUDE,
+      })
+    : null;
+
+  return { ...lesson, narration };
+}
+
+/** Re-reads one `LessonNarration` row with the relations `toLessonNarrationDTO` needs. Used after a reap changes status, when the caller's own snapshot may be stale (see the GET route's docstring). NOT ownership-scoped — callers must already hold an ownership-checked narration id. */
+export async function fetchNarrationWithRelations(narrationId: string): Promise<LessonNarrationWithRelations> {
+  return db.lessonNarration.findUniqueOrThrow({
+    where: { id: narrationId },
+    include: NARRATION_RELATIONS_INCLUDE,
   });
 }

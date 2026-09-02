@@ -50,6 +50,17 @@ export type StudentProfileDTO = {
   nextStep: "NOTICE" | "CONSENT" | "CONSENT_PENDING" | "PROFILE_DETAILS" | "NONE";
   canUpload: boolean; // === (status === 'ACTIVE')
   createdAt: string;
+  /**
+   * M5 AC 3/19 (plan §3 row 4†). Populated on the PATCH response (endpoint
+   * 4) when the caller resolved it; `null` on every other route that builds
+   * this DTO today (`GET`/`POST`/consent routes) — none of them need it, and
+   * the persona picker (`components/personas/persona-picker.tsx`) reads
+   * `personaId` off the raw `StudentProfile` row instead, deliberately, per
+   * its own docstring.
+   */
+  persona: { id: string; slug: string; label: string } | null;
+  /** M5 AC 18. Directly off the `StudentProfile` row, always accurate. */
+  captionsEnabled: boolean;
 };
 
 export type DirectNoticeDTO = {
