@@ -8,6 +8,26 @@ current. This file only covers what happened after it was last updated.
 
 ---
 
+## 0. HOW TO RUN TESTS — owner-agreed 2026-09-02, follow this
+
+The previous session crashed three times. It ran the FULL suite (~2 min) after
+almost every change, dozens of times. That is the habit to drop.
+
+**Agreed cadence:**
+
+- **During a slice** — run only the tests for the files you touched:
+  `pnpm exec vitest run --project unit tests/unit/lib/<area>/`
+- **Once, at the end of a slice, before committing** — the full chain:
+  `pnpm typecheck && pnpm lint && pnpm test --run`
+- **Do not** re-run a passing full suite to "confirm" it. It passed.
+- Prefer `--project unit` for fast feedback; the integration project needs the
+  Prisma server and is slower.
+
+Mutation-testing a fix (break it, watch the test fail, restore) is still
+expected — but scope that to the affected test file, not the suite.
+
+---
+
 ## 1. Do this first, before anything else
 
 ```bash
