@@ -19,6 +19,31 @@
  * gate: the flow cannot proceed without it, and AC 6 refuses creation outright
  * when no recording exists for this account at the current wording version.
  *
+ * ## The first line is the industry standard, quoted deliberately
+ *
+ * Line 1 is Microsoft's published verbal consent statement for Azure custom and
+ * personal voice, which ships localized to every supported locale and is the
+ * closest thing this field has to a reviewed, off-the-shelf artifact:
+ *
+ *   "I [state your first and last name] am aware that recordings of my voice
+ *    will be used by [state the name of the company] to create and use a
+ *    synthetic version of my voice."
+ *
+ * We keep its structure and wording and fill in the company name, because a
+ * reader who has to improvise the company name gets it wrong and the recording
+ * then has to be redone. See
+ * https://learn.microsoft.com/en-us/azure/ai-services/speech-service/personal-voice-create-consent
+ *
+ * **Researched 2026-09-02, and it changed the shape of this file.** The
+ * alternative candidates did not survive: ElevenLabs' "voice captcha" is a
+ * random anti-spoofing phrase, not a consent statement, so there is nothing
+ * there to adopt; Descript's wording is not published. Microsoft's is the only
+ * published, vetted statement — and on its own it is *thinner* than what this
+ * product needs, which is why lines 2-6 remain. It establishes identity and
+ * awareness of synthesis. It does not establish adulthood, that the speaker owns
+ * the voice, what the voice may be used for, who stores it, or that consent can
+ * be withdrawn. Those are the clauses this milestone exists for.
+ *
  * ## Two decisions in the wording, made deliberately (owner-approved 2026-09-02)
  *
  * **The vendor is NOT named.** The statement says "Homework Helper's speech
@@ -33,16 +58,22 @@
  *
  * ## Not legal advice
  *
- * This wording was drafted by an engineer and approved by the owner. Voice
- * cloning touches right-of-publicity law, state biometric statutes (Illinois
- * BIPA, Texas CUBI, Washington MHMD) and the vendor's own terms. **A lawyer
- * should review this before launch.** It is structurally sound — it identifies
- * the speaker, establishes adulthood and ownership, asserts the voice is their
- * own, scopes the permission, discloses third-party storage and states
+ * Line 1 is Microsoft's; lines 2-6 were drafted here and approved by the owner.
+ * Voice cloning touches right-of-publicity law, state biometric statutes
+ * (Illinois BIPA, Texas CUBI, Washington MHMD) and the vendor's own terms. **A
+ * lawyer should review this before launch.** It is structurally sound — it
+ * identifies the speaker, establishes adulthood and ownership, asserts the voice
+ * is their own, scopes the permission, discloses third-party storage and states
  * revocability — which is what the build needs. It is not a legal opinion.
  */
 
-export const VOICE_CONSENT_WORDING_VERSION = "2026-09-02.1";
+/**
+ * Bumped to `.2` on 2026-09-02: line 1 was replaced with Microsoft's published
+ * statement and line 5 narrowed to scoping (line 1 now covers creation). No
+ * recording had been stored against `.1`, so nothing was invalidated — which is
+ * exactly why this change was made now rather than after launch.
+ */
+export const VOICE_CONSENT_WORDING_VERSION = "2026-09-02.2";
 
 /**
  * The product name as it is spoken. Matches `app/layout.tsx`'s metadata title.
@@ -62,10 +93,11 @@ export const VOICE_CONSENT_APP_NAME = "Homework Helper";
  * the recording proves someone read a screen, not that a named person spoke.
  */
 export const VOICE_CONSENT_LINES: readonly string[] = [
-  "My name is [full name]. Today is [date].",
+  `I [full name] am aware that recordings of my voice will be used by ${VOICE_CONSENT_APP_NAME} to create and use a synthetic version of my voice.`,
+  "Today is [date].",
   `I am eighteen or older, and I am the account holder for ${VOICE_CONSENT_APP_NAME}.`,
   "This is my own voice. I am recording this myself, of my own free will.",
-  `I give ${VOICE_CONSENT_APP_NAME} permission to create a synthetic copy of my voice, and to use it only to read lessons aloud to the children on my account.`,
+  `I give ${VOICE_CONSENT_APP_NAME} permission to use that synthetic version only to read lessons aloud to the children on my account.`,
   `I understand this copy is created and stored by ${VOICE_CONSENT_APP_NAME}'s speech provider, and that I can withdraw this permission and have the voice deleted at any time.`,
 ];
 
@@ -83,8 +115,17 @@ export const VOICE_CONSENT_TEXT = VOICE_CONSENT_LINES.join("\n\n");
  */
 export const VOICE_CONSENT_CLAUSE_RATIONALE: ReadonlyArray<{ line: string; why: string }> = [
   {
-    line: "My name is [full name]. Today is [date].",
-    why: "Binds the recording to a person AND a moment. A consent artifact with no date is far weaker evidence later.",
+    line: "I [full name] am aware that recordings of my voice will be used by … to create and use a synthetic version of my voice.",
+    why:
+      "Microsoft's published Azure custom-voice consent statement, quoted with the company name filled in. " +
+      "Identifies the speaker and establishes awareness of synthesis. Adopted verbatim so the statement rests on " +
+      "a reviewed industry standard rather than on wording invented here. Do not paraphrase this line.",
+  },
+  {
+    line: "Today is [date].",
+    why:
+      "Binds the recording to a moment. A consent artifact with no spoken date is far weaker evidence later — " +
+      "`createdAt` says when we received it, not when they said it.",
   },
   {
     line: "I am eighteen or older, and I am the account holder.",
@@ -94,20 +135,21 @@ export const VOICE_CONSENT_CLAUSE_RATIONALE: ReadonlyArray<{ line: string; why: 
     line: "This is my own voice. I am recording this myself, of my own free will.",
     why:
       "The most important sentence in the statement. It is the on-record defence against cloning someone else, " +
-      "which is the abuse this whole milestone is built around preventing — and 'of my own free will' speaks to coercion.",
+      "which is the abuse this whole milestone is built around preventing — and 'of my own free will' speaks to coercion. " +
+      "Microsoft's line does NOT cover this; it establishes awareness, not ownership.",
   },
   {
-    line: "…use it only to read lessons aloud to the children on my account.",
-    why: "Scopes the permission, matching the spec's non-goal that a cloned voice is never used outside lesson narration.",
-  },
-  {
-    line: "…created and stored by [the app]'s speech provider…",
+    line: "…use that synthetic version only to read lessons aloud to the children on my account.",
     why:
-      "Discloses that a third party holds the voice. Deliberately unnamed so a vendor change does not invalidate " +
-      "stored consent; the written §312.4 notice names the vendor.",
+      "Scopes the permission, matching the spec's non-goal that a cloned voice is never used outside lesson " +
+      "narration. Line 1 covers creation, so this line only has to carry the limit on use.",
   },
   {
-    line: "…I can withdraw this permission and have the voice deleted at any time.",
-    why: "AC 18 and AC 19, spoken — revocability becomes part of what was agreed to, not a policy discovered later.",
+    line: "…created and stored by [the app]'s speech provider … I can withdraw this permission and have the voice deleted at any time.",
+    why:
+      "Two clauses in one spoken line, because they are heard as one idea: someone else holds this, and you can " +
+      "take it back. The third party is disclosed but deliberately NOT named, so a vendor change does not " +
+      "invalidate stored consent — the written §312.4 notice names the vendor. The second half is AC 18 and AC 19 " +
+      "spoken aloud, which makes revocability part of what was agreed to rather than a policy discovered later.",
   },
 ];
