@@ -228,3 +228,77 @@ from durations and alignment arrays. The inference about LaTeX is strong — a
 sub-prose per-character rate has no other explanation — but "what does a child
 actually hear" is a question a human answers with headphones, and it is still
 open.
+
+---
+
+# Part 3: slice 12 cannot be automated in this environment
+
+- **Date:** 2026-09-02
+- **Cost:** none — no API calls.
+- **Verdict:** **the autoplay question cannot be answered here, and an automated
+  test that appears to answer it would be worse than no test at all.**
+
+## What was tried
+
+Plan §8.3 says slice 12's three questions need a **headed** browser, because
+headless Chrome relaxes autoplay policy. That is true and is not sufficient.
+
+1. Headed Chromium under `xvfb-run` — **launches fine.** So "headed" is
+   available in this Codespace.
+2. Probed with a real, decodable WAV: `play()` **resolved with no user
+   gesture**. The policy is not enforced.
+3. Relaunched with `args: ["--autoplay-policy=user-gesture-required"]` —
+   **still resolved.**
+4. Relaunched additionally with
+   `ignoreDefaultArgs: ["--autoplay-policy=no-user-gesture-required"]`, to strip
+   Playwright's own override — **still resolved.**
+
+So the policy cannot be turned on here by any of the obvious means.
+
+## Why this matters more than it looks
+
+Slice 12's first question is *"does one `<audio>` element keep its user
+activation across `src` changes?"* — and the answer decides whether the
+per-step cache design survives. §8.3 lists the fallback as concatenating a
+lesson's audio into a single object at generation time, which it calls a
+material redesign of the cache.
+
+**A test for that question passes trivially here, and the pass means nothing.**
+It was run: after a real click, changing `src` and calling `play()` again
+resolved cleanly, which reads exactly like "activation survives — assumption
+confirmed". It is not evidence of anything. `play()` resolves in this browser
+whether or not a gesture ever happened, so the test cannot distinguish the
+assumption holding from the assumption being irrelevant.
+
+Had that probe been run alone — without first checking that the *no-gesture*
+case is refused — it would have produced a confident, documented, wrong
+conclusion about the riskiest assumption in M5's playback design.
+
+This is M4's jsdom lesson in a new costume. There, `getBoundingClientRect`
+returned 0×0, so deleting an entire layout fix left 55 of 55 tests green. Here,
+autoplay is unconditionally permitted, so deleting every gesture-handling line
+would leave an autoplay test green. **A test that cannot see the thing it claims
+to test does not merely fail to help — it manufactures confidence.**
+
+## What slice 12 should therefore be
+
+- **Write the spec, and guard it** on an environment probe: assert first that
+  `play()` WITHOUT a gesture is rejected, and `test.skip` with a clear message
+  when it is not. It then reports "not measured" rather than a false green —
+  the same shape as the `AUTH_SECRET` guard on M4's legibility spec.
+- **The autoplay and seam-gap questions need a real browser on a real machine**
+  — the owner's, or CI with a full Chrome. They are owner-run measurements, not
+  CI assertions, and should be written down as such rather than quietly dropped.
+- **What CAN be automated here** is everything not gated on autoplay: that the
+  narration payload reaches the player, that cues line up with the rendered
+  steps, that captions show the current step's line only, and that the reduced-
+  motion path renders an identical final frame. Those are worth having.
+
+## Still not answered
+
+- Whether user activation survives a `src` change **in a browser that enforces
+  the policy**. Unchanged since the plan was written.
+- The size of the seam between two step files.
+- Whether 150 ms is the right sync tolerance.
+- **What any of it sounds like.** Nobody has listened yet; the dev audio route
+  added in this milestone is what now makes that possible.
