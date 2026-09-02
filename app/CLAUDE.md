@@ -589,9 +589,28 @@ generate graded practice from them. The retention jobs enforce what
      mathematics is read aloud**: the test sentence was prose, and M4's scripts
      are full of LaTeX.
 
-   The API key is deliberately **scoped** — `voices_read` and `text_to_speech`
-   only, no `user_read`. Keep it that way; a synthesis key has no business
-   reading billing.
+   **The API key's real scope, MEASURED 2026-09-02 — it is wider than this file
+   claimed.** This paragraph used to say "`voices_read` and `text_to_speech`
+   only, no `user_read`. Keep it that way." Two of those three are right; the
+   completeness is not. M6's probe established, against the live API:
+
+   - `voices_read` — **YES** (21 voices listed).
+   - `user_read` — **NO.** An explicit 401, `"missing the permission user_read"`.
+     Good, and it is why M6's voice-cap question cannot be answered with this key.
+   - `voices_write` — **YES.** `POST /v1/voices/add` returns 422 `Field required`
+     for a malformed body, not the 401 `missing_permissions` the same API returns
+     when a scope is absent. The key can therefore CREATE and DELETE voices.
+
+   **That is worth an owner decision.** The everyday synthesis key can delete
+   every voice on the account. It also means M6 needs no second key, which is
+   convenient and is not the same as correct — the argument that a synthesis key
+   has no business reading billing applies at least as strongly to a synthesis
+   key that can destroy voices. Either narrow this key to `voices_read` +
+   `text_to_speech` and issue a separate write-scoped key for M6, or decide
+   deliberately to keep one key and record why.
+
+   Do not restate a key's scope from this file without re-running the probe:
+   `RUN_LIVE_AI=1 pnpm vitest run tests/unit/live/voice-clone.live.test.ts --project unit`
 
    **Owner decision, 2026-09-01: captions are ON by default.** Recorded in the
    M5 spec's open questions with the reasoning. The decisive argument is not the
