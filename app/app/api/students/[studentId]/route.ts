@@ -1,6 +1,7 @@
 import { withAuth } from "@/lib/api/handler";
 import { apiErr, errorResponse, successResponse } from "@/lib/errors";
 import { db } from "@/lib/db";
+import { findPersonaById, findSelectablePersona } from "@/lib/personas/dal";
 import { requireStudentProfile } from "@/lib/auth/dal";
 import { updateStudentInputSchema } from "@/lib/schemas/student";
 import { toConsentDTO, toDirectNoticeDTO, toStudentProfileDTO } from "@/lib/students/dto";
@@ -54,7 +55,7 @@ export const PATCH = withAuth({
   // non-ACTIVE profile is still 403, and nothing is ever persisted for it.
   requireState: (student) => student.status === "ACTIVE",
   bodySchema: updateStudentInputSchema,
-  handler: async ({ resource: student, body }) => {
+  handler: async ({ resource: student, body, session }) => {
     // M5 AC 3/4 (plan §3 row 4†). `personaId` must resolve to an existing,
     // NON-RETIRED persona before anything is written — a retired persona is
     // no longer offered by the picker, so choosing one now is a stale
@@ -70,7 +71,14 @@ export const PATCH = withAuth({
     // after the body has been validated, and is why this 409 is returned
     // from the handler rather than from a `withAuth` gate.
     if (body.personaId !== undefined) {
-      const chosen = await db.persona.findFirst({ where: { id: body.personaId, retiredAt: null } });
+      // SCOPED TO THE CALLING ACCOUNT (M6 AC 12). This was
+      // `findFirst({ id, retiredAt: null })` with no owner clause, which was
+      // correct while every persona was shared reference data — and became a
+      // cross-account voice leak the moment `Persona.ownerUserId` existed:
+      // pasting another family's persona id would have narrated this child's
+      // homework in a stranger's real cloned voice. A persona owned by someone
+      // else now resolves to null, which is the same 409 as a retired one.
+      const chosen = await findSelectablePersona(body.personaId, session!.userId);
       if (!chosen) {
         return errorResponse(
           apiErr("CONFLICT", { message: "That voice isn't available anymore. Please choose another." }),
@@ -96,12 +104,8 @@ export const PATCH = withAuth({
     // PATCH touched `personaId` — a caller that only changed `displayName`
     // still gets an accurate `persona` on the response. Retired-or-not,
     // matching `findPersonaById`'s display rule above.
-    const persona = updated.personaId
-      ? await db.persona.findUnique({
-          where: { id: updated.personaId },
-          select: { id: true, slug: true, label: true },
-        })
-      : null;
+    const resolved = updated.personaId ? await findPersonaById(updated.personaId, session!.userId) : null;
+    const persona = resolved ? { id: resolved.id, slug: resolved.slug, label: resolved.label } : null;
 
     // `hasNotice` only changes `nextStep`'s NOTICE_PENDING branch
     // (`lib/students/dto.ts`); this handler's `requireState` gate above

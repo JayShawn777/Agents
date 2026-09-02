@@ -39,14 +39,6 @@ vi.mock("@/lib/storage/get-storage", () => ({
 
 const dbMock = {
   studentProfile: { findUniqueOrThrow: vi.fn(async () => ({ personaId: null })) },
-  persona: {
-    findUnique: vi.fn(async ({ where }: { where: { slug?: string; id?: string } }) =>
-      where.slug === "professor-love" || where.id === "persona_default"
-        ? { id: "persona_default", slug: "professor-love", label: "Professor Love", providerVoiceId: "voice_default" }
-        : null,
-    ),
-    findFirst: vi.fn(),
-  },
   /**
    * The AC 21 caps count `NarrationRunAttempt` rows, not `LessonNarration` rows
    * (2026-09-02 security review): a retry UPSERTS the narration row and never
@@ -81,6 +73,25 @@ const dbMock = {
   }),
 };
 vi.mock("@/lib/db", () => ({ db: dbMock }));
+
+/**
+ * Personas are read through `lib/personas/dal.ts` (M6 slice 1), scoped to the
+ * calling account — this route's `resolvePersonaForNarration` is the call site
+ * where an unscoped read was worst, because it decides which voice SPEAKS.
+ * `findPersonaById` returns null for anything but this account's own, which is
+ * how a foreign persona falls back to the default rather than being honoured.
+ */
+const DEFAULT_PERSONA = {
+  id: "persona_default",
+  slug: "professor-love",
+  label: "Professor Love",
+  providerVoiceId: "voice_default",
+};
+const personasDalMock = {
+  findPersonaById: vi.fn(async (id: string) => (id === "persona_default" ? DEFAULT_PERSONA : null)),
+  findSharedPersonaBySlug: vi.fn(async (slug: string) => (slug === "professor-love" ? DEFAULT_PERSONA : null)),
+};
+vi.mock("@/lib/personas/dal", () => personasDalMock);
 
 const { POST, GET } = await import("@/app/api/lessons/[lessonId]/narration/route");
 

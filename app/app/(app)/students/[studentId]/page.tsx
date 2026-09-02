@@ -14,7 +14,7 @@ import { requireStudentProfile } from "@/lib/auth/dal";
 import { DEFAULT_PERSONA_SLUG } from "@/lib/config";
 import { toPracticeSetDTO, toSkillMasteryDTO } from "@/lib/practice/dto";
 import { db } from "@/lib/db";
-import { findPersonaById, findPersonaBySlug } from "@/lib/personas/dal";
+import { findPersonaById, findSharedPersonaBySlug } from "@/lib/personas/dal";
 import { toStudentProfileDTO } from "@/lib/students/dto";
 import { toUploadDTO } from "@/lib/uploads/dto";
 import type { PracticeSetDTO, SkillMasteryDTO, StudentProfileDTO } from "@/lib/schemas/dto";
@@ -144,8 +144,8 @@ export default async function StudentHomePage({
   // the picker page itself redirects a non-ACTIVE profile straight back here.
   const chosenPersona = student.canUpload
     ? await (profileRow.personaId
-        ? findPersonaById(profileRow.personaId)
-        : findPersonaBySlug(DEFAULT_PERSONA_SLUG))
+        ? findPersonaById(profileRow.personaId, profileRow.userId)
+        : findSharedPersonaBySlug(DEFAULT_PERSONA_SLUG))
     : null;
   const personaIsChosen = Boolean(profileRow.personaId);
 

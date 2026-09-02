@@ -14,7 +14,7 @@ import { db } from "@/lib/db";
 import { reapIfStale } from "@/lib/lessons/author";
 import { toLessonDetail } from "@/lib/lessons/dto";
 import { atVersionCap } from "@/lib/lessons/request";
-import { findPersonaById, findPersonaBySlug } from "@/lib/personas/dal";
+import { findPersonaById, findSharedPersonaBySlug } from "@/lib/personas/dal";
 
 /**
  * The lesson screen (plan §4, F24; M4 AC 6, 10, 11, 12, 15, 16, 18, 19).
@@ -63,11 +63,15 @@ export default async function LessonPage({ params }: PageProps<"/lessons/[lesson
   // proved belongs to the calling user, just two more columns of it.
   const profileVoiceSettings = await db.studentProfile.findUnique({
     where: { id: lessonRow.studentProfile.id },
-    select: { personaId: true, captionsEnabled: true },
+    select: { personaId: true, captionsEnabled: true, userId: true },
   });
+  // `userId` is the OWNING account, and it is the right viewer here: a persona
+  // is visible to a profile exactly when the account that owns the profile may
+  // see it (M6 AC 12). The row was already proved to belong to the caller by
+  // `requireLesson`, so this is not a second authorization decision.
   const persona = profileVoiceSettings?.personaId
-    ? await findPersonaById(profileVoiceSettings.personaId)
-    : await findPersonaBySlug(DEFAULT_PERSONA_SLUG);
+    ? await findPersonaById(profileVoiceSettings.personaId, profileVoiceSettings.userId)
+    : await findSharedPersonaBySlug(DEFAULT_PERSONA_SLUG);
   const personaLabel = persona?.label ?? "the tutor";
   const captionsEnabled = profileVoiceSettings?.captionsEnabled ?? true;
 

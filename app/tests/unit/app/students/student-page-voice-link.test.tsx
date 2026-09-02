@@ -32,7 +32,7 @@ vi.mock("@/lib/db", () => ({ db: dbMock }));
 
 const personasDalMock = {
   findPersonaById: vi.fn(),
-  findPersonaBySlug: vi.fn(),
+  findSharedPersonaBySlug: vi.fn(),
 };
 vi.mock("@/lib/personas/dal", () => personasDalMock);
 
@@ -77,7 +77,7 @@ beforeEach(() => {
 describe("the way in to the voice picker", () => {
   it("renders a link to the voice route when the profile has never chosen a persona", async () => {
     dalMock.requireStudentProfile.mockResolvedValue(activeProfile({ personaId: null }));
-    personasDalMock.findPersonaBySlug.mockResolvedValue({ id: "per_love", slug: "professor-love", label: "Professor Love" });
+    personasDalMock.findSharedPersonaBySlug.mockResolvedValue({ id: "per_love", slug: "professor-love", label: "Professor Love" });
 
     render(await StudentHomePage(ctx() as never));
 

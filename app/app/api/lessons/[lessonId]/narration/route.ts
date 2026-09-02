@@ -17,6 +17,7 @@ import { LessonScriptSchema, type LessonScript } from "@/lib/lessons/script-sche
 import { toLessonNarrationDTO } from "@/lib/narration/dto";
 import { runNarrationGeneration, reapIfStaleNarration } from "@/lib/narration/generate";
 import { getStoragePort } from "@/lib/storage/get-storage";
+import { findPersonaById, findSharedPersonaBySlug } from "@/lib/personas/dal";
 import {
   CUE_FORMAT_VERSION,
   DEFAULT_PERSONA_SLUG,
@@ -143,7 +144,7 @@ export const POST = withAuth({
   // that writes the grant (below), because this one alone is a read-then-write
   // race — the exact bug M4's review found in the authoring cap.
   rateLimit: ({ resource }) => withinNarrationRateLimit(resource.studentProfileId),
-  handler: async ({ resource }) => {
+  handler: async ({ resource, session }) => {
     const { parsedScript } = resource;
     if (!parsedScript) {
       // `requireFlow` already guarantees this; narrows the type for what
@@ -167,7 +168,7 @@ export const POST = withAuth({
       where: { id: resource.studentProfile.id },
       select: { personaId: true },
     });
-    const persona = await resolvePersonaForNarration(profile.personaId);
+    const persona = await resolvePersonaForNarration(profile.personaId, session!.userId);
 
     // Conservative: the full script's characters, not accounting for a step
     // that will turn out to be a cache hit. AC 21's budget must never let a
@@ -224,12 +225,22 @@ export const POST = withAuth({
 
 // ─────────────────────────── internals ───────────────────────────
 
-/** `profile.personaId`, or `DEFAULT_PERSONA_SLUG` (AC 3/AC 4) when unset OR when the chosen persona row no longer exists. */
-async function resolvePersonaForNarration(personaId: string | null): Promise<Persona> {
-  const chosen = personaId ? await db.persona.findUnique({ where: { id: personaId } }) : null;
+/**
+ * `profile.personaId`, or `DEFAULT_PERSONA_SLUG` (AC 3/AC 4) when unset OR when
+ * the chosen persona row no longer exists **or is not visible to this account**.
+ *
+ * The visibility scope is M6 AC 12, and this is the call site where getting it
+ * wrong is worst: this function decides which voice actually SPEAKS. Unscoped,
+ * a `personaId` belonging to another account would have been honoured here and
+ * a stranger's cloned voice would have read the child's homework aloud. A
+ * persona this account cannot see now falls back to the default, exactly like a
+ * deleted one — AC 3's fallback already covers the shape.
+ */
+async function resolvePersonaForNarration(personaId: string | null, viewerUserId: string): Promise<Persona> {
+  const chosen = personaId ? await findPersonaById(personaId, viewerUserId) : null;
   if (chosen) return chosen;
 
-  const fallback = await db.persona.findUnique({ where: { slug: DEFAULT_PERSONA_SLUG } });
+  const fallback = await findSharedPersonaBySlug(DEFAULT_PERSONA_SLUG);
   if (!fallback) {
     // Seed data is missing — a migration problem, not a request problem.
     // Thrown rather than returned so `withAuth`'s catch-all maps it to a

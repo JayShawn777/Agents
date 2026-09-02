@@ -33,7 +33,7 @@ vi.mock("@/lib/lessons/dto", () => dtoMock);
 const requestMock = { atVersionCap: vi.fn(() => false) };
 vi.mock("@/lib/lessons/request", () => requestMock);
 
-const personasDalMock = { findPersonaById: vi.fn(), findPersonaBySlug: vi.fn() };
+const personasDalMock = { findPersonaById: vi.fn(), findSharedPersonaBySlug: vi.fn() };
 vi.mock("@/lib/personas/dal", () => personasDalMock);
 
 const dbMock = { studentProfile: { findUnique: vi.fn() } };
@@ -75,7 +75,7 @@ beforeEach(() => {
   });
   dbMock.studentProfile.findUnique.mockResolvedValue({ personaId: "per_vale", captionsEnabled: true });
   personasDalMock.findPersonaById.mockResolvedValue({ id: "per_vale", slug: "coach-vale", label: "Coach Vale" });
-  personasDalMock.findPersonaBySlug.mockResolvedValue({ id: "per_love", slug: "professor-love", label: "Professor Love" });
+  personasDalMock.findSharedPersonaBySlug.mockResolvedValue({ id: "per_love", slug: "professor-love", label: "Professor Love" });
 });
 
 describe("changing the voice from mid-lesson", () => {

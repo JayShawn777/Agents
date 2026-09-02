@@ -34,7 +34,9 @@ export default async function VoicePickerPage({
   if (!student) notFound();
   if (student.status !== "ACTIVE") redirect(`/students/${studentId}`);
 
-  const personaRows = await listPersonas();
+  // Scoped to the owning account (M6 AC 12): the shared six, plus any voice this
+  // family cloned, and nobody else's.
+  const personaRows = await listPersonas(student.userId);
   const personas = personaRows.map(toPersonaDTO);
   const defaultPersonaId = personas.find((persona) => persona.slug === DEFAULT_PERSONA_SLUG)?.id ?? null;
 

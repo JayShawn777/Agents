@@ -13,7 +13,6 @@ const dbMock = {
   studentProfile: { update: vi.fn() },
   directNotice: { findFirst: vi.fn() },
   parentalConsent: { findFirst: vi.fn() },
-  persona: { findFirst: vi.fn(), findUnique: vi.fn() },
 };
 
 const dalMock = {
@@ -22,6 +21,19 @@ const dalMock = {
 };
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
+
+/**
+ * The route reads personas through `lib/personas/dal.ts`, not through `db`
+ * (M6 slice 1): every persona read is scoped to the calling account, because
+ * `Persona.ownerUserId` makes an unscoped read a cross-account voice leak.
+ * Mocking the DAL rather than the table keeps this test about the route's
+ * behaviour rather than about a query shape that has moved.
+ */
+const personasDalMock = {
+  findSelectablePersona: vi.fn(),
+  findPersonaById: vi.fn(),
+};
+vi.mock("@/lib/personas/dal", () => personasDalMock);
 vi.mock("@/lib/auth/dal", () => dalMock);
 
 const { PATCH } = await import("@/app/api/students/[studentId]/route");
@@ -63,27 +75,32 @@ beforeEach(() => {
 
 describe("PATCH persona selection (AC 3/4)", () => {
   it("409s a personaId that does not resolve to a non-retired persona, and writes nothing", async () => {
-    dbMock.persona.findFirst.mockResolvedValue(null);
+    personasDalMock.findSelectablePersona.mockResolvedValue(null);
 
     const res = await PATCH(req({ personaId: "clh3k2j9x0000persona00001" }), ctx());
     expect(res.status).toBe(409);
     expect(dbMock.studentProfile.update).not.toHaveBeenCalled();
   });
 
-  it("409s a RETIRED persona specifically (findFirst is scoped to retiredAt: null)", async () => {
-    dbMock.persona.findFirst.mockResolvedValue(null); // scoped query itself excludes retired rows
+  it("409s a RETIRED persona specifically (findSelectablePersona excludes retired rows)", async () => {
+    personasDalMock.findSelectablePersona.mockResolvedValue(null); // the scoped query itself excludes retired rows
 
     const res = await PATCH(req({ personaId: "clh3k2j9x0000persona00001" }), ctx());
     expect(res.status).toBe(409);
-    expect(dbMock.persona.findFirst).toHaveBeenCalledWith({
-      where: { id: "clh3k2j9x0000persona00001", retiredAt: null },
-    });
+    // Called with the CALLING ACCOUNT's id. That second argument is the whole
+    // point of M6 slice 1 — without it, one account could select another
+    // account's cloned voice, and a child's homework would be read aloud in a
+    // stranger's real voice.
+    expect(personasDalMock.findSelectablePersona).toHaveBeenCalledWith(
+      "clh3k2j9x0000persona00001",
+      SESSION.userId,
+    );
   });
 
   it("200s and persists a resolving personaId, returning the persona on the response", async () => {
     const PERSONA_ID = "clh3k2j9x0002personaabcde";
-    dbMock.persona.findFirst.mockResolvedValue({ id: PERSONA_ID, slug: "coach-vale", label: "Coach Vale" });
-    dbMock.persona.findUnique.mockResolvedValue({ id: PERSONA_ID, slug: "coach-vale", label: "Coach Vale" });
+    personasDalMock.findSelectablePersona.mockResolvedValue({ id: PERSONA_ID, slug: "coach-vale", label: "Coach Vale" });
+    personasDalMock.findPersonaById.mockResolvedValue({ id: PERSONA_ID, slug: "coach-vale", label: "Coach Vale" });
 
     const res = await PATCH(req({ personaId: PERSONA_ID }), ctx());
     expect(res.status).toBe(200);
@@ -106,11 +123,11 @@ describe("PATCH persona selection (AC 3/4)", () => {
   it("resolves persona on the response even when this PATCH didn't touch personaId", async () => {
     dalMock.requireStudentProfile.mockResolvedValue(profile({ personaId: "persona_existing" }));
     dbMock.studentProfile.update.mockResolvedValue(profile({ personaId: "persona_existing", displayName: "Ada" }));
-    dbMock.persona.findUnique.mockResolvedValue({ id: "persona_existing", slug: "professor-o", label: "Professor O" });
+    personasDalMock.findPersonaById.mockResolvedValue({ id: "persona_existing", slug: "professor-o", label: "Professor O" });
 
     const res = await PATCH(req({ displayName: "Ada" }), ctx());
     expect(res.status).toBe(200);
-    expect(dbMock.persona.findFirst).not.toHaveBeenCalled(); // no personaId in THIS body, no resolution check
+    expect(personasDalMock.findSelectablePersona).not.toHaveBeenCalled(); // no personaId in THIS body, no resolution check
     const body = (await res.json()) as { data: { student: { persona: unknown } } };
     expect(body.data.student.persona).toEqual({ id: "persona_existing", slug: "professor-o", label: "Professor O" });
   });
@@ -120,7 +137,7 @@ describe("PATCH persona selection (AC 3/4)", () => {
 
     const res = await PATCH(req({ personaId: "not-a-cuid" }), ctx());
     expect(res.status).toBe(403);
-    expect(dbMock.persona.findFirst).not.toHaveBeenCalled();
+    expect(personasDalMock.findSelectablePersona).not.toHaveBeenCalled();
     expect(dbMock.studentProfile.update).not.toHaveBeenCalled();
   });
 

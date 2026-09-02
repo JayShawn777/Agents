@@ -187,6 +187,9 @@ model User {
   studentProfiles StudentProfile[]
   consentsGiven   ParentalConsent[]
   noticesReceived DirectNotice[]
+  /// M6. Personas this account OWNS — a cloned voice of the account holder.
+  /// The shared six have `ownerUserId: null` and belong to nobody.
+  personas        Persona[]
 
   @@index([closureRequestedAt])
 }
@@ -332,11 +335,29 @@ model Persona {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  /// M6 AC 12. NULL for the app-owned shared set — the six M5 personas, which
+  /// belong to nobody and are visible to everybody. Set for a cloned voice,
+  /// which is then visible ONLY to that account's student profiles.
+  ///
+  /// **Every read of this table must filter on it.** Before this column existed
+  /// a persona was reference data and an unscoped `findFirst({ id })` was
+  /// correct; with it, the same query lets one account point their child's
+  /// narration at another family's cloned parent voice. `lib/personas/dal.ts`
+  /// is the only module allowed to read this table, and a static test enforces
+  /// that — see `tests/unit/lib/personas/single-reader.test.ts`.
+  ///
+  /// Cascade: an account's deletion takes its own personas with it (M6 AC 20's
+  /// local half; the vendor-side half is M6 slice 7).
+  ownerUserId     String?
+
+  owner           User?             @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   profiles        StudentProfile[]
   narrations      LessonNarration[]
   narrationAssets NarrationAsset[]
 
   @@index([retiredAt, sortOrder])
+  /// The visibility clause every persona read composes.
+  @@index([ownerUserId])
 }
 
 enum NarrationStatus {
