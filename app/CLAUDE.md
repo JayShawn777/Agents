@@ -385,15 +385,24 @@ generate graded practice from them. The retention jobs enforce what
    and an unreadable config are indistinguishable at the status code. The dev
    server's own log said `MissingSecret` the whole time.
 
-   **This is an owner action, and it is not about tests: nobody can sign in to
-   this app in this environment at all.** The guard hook blocks agents from
-   writing `.env`, so a human sets it once:
+   **RESOLVED 2026-09-01 — `AUTH_SECRET` IS SET** in `app/.env`, uncommented, and
+   proved end-to-end (see the M5 section below: a seeded session cookie returns
+   200 where it returned 401, and `MissingSecret` is gone from the log). The
+   paragraph above is kept for the DIAGNOSIS, which is the durable part — a
+   missing secret and a rejected cookie are indistinguishable at the status code
+   — not as a live blocker.
+
+   **This entry was still being read as open on 2026-09-02** and restated four
+   times in one session as an owner action, by someone who never opened `.env`.
+   If you are about to tell the owner to set `AUTH_SECRET`, run
+   `grep -n '^AUTH_SECRET' app/.env` first.
+
+   The regeneration command, should it ever be needed again — the guard hook
+   blocks agents from writing `.env`, so a human runs it:
 
    ```
    AUTH_SECRET="$(pnpm dlx auth secret --raw 2>/dev/null || openssl rand -base64 32)"
    ```
-
-   Until it is in `.env`, pass it per run: `AUTH_SECRET=... pnpm dev`.
 
    **What the measurement found, and it is a real defect a child would have
    seen.** At 1280px all three fixtures laid out clean. At 375px the reading
@@ -910,12 +919,16 @@ Overstating it obscures the obligations that are real — see
 - `prebuild` clears `.next`. A stale `.next` makes Turbopack die on Windows with
   exit 3221225477.
 - `typecheck` runs `next typegen` first; the route types are gitignored.
-- **`AUTH_SECRET` must be set or nothing authenticates.** It is commented out in
-  `.env` as shipped; Auth.js fails config assertion before reading a cookie, so
-  every request is anonymous and every probe returns 401 whatever it carries.
-  The guard hook blocks agents from writing `.env` — a human sets it once. The
-  symptom is `[auth][error] MissingSecret` in the dev server log, and nowhere
-  else.
+- **`AUTH_SECRET` must be set or nothing authenticates.** It **is** set (line 26
+  of `app/.env`, since 2026-09-01) — this bullet used to say "commented out as
+  shipped" and was still being read that way a week later. Verify with
+  `grep -n '^AUTH_SECRET' app/.env` rather than trusting this file.
+
+  The failure mode, if it is ever unset again: Auth.js fails its config
+  assertion before reading a cookie, so every request is anonymous and every
+  probe returns 401 whatever it carries. The symptom is `[auth][error]
+  MissingSecret` in the dev server log, **and nowhere else** — the status code
+  cannot distinguish it from a rejected cookie.
 
 ## Deployment
 
