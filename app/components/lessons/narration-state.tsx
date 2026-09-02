@@ -19,16 +19,21 @@
  * and `clearInterval` runs on `READY`, on `FAILED`, AND on a network/parse
  * failure — not only on success.
  *
- * **Backend routes 46/47 do not exist yet** (backend track, parallel build).
- * Until they do, every request here resolves to `result.ok === false`
- * (a 404 HTML page fails `apiFetch`'s JSON parse, or a genuine 404 once the
- * route exists and the lesson truly has none) — which this component already
- * treats as "no narration", so a lesson renders and plays exactly as AC 17
- * describes: silently, on the M4 timer, with captions. Nothing here assumes
- * the routes are live.
+ * **It passes `onNarrationStale`, and that is load-bearing** (2026-09-02 review).
+ * `LessonPlayer` schedules the signed-URL refresh a minute before the earliest
+ * URL expires, but its effect returns early when the prop is absent — and this
+ * file, the only production caller of `LessonView`, did not pass it. Deleting
+ * the entire refresh effect left every in-scope test green, because no test
+ * passed the prop either. The visible symptom was audio for any lesson longer
+ * than `SIGNED_URL_TTL_MS` (5 minutes) going dead with nothing reported.
+ *
+ * **The poller restarts on retry.** `retry()` used to POST and set state while
+ * the FAILED branch had already cleared the interval, so the new run was never
+ * polled and never resolved without a full page reload. The effect keys on
+ * `pollNonce`; retry bumps it.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { LessonView } from "@/components/lessons/lesson-view";
 import { Button } from "@/components/ui/button";
@@ -58,6 +63,24 @@ export function NarrationState({
   const [narration, setNarration] = useState<LessonNarrationDTO | null>(null);
   const [checked, setChecked] = useState(false); // whether the first GET has resolved at all
   const [retryError, setRetryError] = useState<string | null>(null);
+  /** Bumped to restart the poll effect — see the docstring's retry note. */
+  const [pollNonce, setPollNonce] = useState(0);
+
+  /**
+   * One-shot re-read, handed to the player as `onNarrationStale`. A GET mints
+   * fresh signed URLs (endpoint 47 signs only when READY), so re-reading IS the
+   * refresh — there is no separate renew endpoint. `useCallback` keeps the
+   * identity stable, because the player's refresh effect lists it as a
+   * dependency and would otherwise re-schedule on every render.
+   */
+  const refreshNarration = useCallback(async () => {
+    const result = await apiFetch<LessonNarrationResponse>(`/api/lessons/${lessonId}/narration`);
+    if (result.ok) setNarration(result.data.narration);
+  }, [lessonId]);
+
+  const handleNarrationStale = useCallback(() => {
+    void refreshNarration();
+  }, [refreshNarration]);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +141,7 @@ export function NarrationState({
       cancelled = true;
       stop();
     };
-  }, [lessonId]);
+  }, [lessonId, pollNonce]);
 
   function retry() {
     setRetryError(null);
@@ -132,6 +155,9 @@ export function NarrationState({
         return;
       }
       setNarration(result.data.narration);
+      // Restart the interval the FAILED branch stopped. Without this the retried
+      // run sits at PENDING on screen until the child reloads the page.
+      setPollNonce((nonce) => nonce + 1);
     })();
   }
 
@@ -160,6 +186,7 @@ export function NarrationState({
         timeline={timeline}
         atVersionCap={atVersionCap}
         narrationSteps={narrationSteps}
+        onNarrationStale={handleNarrationStale}
         initialCaptionsEnabled={initialCaptionsEnabled}
       />
     </div>

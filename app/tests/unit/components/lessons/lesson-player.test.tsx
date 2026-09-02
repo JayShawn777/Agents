@@ -78,11 +78,13 @@ function controls(state: {
   atStart: boolean;
   stepIndex: number;
   stepCount: number;
+  isMuted: boolean;
   play: () => void;
   pause: () => void;
   next: () => void;
   previous: () => void;
   replay: () => void;
+  toggleMute: () => void;
 }) {
   return (
     <div>
@@ -95,6 +97,14 @@ function controls(state: {
         Forward
       </button>
       <button onClick={state.replay}>Replay</button>
+      {/*
+        The mute affordance is exposed here because the test below has to be able
+        to PRESS it. It previously was not, so the only mute test asserted the
+        initial `audio.muted === false` and never toggled anything — replacing
+        `muted={isMuted}` with `muted={false}` in the component kept all 39
+        player tests green.
+      */}
+      <button onClick={state.toggleMute}>{state.isMuted ? "Unmute" : "Mute"}</button>
     </div>
   );
 }
@@ -347,6 +357,27 @@ describe("narration audio (M5 AC 13, 16)", () => {
   it("mutes the audio element when muted from the controls, without stopping playback", () => {
     const { container } = renderPlayer({ narrationSteps: NARRATION_STEPS });
     const audio = container.querySelector("audio")!;
+    expect(audio.muted).toBe(false);
+
+    // Actually press it. This is the assertion the test's own name always
+    // promised and never made.
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mute" }));
+
+    expect(audio.muted).toBe(true);
+    // "without stopping playback": muting is not pausing. The transport still
+    // offers Pause, so the lesson is still running.
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+  });
+
+  it("unmutes again, so the control is a toggle rather than a one-way door", () => {
+    const { container } = renderPlayer({ narrationSteps: NARRATION_STEPS });
+    const audio = container.querySelector("audio")!;
+
+    fireEvent.click(screen.getByRole("button", { name: "Mute" }));
+    expect(audio.muted).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
     expect(audio.muted).toBe(false);
   });
 });
