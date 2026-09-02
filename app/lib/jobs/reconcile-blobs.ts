@@ -182,10 +182,19 @@ export async function reconcileBlobs(storage: StoragePort, clock: Clock): Promis
     where: { createdAt: { lte: grantCutoff } },
   });
 
+  // M6. The same prune, for the same reason, on the voice-recording grants. Their
+  // only job was bounding one upload; past the window they are rows naming the
+  // pathname of an adult's voice recording and nothing else. Left unpruned they
+  // accumulate forever — which the retention classification for
+  // `VoiceUploadGrant` asserts does not happen, so it has to actually not happen.
+  const voiceGrantsResult = await db.voiceUploadGrant.deleteMany({
+    where: { createdAt: { lte: grantCutoff } },
+  });
+
   return {
     scanned,
     orphansDeleted,
     uploadsFailed: failedResult.count,
-    grantsPruned: grantsResult.count,
+    grantsPruned: grantsResult.count + voiceGrantsResult.count,
   };
 }

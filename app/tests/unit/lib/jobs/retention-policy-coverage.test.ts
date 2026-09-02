@@ -160,6 +160,14 @@ const MODELS_OUTSIDE_THE_POLICY: Record<string, string> = {
   // M6 AC 21. Deliberately outside the policy for the same reason DeletionAudit
   // is: it exists to survive the deletion it records, carries no student data,
   // and its `userId` is nulled on account purge leaving only an HMAC.
+  // M6. A short-lived permission to write one object, held about the ACCOUNT
+  // HOLDER rather than a child. It names a pathname but owns no bytes: the audio
+  // it points at is covered by VOICE_SAMPLE or VOICE_CONSENT_RECORDING, and the
+  // row itself is pruned by `reconcile-blobs` on the same GRANT_PRUNE_AFTER_HOURS
+  // timer as UploadTokenGrant. Cascades with the account.
+  VoiceUploadGrant:
+    "Short-lived upload permission about the account holder. No student data; pruned by reconcile-blobs; " +
+    "the audio it names has its own retention rows.",
   VoiceCreationAudit:
     "Forensic audit of voice creation/deletion (AC 21). No student data; userId nulled on purge, actorHash survives.",
 };

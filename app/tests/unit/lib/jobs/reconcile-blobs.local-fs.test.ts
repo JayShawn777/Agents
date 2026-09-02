@@ -37,6 +37,10 @@ const dbMock = {
   uploadTokenGrant: {
     deleteMany: vi.fn(async () => ({ count: 0 })),
   },
+  // M6. Pruned on the same GRANT_PRUNE_AFTER_HOURS timer.
+  voiceUploadGrant: {
+    deleteMany: vi.fn(async () => ({ count: 0 })),
+  },
 };
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -79,6 +83,7 @@ beforeEach(async () => {
   dbMock.voiceConsentRecording.findMany.mockResolvedValue([]);
   dbMock.customVoice.findMany.mockResolvedValue([]);
   dbMock.uploadTokenGrant.deleteMany.mockResolvedValue({ count: 0 });
+  dbMock.voiceUploadGrant.deleteMany.mockResolvedValue({ count: 0 });
   rootDir = await fs.mkdtemp(path.join(os.tmpdir(), "reconcile-blobs-local-fs-"));
   real = new LocalFsStorage(rootDir);
 });

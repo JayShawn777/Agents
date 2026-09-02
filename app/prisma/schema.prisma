@@ -199,6 +199,7 @@ model User {
   personas        Persona[]
   voiceConsents   VoiceConsentRecording[]
   customVoices    CustomVoice[]
+  voiceGrants     VoiceUploadGrant[]
 
   @@index([closureRequestedAt])
 }
@@ -481,6 +482,49 @@ model NarrationRunAttempt {
 }
 
 // ─────────────────────── M6: custom voice ───────────────────────
+
+/// Which recording a grant was issued for. Two different artifacts with two
+/// different retention rows and two different jobs, so the purpose is on the
+/// grant rather than inferred from a pathname prefix.
+enum VoiceUploadPurpose {
+  CONSENT_STATEMENT
+  VOICE_SAMPLE
+}
+
+/// AC 4/11. A single-use permission to write ONE object at ONE server-chosen
+/// pathname.
+///
+/// **This is what makes AC 4 enforceable at the API boundary.** The client never
+/// names the object: it asks for a grant, we choose the pathname, and the confirm
+/// step will only accept that grant's own pathname. So "a direct API request
+/// submitting an arbitrary stored object as a sample" — AC 4's literal wording —
+/// cannot succeed, because there is no field in which to name one.
+///
+/// What it does NOT do, stated here because the contract says so plainly: it
+/// cannot prove the bytes came from a microphone. A determined account owner can
+/// PUT anything to the URL. The controls against the threat that matters — a
+/// CHILD cloning a classmate — are AC 2 and AC 3: no student-facing entry point,
+/// and every voice endpoint scoped to the account owner.
+///
+/// Not `UploadTokenGrant`: that row is scoped to a `studentProfileId`, and these
+/// recordings belong to the ACCOUNT HOLDER, who is an adult and not a student.
+model VoiceUploadGrant {
+  id          String             @id @default(cuid())
+  userId      String
+  purpose     VoiceUploadPurpose
+  /// SERVER-CHOSEN, never accepted from the client. Unique, so a grant cannot be
+  /// pointed at an object another grant already owns.
+  pathname    String             @unique
+  contentType String
+  /// Single use. A consumed grant is kept rather than deleted so the rate limit
+  /// can count attempts, and so a replay is distinguishable from a fresh request.
+  consumedAt  DateTime?
+  createdAt   DateTime           @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
 
 /// AC 21. What happened to a cloned voice, and who did it.
 enum VoiceAuditEvent {

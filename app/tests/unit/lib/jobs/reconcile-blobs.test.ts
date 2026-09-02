@@ -39,6 +39,11 @@ const dbMock = {
   uploadTokenGrant: {
     deleteMany: vi.fn(async () => ({ count: 0 })),
   },
+  // M6. Pruned on the same GRANT_PRUNE_AFTER_HOURS timer.
+  voiceUploadGrant: {
+    deleteMany:
+      vi.fn<(args: { where: { createdAt: { lte: Date } } }) => Promise<{ count: number }>>(async () => ({ count: 0 })),
+  },
 };
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -60,6 +65,7 @@ beforeEach(() => {
   dbMock.voiceConsentRecording.findMany.mockResolvedValue([]);
   dbMock.customVoice.findMany.mockResolvedValue([]);
   dbMock.uploadTokenGrant.deleteMany.mockResolvedValue({ count: 0 });
+  dbMock.voiceUploadGrant.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 describe("reconcileBlobs — orphan detection (store-enumerating, ADR-0007 §2)", () => {
@@ -244,5 +250,38 @@ describe("M6 voice blobs are claimed, not reaped", () => {
 
     expect(storage.deletedBatches).toEqual([[orphan]]);
     expect(result.orphansDeleted).toBe(1);
+  });
+});
+
+/**
+ * M6. The voice grants are pruned on the same timer as upload grants.
+ *
+ * This exists because the retention CLASSIFICATION for `VoiceUploadGrant` claims
+ * the row is pruned — and a classification that asserts a behaviour nobody
+ * implemented is the same inaccuracy, one level up, that M4's retro found in the
+ * omitted retention category. The claim and the code have to agree.
+ */
+describe("M6 voice upload grants are pruned (2026-09-02)", () => {
+  it("deletes grants past the 24h prune window and counts them alongside upload grants", async () => {
+    dbMock.voiceUploadGrant.deleteMany.mockResolvedValue({ count: 3 });
+    dbMock.uploadTokenGrant.deleteMany.mockResolvedValue({ count: 2 });
+
+    const result = await reconcileBlobs(createFakeStorage([]), clock);
+
+    const where = dbMock.voiceUploadGrant.deleteMany.mock.calls[0][0].where;
+    expect(where.createdAt.lte).toEqual(new Date(NOW.getTime() - 24 * 60 * 60 * 1000));
+    // Both grant kinds report through one counter — they are the same category
+    // of bookkeeping and splitting the number would imply a distinction the
+    // caller does not act on.
+    expect(result.grantsPruned).toBe(5);
+  });
+
+  it("leaves a grant inside the window alone", async () => {
+    dbMock.voiceUploadGrant.deleteMany.mockResolvedValue({ count: 0 });
+
+    const result = await reconcileBlobs(createFakeStorage([]), clock);
+
+    expect(dbMock.voiceUploadGrant.deleteMany).toHaveBeenCalledTimes(1);
+    expect(result.grantsPruned).toBe(0);
   });
 });

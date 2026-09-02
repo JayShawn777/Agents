@@ -76,6 +76,11 @@ describe("BLOB_CLAIMANTS coverage (2026-09-02)", () => {
    * made rather than the default for anything inconvenient.
    */
   const NOT_A_BLOB_OWNER: Record<string, string> = {
+    voiceUploadGrant:
+      "M6. `pathname` is where a grant PERMITS one write, not bytes this row owns — the " +
+      "VoiceConsentRecording or CustomVoice row owns those once confirmed. A grant whose upload was " +
+      "abandoned must NOT protect the object: an unconfirmed recording of a real person's voice sitting " +
+      "in the store is exactly what reconcile-blobs should collect.",
     uploadTokenGrant:
       "`requestedPathname` records where a token was issued to write, not bytes this row owns — the Upload " +
       "row owns those once confirmed. A grant whose upload never completed must NOT protect the object: " +
