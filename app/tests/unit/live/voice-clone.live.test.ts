@@ -9,7 +9,8 @@ import { describe, expect, it } from "vitest";
  *   1. `RUN_LIVE_AI=1`                    — the project's live-call convention
  *   2. `ELEVENLABS_API_KEY` set           — and it needs WRITE scope, see below
  *   3. `M6_VOICE_CONSENT=1`               — an explicit, separate opt-in
- *   4. a sample at `.scratch/m6-voice-sample.mp3`
+ *   4. a sample at `.scratch/m6-voice-sample.<ext>` — mp3, m4a, wav, webm,
+ *      ogg, flac, mp4 or aac, whichever your recorder produced
  *
  *   RUN_LIVE_AI=1 M6_VOICE_CONSENT=1 pnpm vitest run \
  *     tests/unit/live/voice-clone.live.test.ts --project unit
@@ -57,15 +58,28 @@ import { describe, expect, it } from "vitest";
  * **It uses `fetch` and adds NO dependency**, deliberately — same reasoning as
  * M5's. If the answers come back wrong, nothing will have been installed.
  *
- * ## The key needs a scope it deliberately does not have
+ * ## What the key actually has — MEASURED 2026-09-02, not assumed
  *
- * `app/CLAUDE.md` records that the ElevenLabs key is scoped to `voices_read` and
- * `text_to_speech` only, with no `user_read`, and says to keep it that way — a
- * synthesis key has no business reading billing. Creating a voice needs
- * `voices_write`, and the voice-limit question needs `user_read`.
+ * This section previously said the key lacked `voices_write` and that M6 would
+ * need a second one. The read-only probes below were then run, and said
+ * otherwise:
  *
- * **That is an owner decision, not something to work around.** The probes below
- * are ordered so the read-only ones run first and record what the current key
+ *   - `voices_read`   YES — 21 voices listed.
+ *   - `user_read`     NO  — explicit 401, "missing the permission user_read".
+ *                           So the voice-CAP question stays unanswerable with
+ *                           this key. Blocking for scale, not for a first build.
+ *   - `voices_write`  YES — `POST /v1/voices/add` returns 422 `Field required`
+ *                           for a malformed body, NOT the 401 the same API
+ *                           returns for an absent scope. Both failure modes
+ *                           appeared in one run, which is what makes this an
+ *                           inference rather than a guess.
+ *
+ * `app/CLAUDE.md` claimed `voices_read` + `text_to_speech` "only" and has been
+ * corrected. Worth an owner decision, flagged there rather than silently acted
+ * on: the everyday synthesis key can create AND DELETE every voice on the
+ * account, which nobody chose.
+ *
+ * The probes are ordered so the read-only ones run first and record what the key
  * can and cannot do; a 401 is a RESULT, written to the report, not a failure.
  *
  * Results are written to `.scratch/` (gitignored) for the research note.
@@ -74,14 +88,48 @@ import { describe, expect, it } from "vitest";
 const LIVE = process.env.RUN_LIVE_AI === "1";
 const KEY = process.env.ELEVENLABS_API_KEY ?? "";
 const CONSENTED = process.env.M6_VOICE_CONSENT === "1";
-const SAMPLE_PATH = ".scratch/m6-voice-sample.mp3";
+
+/**
+ * The sample, in whatever format the recorder produced. Phones and desktop
+ * recorders disagree — iPhone Voice Memos and Windows Voice Recorder both give
+ * `.m4a`, Android varies, browser recorders give `.webm`. Requiring one specific
+ * extension would mean asking the owner to install a converter to answer a
+ * yes/no question, so the harness takes the first one it finds instead.
+ */
+const SAMPLE_CANDIDATES = [
+  ".scratch/m6-voice-sample.mp3",
+  ".scratch/m6-voice-sample.m4a",
+  ".scratch/m6-voice-sample.wav",
+  ".scratch/m6-voice-sample.webm",
+  ".scratch/m6-voice-sample.ogg",
+  ".scratch/m6-voice-sample.flac",
+  ".scratch/m6-voice-sample.mp4",
+  ".scratch/m6-voice-sample.aac",
+];
+
+const MIME_BY_EXT: Record<string, string> = {
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  mp4: "audio/mp4",
+  wav: "audio/wav",
+  webm: "audio/webm",
+  ogg: "audio/ogg",
+  flac: "audio/flac",
+  aac: "audio/aac",
+};
+
+function findSample(): string | null {
+  return SAMPLE_CANDIDATES.find((candidate) => existsSync(candidate)) ?? null;
+}
+
+const SAMPLE_PATH = findSample();
 
 const API = "https://api.elevenlabs.io";
 
 /** Read-only probes need no sample and no consent gate — they create nothing. */
 const READ_ENABLED = LIVE && KEY.length > 0;
 /** Write probes additionally need the explicit consent gate and a real sample. */
-const WRITE_ENABLED = READ_ENABLED && CONSENTED && existsSync(SAMPLE_PATH);
+const WRITE_ENABLED = READ_ENABLED && CONSENTED && SAMPLE_PATH !== null;
 
 type Finding = { question: string; answer: string; detail?: unknown };
 const findings: Finding[] = [];
@@ -175,10 +223,15 @@ describe.skipIf(!WRITE_ENABLED)("M6 measurement — the BLOCKING question, with 
   let createdVoiceId: string | null = null;
 
   it("creates a voice from the sample, and records whether it is usable IMMEDIATELY", async () => {
-    const sample = readFileSync(SAMPLE_PATH);
+    const samplePath = SAMPLE_PATH as string;
+    const sample = readFileSync(samplePath);
+    const ext = samplePath.split(".").pop() ?? "mp3";
+    const mime = MIME_BY_EXT[ext] ?? "audio/mpeg";
+    record("Which sample file was used?", samplePath, { bytes: sample.length, mime });
+
     const form = new FormData();
     form.append("name", `m6-measurement-${Date.now()}`);
-    form.append("files", new Blob([new Uint8Array(sample)], { type: "audio/mpeg" }), "sample.mp3");
+    form.append("files", new Blob([new Uint8Array(sample)], { type: mime }), `sample.${ext}`);
     form.append("description", "Temporary voice created by M6's gating measurement. Deleted by the same run.");
 
     const created = await call("/v1/voices/add", { method: "POST", body: form });
@@ -281,7 +334,9 @@ describe("M6 measurement — preconditions", () => {
     if (!LIVE) missing.push("RUN_LIVE_AI=1");
     if (KEY.length === 0) missing.push("ELEVENLABS_API_KEY");
     if (!CONSENTED) missing.push("M6_VOICE_CONSENT=1 (asserts the sample is YOUR OWN voice)");
-    if (!existsSync(SAMPLE_PATH)) missing.push(`a voice sample at ${SAMPLE_PATH}`);
+    if (SAMPLE_PATH === null) {
+      missing.push(`a voice sample at .scratch/m6-voice-sample.<mp3|m4a|wav|webm|ogg|flac|mp4|aac>`);
+    }
 
     if (missing.length > 0) {
       console.log(
