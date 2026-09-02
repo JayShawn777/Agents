@@ -20,7 +20,27 @@
  * it is a review discipline, named here so it is not missed.
  */
 
-export const DIRECT_NOTICE_VERSION = "2026-08-26.1";
+/**
+ * Bumped 2026-09-02 for M5: ElevenLabs was added to `thirdParties` below. M5 is
+ * the first flow that sends a child's data to a SECOND AI vendor, and §312.4(b)
+ * requires the notice to name each third party and say what it receives.
+ *
+ * **What this bump does and does not do, because it is easy to assume more.**
+ * The version is checked only while consent is being GIVEN: `submitNotice`
+ * returns `STALE_VERSION` and `grantConsent` returns `NOTICE_MISMATCH` for a
+ * parent who is mid-flow when this deploys, and they re-render. An
+ * already-consented family is untouched — `hasNotice` queries
+ * `DirectNotice` by `studentProfileId` with no version filter, and a profile's
+ * status is never revisited.
+ *
+ * **That is a gap, not a feature.** §312.5(c)(1) requires NEW verifiable
+ * parental consent for a material change in collection, use or disclosure
+ * practices, and adding a processor that receives text describing a specific
+ * child's schoolwork is plausibly material. This app has no mechanism to
+ * re-obtain consent on a version bump, so bumping it is currently silent for
+ * existing families. Whoever builds that mechanism should start here.
+ */
+export const DIRECT_NOTICE_VERSION = "2026-09-02.1";
 
 export type DirectNoticeThirdParty = {
   name: string;
@@ -54,6 +74,7 @@ export const DIRECT_NOTICE_COPY: DirectNoticeCopy = {
     "The uploaded images and PDFs are read to identify individual problems and are then deleted on a fixed schedule after that reading is done — see the retention policy linked below.",
     "The extracted problem text is used to generate practice and tutoring for your child for as long as the account is in use.",
     "The display name, grade level, subjects and avatar are used to personalize what your child sees.",
+    "Lesson narration text is turned into speech so lessons can be read aloud in a voice your child chooses. The generated audio is stored for your child and deleted with their other data.",
   ],
   thirdParties: [
     {
@@ -68,6 +89,11 @@ export const DIRECT_NOTICE_COPY: DirectNoticeCopy = {
     {
       name: "Neon",
       receives: "the database records described in this notice.",
+    },
+    {
+      name: "ElevenLabs",
+      receives:
+        "the narration text for a lesson — sentences describing your child's schoolwork — to turn into the spoken voice that reads the lesson aloud. It does not receive the uploaded images or PDFs, your child's name, or any other identifier.",
     },
     {
       name: "Our transactional email provider",

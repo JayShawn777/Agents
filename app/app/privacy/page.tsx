@@ -89,6 +89,12 @@ export default function PrivacyPolicyPage() {
             stores our database records.
           </li>
           <li>
+            <span className="font-medium text-foreground">ElevenLabs</span> —
+            turns lesson narration text into the spoken voice that reads a
+            lesson aloud. It receives the narration sentences only, never the
+            uploaded images or PDFs and no identifier for your child.
+          </li>
+          <li>
             <span className="font-medium text-foreground">
               Our transactional email provider
             </span>{" "}
