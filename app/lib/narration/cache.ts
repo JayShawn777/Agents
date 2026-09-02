@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { db } from "@/lib/db";
 import type { Prisma } from "@/lib/generated/prisma/client";
@@ -29,13 +29,30 @@ export function computeCacheKey(text: string, providerVoiceId: string, ttsModelI
 }
 
 /**
- * `students/<profileId>/narration/<cacheKey>.mp3` (ADR-0015). The profile id
- * in this path is what makes `deleteStudentData` and the reconciler's claim
- * registry work by prefix; AC 12's no-identifier rule is scoped to the
+ * `students/<profileId>/narration/<cacheKey>-<nonce>.mp3` (ADR-0015). The
+ * profile id in this path is what makes `deleteStudentData` and the reconciler's
+ * claim registry work by prefix; AC 12's no-identifier rule is scoped to the
  * OUTBOUND vendor request, not to our own private pathname (plan §7.4).
+ *
+ * **The nonce is why this is not a pure function of (profile, cacheKey).** It
+ * used to be, and the 2026-09-02 review measured what that cost: two concurrent
+ * runs missing the cache for the same (text, voice, model) derived the SAME
+ * pathname, so the P2002 loser's `storage.put` overwrote the winner's bytes
+ * before its `create` collided. The surviving row then described 1200ms of audio
+ * while the file on disk was the loser's, of some other length — a row and its
+ * blob disagreeing, silently, forever. Per-attempt paths make that race
+ * impossible: each writer owns its own object, and the loser's is genuinely
+ * "unreferenced at its own path", which is what this function's caller always
+ * claimed and could not deliver.
+ *
+ * Lookups are unaffected — the cache is queried by `@@unique([studentProfileId,
+ * cacheKey])` on the row, never by reconstructing a path.
  */
 export function narrationAssetPathname(studentProfileId: string, cacheKey: string): string {
-  return `students/${studentProfileId}/${NARRATION_PATHNAME_PREFIX}/${cacheKey}.mp3`;
+  // Hex, so the result still matches the strict `[A-Za-z0-9_-]+` segment the
+  // dev object route's pathname pattern allows.
+  const nonce = randomBytes(8).toString("hex");
+  return `students/${studentProfileId}/${NARRATION_PATHNAME_PREFIX}/${cacheKey}-${nonce}.mp3`;
 }
 
 export type CachedNarrationAsset = {
@@ -89,12 +106,14 @@ export type WriteNarrationAssetInput = {
  * requested at once — and both synthesize and both attempt to write. Rather
  * than a lock, the loser's `create` collides on
  * `@@unique([studentProfileId, cacheKey])` (Prisma P2002), and this function
- * re-reads the row the WINNER already wrote. The loser's freshly synthesized
- * (and already blob-written) audio is simply superseded, not corrupting
- * anything — `NarrationAsset.pathname` is `@unique`, so the loser's own blob
- * remains at its own cache-keyed path, unreferenced, and slice 2's
- * reconciler will eventually collect it. That costs one wasted vendor call in
- * the rare race; it does not cost correctness, and both callers still
+ * re-reads the row the WINNER already wrote, then deletes its own now-orphaned
+ * blob.
+ *
+ * This only works because `narrationAssetPathname` mints a per-attempt nonce
+ * (see its docstring). With a path derived purely from (profile, cacheKey) the
+ * two writers shared one object and the loser silently overwrote the winner's
+ * bytes — the 2026-09-02 review reproduced it. That costs one wasted vendor call
+ * in the rare race; it does not cost correctness, and both callers still
  * correctly bill `charactersBilled` for what they actually sent.
  */
 export async function writeNarrationAsset(
@@ -125,7 +144,15 @@ export async function writeNarrationAsset(
   } catch (err) {
     if (isUniqueConstraintViolation(err)) {
       const existing = await lookupNarrationAsset(input.studentProfileId, input.cacheKey);
-      if (existing) return existing;
+      if (existing) {
+        // Our own blob is now referenced by nothing — its pathname is unique to
+        // this attempt, so nothing else can be pointing at it. Delete it here
+        // rather than leaving it for the reconciler an hour later. Best-effort:
+        // if this fails, `reconcile-blobs` still collects it, which is exactly
+        // the backstop it exists to be.
+        await storage.del([written.pathname]).catch(() => undefined);
+        return existing;
+      }
     }
     throw err;
   }

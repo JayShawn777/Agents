@@ -283,6 +283,8 @@ model StudentProfile {
   attempts     Attempt[]
   /// M2 — required by Prisma. Survives extraction deletion by design (ADR-0010 §6).
   skillMastery SkillMastery[]
+  /// M5 AC 21 — the per-attempt narration spend ledger the caps window on.
+  narrationAttempts NarrationRunAttempt[]
 
   @@index([userId, createdAt])
   /// The pre-consent purge job's query (AC 22). Without it that job seq-scans.
@@ -380,9 +382,11 @@ model LessonNarration {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  lesson  Lesson                @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  persona Persona?              @relation(fields: [personaId], references: [id], onDelete: SetNull)
-  steps   LessonNarrationStep[]
+  lesson   Lesson                @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  persona  Persona?              @relation(fields: [personaId], references: [id], onDelete: SetNull)
+  steps    LessonNarrationStep[]
+  /// M5 AC 21. One row per GRANTED attempt — see `NarrationRunAttempt`.
+  attempts NarrationRunAttempt[]
 
   /// One live narration per version. A retry (AC 17) and a persona change both
   /// UPDATE this row rather than inserting a second; the assets they no longer
@@ -392,6 +396,36 @@ model LessonNarration {
   @@index([status, updatedAt])
   /// The AC 21 daily budget query.
   @@index([studentProfileId, createdAt])
+}
+
+/// AC 21, and the 2026-09-02 security review. The per-ATTEMPT spend ledger.
+///
+/// The caps used to window on `LessonNarration.createdAt`. AC 17's retry is the
+/// same POST and UPSERTS that row rather than inserting one, so `createdAt` never
+/// moved: a row aged past the window could be retried without limit forever, and
+/// `charactersBilled` was SET rather than accumulated, so each retry also erased
+/// the previous attempt's spend. An aged row was uncapped paid TTS.
+///
+/// One row per granted attempt, never rewritten by a later attempt, is what makes
+/// "N runs per hour" and "M characters per day" mean what they say.
+model NarrationRunAttempt {
+  id               String @id @default(cuid())
+  narrationId      String
+  studentProfileId String
+
+  /// What THIS attempt actually sent to the vendor — incremented as each step's
+  /// synthesis returns, so a run that FAILS halfway still records what it spent.
+  /// A cache hit adds nothing (AC 21: never charge a profile for reusing its own).
+  charactersBilled Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  narration      LessonNarration @relation(fields: [narrationId], references: [id], onDelete: Cascade)
+  studentProfile StudentProfile  @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
+
+  /// Both AC 21 window queries: the hourly run count and the daily character sum.
+  @@index([studentProfileId, createdAt])
+  @@index([narrationId])
 }
 
 /// The join that makes AC 13's timeline: a step id and an offset — nothing about

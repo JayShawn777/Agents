@@ -361,7 +361,20 @@ export const LESSON_FAILURE_MESSAGES: Record<LessonFailureCode, string> = {
  * produce it, because the authoring guard maps the same underlying condition
  * to `INVALID_SCRIPT` and regenerates before a narration row ever exists.
  */
-export const NARRATION_FAILURE_CODES = ["UNSPEAKABLE", "TIMEOUT", "UPSTREAM", "INTERNAL"] as const;
+/**
+ * `CONSENT_INACTIVE` (2026-09-02 security review) is what a run aborts with when
+ * the profile stops being ACTIVE while it is in flight. `after()` keeps running
+ * for the route's whole `maxDuration` (300s), so a withdrawal or a §312.6
+ * deletion landing mid-run previously kept calling the vendor and writing blobs
+ * derived from that child's schoolwork for up to five more minutes.
+ */
+export const NARRATION_FAILURE_CODES = [
+  "UNSPEAKABLE",
+  "TIMEOUT",
+  "UPSTREAM",
+  "INTERNAL",
+  "CONSENT_INACTIVE",
+] as const;
 
 export type NarrationFailureCode = (typeof NARRATION_FAILURE_CODES)[number];
 
@@ -370,4 +383,8 @@ export const NARRATION_FAILURE_MESSAGES: Record<NarrationFailureCode, string> = 
   TIMEOUT: "Narration is taking longer than expected. This lesson will still play with captions for now.",
   UPSTREAM: "The narration voice isn't available right now. This lesson will still play with captions.",
   INTERNAL: "Something went wrong preparing the narration. This lesson will still play with captions.",
+  // Deliberately says nothing about consent state to whoever is looking at the
+  // lesson — the account owner already knows they withdrew it, and a child
+  // reading this screen is not who that decision needs explaining to.
+  CONSENT_INACTIVE: "Narration isn't available for this profile right now. This lesson will still play with captions.",
 };

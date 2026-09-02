@@ -15,12 +15,30 @@ import { CUE_FORMAT_VERSION } from "@/lib/config";
  */
 
 export class AlignmentMismatchError extends Error {
-  constructor(expectedLength: number, actualLength: number) {
-    super(
-      `alignment.characters (${actualLength} chars) does not reconstruct the input text ` +
-        `(${expectedLength} chars) — the vendor's response cannot be trusted for cue derivation.`,
-    );
+  constructor(reason: string) {
+    super(`${reason} — the vendor's response cannot be trusted for cue derivation.`);
     this.name = "AlignmentMismatchError";
+  }
+
+  static textMismatch(expectedLength: number, actualLength: number): AlignmentMismatchError {
+    return new AlignmentMismatchError(
+      `alignment.characters (${actualLength} chars) does not reconstruct the input text (${expectedLength} chars)`,
+    );
+  }
+
+  /**
+   * The RAGGED case (2026-09-02 review). `characters.join("") === text` can hold
+   * while `characterStartTimesSeconds` / `characterEndTimesSeconds` are SHORTER
+   * than `characters` — nothing about the text check can see that. Indexing past
+   * the end then yields `Math.round(undefined * 1000)` -> `NaN`, which Prisma
+   * persists into `cues` as JSON `null`, so a run finished READY carrying
+   * `{s: null, e: null}` word cues that fail this module's own schema, and every
+   * step `durationMs` was wrong. Refuse the payload instead.
+   */
+  static raggedTimings(characters: number, starts: number, ends: number): AlignmentMismatchError {
+    return new AlignmentMismatchError(
+      `alignment timing arrays are ragged: ${characters} characters, ${starts} start times, ${ends} end times`,
+    );
   }
 }
 
@@ -72,7 +90,17 @@ export function deriveNarrationCues(text: string, alignment: NarrationAlignment)
 
   const joined = characters.join("");
   if (joined !== text) {
-    throw new AlignmentMismatchError(text.length, joined.length);
+    throw AlignmentMismatchError.textMismatch(text.length, joined.length);
+  }
+
+  // Both timing arrays must be exactly as long as `characters`. See
+  // `AlignmentMismatchError.raggedTimings` for what a short one produced.
+  if (characterStartTimesSeconds.length !== characters.length || characterEndTimesSeconds.length !== characters.length) {
+    throw AlignmentMismatchError.raggedTimings(
+      characters.length,
+      characterStartTimesSeconds.length,
+      characterEndTimesSeconds.length,
+    );
   }
 
   const words: NarrationCues["words"] = [];
@@ -113,7 +141,16 @@ export function deriveNarrationCues(text: string, alignment: NarrationAlignment)
       ? Math.round(characterEndTimesSeconds[characterEndTimesSeconds.length - 1] * 1000)
       : 0;
 
-  return { v: Number(CUE_FORMAT_VERSION), durationMs, words };
+  // The derivation's OUTPUT is validated against the module's own schema before
+  // it leaves this function. Cues are persisted once and read on every playback
+  // for the life of the asset, so "this shape was never checked" is not a
+  // recoverable state later — a NaN or a negative that slipped through any
+  // arithmetic above must fail the run here, not be cached forever.
+  const parsed = NarrationCuesSchema.safeParse({ v: Number(CUE_FORMAT_VERSION), durationMs, words });
+  if (!parsed.success) {
+    throw new AlignmentMismatchError(`derived cues failed NarrationCuesSchema (${parsed.error.issues.length} issue(s))`);
+  }
+  return parsed.data;
 }
 
 function isWhitespace(ch: string): boolean {

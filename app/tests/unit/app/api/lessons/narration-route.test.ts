@@ -47,9 +47,18 @@ const dbMock = {
     ),
     findFirst: vi.fn(),
   },
-  lessonNarration: {
+  /**
+   * The AC 21 caps count `NarrationRunAttempt` rows, not `LessonNarration` rows
+   * (2026-09-02 security review): a retry UPSERTS the narration row and never
+   * moves its `createdAt`, so an aged row was permanently uncapped. These mocks
+   * moved with the queries.
+   */
+  narrationRunAttempt: {
     count: vi.fn(async () => 0),
     aggregate: vi.fn(async () => ({ _sum: { charactersBilled: 0 } })),
+    create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "attempt_1", ...data })),
+  },
+  lessonNarration: {
     upsert: vi.fn(
       async ({
         create,
@@ -147,8 +156,8 @@ beforeEach(() => {
   dalMock.verifySession.mockResolvedValue({ userId: "user_1" });
   dalMock.requireLessonForNarration.mockResolvedValue(lesson());
   dbMock.studentProfile.findUniqueOrThrow.mockResolvedValue({ personaId: null });
-  dbMock.lessonNarration.count.mockResolvedValue(0);
-  dbMock.lessonNarration.aggregate.mockResolvedValue({ _sum: { charactersBilled: 0 } });
+  dbMock.narrationRunAttempt.count.mockResolvedValue(0);
+  dbMock.narrationRunAttempt.aggregate.mockResolvedValue({ _sum: { charactersBilled: 0 } });
   dbMock.lessonNarration.upsert.mockImplementation(
     async ({ create }: { where: unknown; create: Record<string, unknown> }) => ({
       id: "narr_1",
@@ -242,7 +251,7 @@ describe("requesting narration (endpoint 46)", () => {
   });
 
   it("429s over the hourly runs cap without writing anything", async () => {
-    dbMock.lessonNarration.count.mockResolvedValue(NARRATION_RUNS_PER_HOUR);
+    dbMock.narrationRunAttempt.count.mockResolvedValue(NARRATION_RUNS_PER_HOUR);
     const res = await POST(postReq(NARR_URL), ctx());
     expect(res.status).toBe(429);
     expect(dbMock.lessonNarration.upsert).not.toHaveBeenCalled();
@@ -250,7 +259,7 @@ describe("requesting narration (endpoint 46)", () => {
   });
 
   it("429s over the daily character budget without writing anything", async () => {
-    dbMock.lessonNarration.aggregate.mockResolvedValue({ _sum: { charactersBilled: NARRATION_DAILY_BUDGET_CHARS } });
+    dbMock.narrationRunAttempt.aggregate.mockResolvedValue({ _sum: { charactersBilled: NARRATION_DAILY_BUDGET_CHARS } });
     const res = await POST(postReq(NARR_URL), ctx());
     expect(res.status).toBe(429);
     expect(dbMock.lessonNarration.upsert).not.toHaveBeenCalled();
@@ -268,7 +277,7 @@ describe("requesting narration (endpoint 46)", () => {
    */
   it("re-checks the runs cap inside the granting transaction, not only at step 7", async () => {
     let callsInsideTransaction = 0;
-    dbMock.lessonNarration.count.mockImplementation(async () => {
+    dbMock.narrationRunAttempt.count.mockImplementation(async () => {
       callsInsideTransaction += 1;
       // First call is step 7's cheap pre-check (room to spare); every call
       // from inside `$transaction` (the second one) reports the cap reached.
@@ -279,6 +288,37 @@ describe("requesting narration (endpoint 46)", () => {
     expect(res.status).toBe(429);
     expect(callsInsideTransaction).toBeGreaterThanOrEqual(2);
     expect(dbMock.lessonNarration.upsert).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The mechanism the whole 2026-09-02 cap fix rests on: the grant must INSERT a
+   * ledger row every time, including on a retry that only upserts the narration
+   * row. Without this insert the windows never move and an aged row is
+   * unlimited paid TTS.
+   */
+  it("writes a NarrationRunAttempt ledger row inside the granting transaction", async () => {
+    await POST(postReq(NARR_URL), ctx());
+
+    expect(dbMock.narrationRunAttempt.create).toHaveBeenCalledTimes(1);
+    const created = dbMock.narrationRunAttempt.create.mock.calls[0][0] as {
+      data: { narrationId: string; studentProfileId: string };
+    };
+    expect(created.data.narrationId).toBe("narr_1");
+    expect(created.data.studentProfileId).toBe("sp_1");
+  });
+
+  it("a RETRY also inserts a ledger row, even though it only upserts the narration row", async () => {
+    // AC 17's retry: the same POST against a FAILED run.
+    dalMock.requireLessonForNarration.mockResolvedValue(
+      lesson({ narration: narrationRow({ status: "FAILED", failureCode: "UPSTREAM" }) }),
+    );
+
+    await POST(postReq(NARR_URL), ctx());
+
+    // One upsert (reusing the row, per AC 17) and one NEW ledger row. This pair
+    // is exactly what the bypass lacked.
+    expect(dbMock.lessonNarration.upsert).toHaveBeenCalledTimes(1);
+    expect(dbMock.narrationRunAttempt.create).toHaveBeenCalledTimes(1);
   });
 
   it("400s an undeclared body key", async () => {

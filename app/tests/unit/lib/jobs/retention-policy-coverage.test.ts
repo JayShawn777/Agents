@@ -111,6 +111,12 @@ const MODEL_RETENTION_KEY: Record<string, string> = {
   LessonNarration: "NARRATION_AUDIO",
   LessonNarrationStep: "NARRATION_AUDIO",
   NarrationAsset: "NARRATION_AUDIO",
+  // The AC 21 spend ledger (2026-09-02 review). Holds no content — a character
+  // COUNT and a timestamp, per attempt — but it is scoped by `studentProfileId`
+  // and exists only because that child had narration generated, so it belongs
+  // to the same published category as the audio it bounds. Cascades with the
+  // profile and with the narration row.
+  NarrationRunAttempt: "NARRATION_AUDIO",
   DirectNotice: "DIRECT_NOTICE",
   ParentalConsent: "CONSENT_FULL",
   ConsentAuditArtifact: "CONSENT_PSEUDONYM",

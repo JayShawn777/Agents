@@ -150,3 +150,69 @@ describe("defensive clamping (N4 found no degenerate spans, but the derivation m
     expect(cues.words[1].e).toBeGreaterThanOrEqual(cues.words[1].s);
   });
 });
+
+/**
+ * ─────────── the 2026-09-02 review: ragged alignment arrays ───────────
+ *
+ * `characters.join("") === text` can hold while the two timing arrays are
+ * SHORTER than `characters` — the text check cannot see that. Indexing past the
+ * end yielded `Math.round(undefined * 1000)` -> `NaN`, which Prisma persisted
+ * into `cues` as JSON `null`. The measured result: a run finished READY with
+ * word cues of `{s: null, e: null}` that fail this module's OWN schema, and
+ * every step `durationMs` wrong. Nothing validated the derivation's output
+ * before it was cached for the life of the asset.
+ */
+describe("ragged alignment arrays are refused", () => {
+  const text = "Two words";
+  const characters = [...text];
+
+  it("throws when characterStartTimesSeconds is shorter than characters", () => {
+    expect(() =>
+      deriveNarrationCues(text, {
+        characters,
+        characterStartTimesSeconds: characters.slice(0, 3).map((_, i) => i * 0.05),
+        characterEndTimesSeconds: characters.map((_, i) => (i + 1) * 0.05),
+      }),
+    ).toThrow(AlignmentMismatchError);
+  });
+
+  it("throws when characterEndTimesSeconds is shorter than characters", () => {
+    expect(() =>
+      deriveNarrationCues(text, {
+        characters,
+        characterStartTimesSeconds: characters.map((_, i) => i * 0.05),
+        characterEndTimesSeconds: characters.slice(0, 3).map((_, i) => (i + 1) * 0.05),
+      }),
+    ).toThrow(AlignmentMismatchError);
+  });
+
+  it("throws when a timing array is LONGER than characters", () => {
+    expect(() =>
+      deriveNarrationCues(text, {
+        characters,
+        characterStartTimesSeconds: [...characters, "x"].map((_, i) => i * 0.05),
+        characterEndTimesSeconds: characters.map((_, i) => (i + 1) * 0.05),
+      }),
+    ).toThrow(AlignmentMismatchError);
+  });
+
+  /**
+   * The property that actually mattered: whatever this function RETURNS must
+   * satisfy the schema the value is stored under. Asserted directly, so a future
+   * change to the arithmetic that reintroduces a NaN fails here rather than
+   * three weeks later in a lesson nobody can sync.
+   */
+  it("never returns a value that fails NarrationCuesSchema", () => {
+    const cues = deriveNarrationCues(text, {
+      characters,
+      characterStartTimesSeconds: characters.map((_, i) => i * 0.05),
+      characterEndTimesSeconds: characters.map((_, i) => (i + 1) * 0.05),
+    });
+    expect(NarrationCuesSchema.safeParse(cues).success).toBe(true);
+    for (const word of cues.words) {
+      expect(Number.isFinite(word.s)).toBe(true);
+      expect(Number.isFinite(word.e)).toBe(true);
+    }
+    expect(Number.isFinite(cues.durationMs)).toBe(true);
+  });
+});

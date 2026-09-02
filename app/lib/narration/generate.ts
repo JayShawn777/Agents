@@ -78,6 +78,27 @@ export async function runNarrationGeneration(
     return { status: "SKIPPED" };
   }
 
+  // The attempt row this run bills against (AC 21). Written by
+  // `grantNarrationRun` inside the same transaction that granted the run, so
+  // it always exists by the time `after()` gets here; `null` only for a caller
+  // that bypassed the route, in which case spend is simply not ledgered.
+  const attempt = await db.narrationRunAttempt.findFirst({
+    where: { narrationId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  const ledger: SpendLedger = { attemptId: attempt?.id ?? null, charactersSent: 0 };
+
+  // Consent is re-read HERE, not merely at the route (2026-09-02 review). The
+  // route's Owner+ACTIVE gate passed at t=0; `after()` then runs for up to
+  // `maxDuration` (300s), during which a withdrawal or a §312.6 deletion can
+  // land. Checked once before the claim, and again before every paid vendor
+  // call below — a DB read is orders of magnitude cheaper than a TTS call, and
+  // the thing being protected is audio derived from a specific child's homework.
+  if (!(await isProfileActive(narration.studentProfileId))) {
+    return finalizeFailed(narrationId, "CONSENT_INACTIVE", ledger);
+  }
+
   // Compare-and-swap claim — the same shape `authorLesson` uses, and for the
   // same reason: a `findUnique` followed by a bare `update` is check-then-act,
   // and two invocations for one row could both read PENDING and both proceed.
@@ -104,7 +125,7 @@ export async function runNarrationGeneration(
     console.error(
       `runNarrationGeneration(${narrationId}): source LessonScriptVersion ${narration.versionId} is not a READY, parseable script.`,
     );
-    return finalizeFailed(narrationId, "INTERNAL");
+    return finalizeFailed(narrationId, "INTERNAL", ledger);
   }
   const script = parsedScript.data;
 
@@ -116,6 +137,7 @@ export async function runNarrationGeneration(
         providerVoiceId: narration.providerVoiceId,
         ttsModelId: narration.ttsModelId,
         step,
+        ledger,
       }),
     );
 
@@ -125,16 +147,17 @@ export async function runNarrationGeneration(
     // synthesize up to `NARRATION_MAX_CONCURRENCY` at once without the
     // offset arithmetic caring which one finished first.
     let cursor = 0;
-    let charactersBilled = 0;
     let cacheHits = 0;
     const stepRows = resolved.map((entry, stepIndex) => {
       const startOffsetMs = cursor;
       cursor += entry.durationMs;
-      charactersBilled += entry.charactersSent;
       if (entry.cacheHit) cacheHits += 1;
       return { stepId: script.steps[stepIndex].id, stepIndex, assetId: entry.assetId, startOffsetMs };
     });
     const totalDurationMs = cursor;
+    // From the ledger, not re-summed from `resolved` — the ledger is also what
+    // the FAILED path records, so both paths report spend from one source.
+    const charactersBilled = ledger.charactersSent;
 
     await db.$transaction([
       // A retry (AC 17) reuses the SAME `LessonNarration` row, so any step
@@ -156,13 +179,23 @@ export async function runNarrationGeneration(
           completedAt: new Date(),
         },
       }),
+      // The AC 21 ledger entry for THIS attempt. In the same transaction as the
+      // terminal status, so a run is never READY with its spend unrecorded.
+      ...(ledger.attemptId
+        ? [
+            db.narrationRunAttempt.update({
+              where: { id: ledger.attemptId },
+              data: { charactersBilled: ledger.charactersSent },
+            }),
+          ]
+        : []),
     ]);
 
     return { status: "READY", narrationId, stepCount: stepRows.length, totalDurationMs };
   } catch (err) {
     const failureCode = classifyFailure(err);
     console.error(`runNarrationGeneration(${narrationId}) failed — ${failureCode}`);
-    return finalizeFailed(narrationId, failureCode);
+    return finalizeFailed(narrationId, failureCode, ledger);
   }
 }
 
@@ -197,12 +230,29 @@ export async function reapIfStaleNarration<T extends LessonNarration>(narration:
 
 // ─────────────────────────── internals ───────────────────────────
 
+/**
+ * What this attempt has actually sent to the vendor so far, accumulated as each
+ * synthesis returns rather than summed at the end.
+ *
+ * The 2026-09-02 review found the end-summing version invisible on the FAILED
+ * path: a run that failed on step 1 while its pool kept synthesizing the other
+ * eleven recorded `charactersBilled: null`, so real paid spend never reached the
+ * AC 21 budget at all. Mutating this as we go is what lets `finalizeFailed`
+ * record what a partial run cost.
+ */
+type SpendLedger = {
+  /** `null` only for a caller that bypassed `grantNarrationRun` (tests, mostly). */
+  attemptId: string | null;
+  charactersSent: number;
+};
+
 type ResolveStepAssetArgs = {
   studentProfileId: string;
   personaId: string | null;
   providerVoiceId: string;
   ttsModelId: string;
   step: LessonStep;
+  ledger: SpendLedger;
 };
 
 type ResolvedStepAsset = {
@@ -215,11 +265,17 @@ type ResolvedStepAsset = {
 
 /** Resolves one step's audio, from the cache or from a fresh vendor call. */
 async function resolveStepAsset(storage: StoragePort, args: ResolveStepAssetArgs): Promise<ResolvedStepAsset> {
-  const { studentProfileId, personaId, providerVoiceId, ttsModelId, step } = args;
+  const { studentProfileId, personaId, providerVoiceId, ttsModelId, step, ledger } = args;
   const cacheKey = computeCacheKey(step.narration, providerVoiceId, ttsModelId);
 
+  // A hit only counts when its cues are in the format this run stamps on the
+  // `LessonNarration` row. The cache key covers (text, voice, model) but NOT the
+  // cue format, so bumping `CUE_FORMAT_VERSION` used to leave lessons stamped
+  // with the new version pointing at assets whose cues were derived under the
+  // old one — a silent mismatch between what a row claims and what playback
+  // reads. A stale-format hit is treated as a miss and re-synthesized.
   const cached = await lookupNarrationAsset(studentProfileId, cacheKey);
-  if (cached) {
+  if (cached && cached.cueFormatVersion === CUE_FORMAT_VERSION) {
     return { assetId: cached.id, durationMs: cached.durationMs, cacheHit: true, charactersSent: 0 };
   }
 
@@ -240,12 +296,23 @@ async function resolveStepAsset(storage: StoragePort, args: ResolveStepAssetArgs
     throw new NarrationRunError("UNSPEAKABLE");
   }
 
+  // The last gate before money is spent. See `runNarrationGeneration`'s own
+  // consent comment: this run may have been in flight for minutes.
+  if (!(await isProfileActive(studentProfileId))) {
+    throw new NarrationRunError("CONSENT_INACTIVE");
+  }
+
   const synthesis = await synthesizeWithRetry({
     text: step.narration,
     providerVoiceId,
     modelId: ttsModelId,
     outputFormat: NARRATION_OUTPUT_FORMAT,
   });
+
+  // Ledgered the moment the vendor answers — BEFORE cue derivation or the blob
+  // write, either of which can throw. The vendor billed for this text whether or
+  // not we go on to make an asset out of it.
+  ledger.charactersSent += step.narration.length;
 
   const cues = deriveNarrationCues(step.narration, synthesis.alignment);
 
@@ -305,12 +372,42 @@ function classifyFailure(err: unknown): NarrationFailureCode {
   return "INTERNAL";
 }
 
-async function finalizeFailed(narrationId: string, failureCode: NarrationFailureCode): Promise<RunNarrationGenerationResult> {
-  await db.lessonNarration.update({
-    where: { id: narrationId },
-    data: { status: "FAILED", failureCode, completedAt: new Date() },
-  });
+/**
+ * The terminal FAILED write — and, since the 2026-09-02 review, the place a
+ * partial run's spend is recorded. `charactersBilled` is written on this path
+ * too: a run that called the vendor five times and then failed cost exactly as
+ * much as one that called it five times and succeeded, and AC 21's budget has to
+ * see both or it is not a budget.
+ */
+async function finalizeFailed(
+  narrationId: string,
+  failureCode: NarrationFailureCode,
+  ledger: SpendLedger,
+): Promise<RunNarrationGenerationResult> {
+  await db.$transaction([
+    db.lessonNarration.update({
+      where: { id: narrationId },
+      data: { status: "FAILED", failureCode, charactersBilled: ledger.charactersSent, completedAt: new Date() },
+    }),
+    ...(ledger.attemptId
+      ? [
+          db.narrationRunAttempt.update({
+            where: { id: ledger.attemptId },
+            data: { charactersBilled: ledger.charactersSent },
+          }),
+        ]
+      : []),
+  ]);
   return { status: "FAILED", failureCode };
+}
+
+/** One cheap read, called before the claim and before every paid vendor call. */
+async function isProfileActive(studentProfileId: string): Promise<boolean> {
+  const profile = await db.studentProfile.findUnique({
+    where: { id: studentProfileId },
+    select: { status: true },
+  });
+  return profile?.status === "ACTIVE";
 }
 
 function sleep(ms: number): Promise<void> {
@@ -319,11 +416,19 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * AC 9's concurrency pool (`NARRATION_MAX_CONCURRENCY`, the published floor —
- * the account's real ceiling cannot be read back, plan §8.3). A worker that
- * throws propagates through `Promise.all` immediately; siblings already
- * in flight are not cancelled, which is an accepted simplification at a
- * limit of 2 rather than wiring an `AbortController` through every step for
- * a case (a mid-run failure) that already fails the whole lesson's narration.
+ * the account's real ceiling cannot be read back, plan §8.3).
+ *
+ * **It STOPS pulling work once any worker has thrown.** The previous version's
+ * docstring claimed only that "siblings already in flight are not cancelled",
+ * which was true and beside the point: the workers looped on a shared cursor, so
+ * after `Promise.all` rejected, the surviving worker went right on draining the
+ * whole queue. The 2026-09-02 review measured a 12-step script failing on step 1
+ * returning FAILED after 2 vendor calls and then making 10 more — paid, and
+ * invisible to the AC 21 budget, because the run was already terminal.
+ *
+ * A sibling ALREADY in flight is still not cancelled, which remains the accepted
+ * simplification at a limit of 2: the ledger now records what those calls cost,
+ * so the untracked-spend half of the problem is closed either way.
  */
 async function mapWithConcurrency<T, R>(
   items: readonly T[],
@@ -332,12 +437,21 @@ async function mapWithConcurrency<T, R>(
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let cursor = 0;
+  let aborted = false;
 
   async function runNext(): Promise<void> {
     for (;;) {
+      // Checked before claiming an index, so a worker that wakes up after a
+      // sibling threw takes no new item rather than one more each time round.
+      if (aborted) return;
       const index = cursor++;
       if (index >= items.length) return;
-      results[index] = await worker(items[index], index);
+      try {
+        results[index] = await worker(items[index], index);
+      } catch (err) {
+        aborted = true;
+        throw err;
+      }
     }
   }
 

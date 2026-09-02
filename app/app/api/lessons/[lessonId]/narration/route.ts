@@ -257,21 +257,41 @@ async function withinNarrationRateLimit(studentProfileId: string): Promise<boole
   return spent < NARRATION_DAILY_BUDGET_CHARS;
 }
 
+/**
+ * **Both windows count `NarrationRunAttempt` rows, not `LessonNarration` rows**
+ * (2026-09-02 security review).
+ *
+ * They used to window on `LessonNarration.createdAt`. AC 17's retry is this same
+ * POST, and `grantNarrationRun` UPSERTS on `@@unique([versionId])` — so a retry
+ * never inserted a row and never touched `createdAt`. A row aged past the window
+ * was therefore permanently uncapped: the review proved it against real Postgres
+ * with a row created 25h earlier carrying `charactersBilled: 19_999`, retried
+ * three times through this route's own upsert, still counting 0 runs in the hour
+ * window and 0 characters in the day window. Because `charactersBilled` was SET
+ * rather than accumulated, each retry also erased the previous attempt's spend.
+ * (Cache hits are free, so the way to force real billing on every retry was to
+ * PATCH `personaId` between POSTs — a new voice changes the cache key and misses
+ * every step.)
+ *
+ * One immutable row per granted attempt makes a rolling window mean what it says.
+ */
 type CapCountClient = {
-  lessonNarration: {
-    count: (args: Parameters<typeof db.lessonNarration.count>[0]) => Promise<number>;
-    aggregate: (args: Parameters<typeof db.lessonNarration.aggregate>[0]) => ReturnType<typeof db.lessonNarration.aggregate>;
+  narrationRunAttempt: {
+    count: (args: Parameters<typeof db.narrationRunAttempt.count>[0]) => Promise<number>;
+    aggregate: (
+      args: Parameters<typeof db.narrationRunAttempt.aggregate>[0],
+    ) => ReturnType<typeof db.narrationRunAttempt.aggregate>;
   };
 };
 
 function countNarrationRuns(client: CapCountClient, studentProfileId: string): Promise<number> {
   const windowStart = new Date(Date.now() - NARRATION_RATE_WINDOW_MS);
-  return client.lessonNarration.count({ where: { studentProfileId, createdAt: { gte: windowStart } } });
+  return client.narrationRunAttempt.count({ where: { studentProfileId, createdAt: { gte: windowStart } } });
 }
 
 async function sumCharactersBilledInWindow(client: CapCountClient, studentProfileId: string): Promise<number> {
   const windowStart = new Date(Date.now() - NARRATION_BUDGET_WINDOW_MS);
-  const agg = await client.lessonNarration.aggregate({
+  const agg = await client.narrationRunAttempt.aggregate({
     where: { studentProfileId, createdAt: { gte: windowStart } },
     _sum: { charactersBilled: true },
   });
@@ -302,9 +322,12 @@ function isNarrationCapRejection(err: unknown): boolean {
  * grants for the same profile cannot both pass, and Postgres aborts the
  * loser with P2034 rather than letting both commit.
  *
- * A retry (AC 17) `upsert`s the SAME row — `LessonNarration.@@unique
+ * A retry (AC 17) `upsert`s the SAME `LessonNarration` row — `@@unique
  * ([versionId])` — rather than inserting a second one, matching
- * `runNarrationGeneration`'s own "reuses the SAME row" contract.
+ * `runNarrationGeneration`'s own "reuses the SAME row" contract. It does,
+ * however, always INSERT a `NarrationRunAttempt`: that row is the unit the caps
+ * count, and it is what a retry must move. See `countNarrationRuns` above for
+ * what happened when the caps counted the upserted row instead.
  */
 async function grantNarrationRun(args: {
   lessonId: string;
@@ -323,7 +346,7 @@ async function grantNarrationRun(args: {
         throw new NarrationCapExceededError("budget");
       }
 
-      return tx.lessonNarration.upsert({
+      const narration = await tx.lessonNarration.upsert({
         where: { versionId: args.versionId },
         create: {
           lessonId: args.lessonId,
@@ -341,10 +364,22 @@ async function grantNarrationRun(args: {
           personaId: args.persona.id,
           providerVoiceId: args.persona.providerVoiceId,
           ttsModelId: NARRATION_MODEL_ID,
+          charactersBilled: null,
+          cacheHits: null,
           startedAt: null,
           completedAt: null,
         },
       });
+
+      // THE GRANT. One row per attempt, inserted in the same transaction that
+      // just counted them — so the count this attempt passed is the count the
+      // next attempt sees. `runNarrationGeneration` writes what this attempt
+      // actually spent onto it, on the READY path and the FAILED path alike.
+      await tx.narrationRunAttempt.create({
+        data: { narrationId: narration.id, studentProfileId: args.studentProfileId },
+      });
+
+      return narration;
     },
     { isolationLevel: "Serializable" },
   );

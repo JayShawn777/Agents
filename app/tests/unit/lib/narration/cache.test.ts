@@ -53,6 +53,7 @@ const storageMock = {
     pathname,
     sizeBytes: data instanceof Uint8Array ? data.byteLength : data.byteLength,
   })),
+  del: vi.fn<(pathnames: string[]) => Promise<void>>(async () => {}),
 };
 
 const { computeCacheKey, narrationAssetPathname, lookupNarrationAsset, writeNarrationAsset } = await import(
@@ -94,8 +95,30 @@ describe("computeCacheKey", () => {
 });
 
 describe("narrationAssetPathname", () => {
-  it("matches ADR-0015's shape exactly", () => {
-    expect(narrationAssetPathname("prof_1", "abc123")).toBe("students/prof_1/narration/abc123.mp3");
+  it("matches ADR-0015's shape, with a per-attempt nonce", () => {
+    expect(narrationAssetPathname("prof_1", "abc123")).toMatch(
+      /^students\/prof_1\/narration\/abc123-[0-9a-f]{16}\.mp3$/,
+    );
+  });
+
+  /**
+   * The 2026-09-02 review's finding, as a test. A path that was a pure function
+   * of (profile, cacheKey) meant two concurrent writers for the same sentence
+   * derived the SAME object, so the P2002 loser's `put` overwrote the winner's
+   * bytes and the surviving row described audio that was no longer there.
+   */
+  it("never returns the same pathname twice for the same (profile, cacheKey)", () => {
+    const seen = new Set(Array.from({ length: 50 }, () => narrationAssetPathname("prof_1", "abc123")));
+    expect(seen.size).toBe(50);
+  });
+
+  it("stays inside the dev object route's strict pathname pattern", () => {
+    // `app/api/dev/local-object/route.ts` only serves pathnames matching this,
+    // so a nonce containing anything outside [A-Za-z0-9_-] would make locally
+    // generated audio unfetchable — silently, and only in dev.
+    expect(narrationAssetPathname("prof_1", "abc123")).toMatch(
+      /^students\/([A-Za-z0-9_-]+)\/narration\/([A-Za-z0-9_-]+)\.mp3$/,
+    );
   });
 });
 
@@ -155,10 +178,12 @@ describe("writeNarrationAsset", () => {
     expect(calls).toEqual(["put", "create"]);
   });
 
-  it("creates a row at the ADR-0015 pathname", async () => {
+  it("creates a row at the ADR-0015 pathname, and puts the bytes at that same path", async () => {
     const asset = await writeNarrationAsset(storageMock as never, baseInput);
-    expect(asset.pathname).toBe("students/prof_1/narration/key_a.mp3");
-    expect(storageMock.put).toHaveBeenCalledWith("students/prof_1/narration/key_a.mp3", baseInput.audio, "audio/mpeg");
+    expect(asset.pathname).toMatch(/^students\/prof_1\/narration\/key_a-[0-9a-f]{16}\.mp3$/);
+    // The row and the object must agree — asserted against the row's own value
+    // rather than a literal, now that the nonce makes the path unpredictable.
+    expect(storageMock.put).toHaveBeenCalledWith(asset.pathname, baseInput.audio, "audio/mpeg");
   });
 
   /**
@@ -174,7 +199,7 @@ describe("writeNarrationAsset", () => {
       id: "asset_winner",
       studentProfileId: baseInput.studentProfileId,
       cacheKey: baseInput.cacheKey,
-      pathname: "students/prof_1/narration/key_a.mp3",
+      pathname: "students/prof_1/narration/key_a-aaaaaaaaaaaaaaaa.mp3",
       durationMs: 999,
       cues: { v: 1, durationMs: 999, words: [] },
       cueFormatVersion: "1",
@@ -185,5 +210,31 @@ describe("writeNarrationAsset", () => {
     expect(result.durationMs).toBe(999);
     // Exactly one row exists — the loser's create did not duplicate it.
     expect(assets.filter((a) => a.cacheKey === baseInput.cacheKey && a.studentProfileId === baseInput.studentProfileId)).toHaveLength(1);
+  });
+
+  /**
+   * The other half of the same race, and the actual defect the 2026-09-02
+   * review reproduced: the loser must not have written over the winner's
+   * object, and must clean up its own.
+   */
+  it("does not touch the winner's blob, and deletes its own orphaned one", async () => {
+    const winnerPathname = "students/prof_1/narration/key_a-aaaaaaaaaaaaaaaa.mp3";
+    assets.push({
+      id: "asset_winner",
+      studentProfileId: baseInput.studentProfileId,
+      cacheKey: baseInput.cacheKey,
+      pathname: winnerPathname,
+      durationMs: 999,
+      cues: { v: 1, durationMs: 999, words: [] },
+      cueFormatVersion: "1",
+    });
+
+    await writeNarrationAsset(storageMock as never, baseInput);
+
+    const putPath = storageMock.put.mock.calls[0][0] as string;
+    expect(putPath).not.toBe(winnerPathname);
+    expect(storageMock.del).toHaveBeenCalledWith([putPath]);
+    // Nothing was written to, or deleted from, the winner's path.
+    expect(storageMock.del).not.toHaveBeenCalledWith([winnerPathname]);
   });
 });

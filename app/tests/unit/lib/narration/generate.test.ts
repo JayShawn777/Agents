@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { NarrationAlignment } from "@/lib/narration/provider";
-import { NARRATION_MAX_ATTEMPTS } from "@/lib/config";
+import { NARRATION_MAX_ATTEMPTS, NARRATION_MAX_CONCURRENCY } from "@/lib/config";
 
 /**
  * `lib/narration/generate.ts` — the fourth `PENDING → GENERATING →
@@ -45,10 +45,15 @@ type AssetRow = {
 
 type StepRow = { narrationId: string; stepId: string; stepIndex: number; assetId: string; startOffsetMs: number };
 
+type AttemptRow = { id: string; narrationId: string; studentProfileId: string; charactersBilled: number; createdAt: Date };
+
 let narrations: NarrationRow[];
 let versions: Record<string, { status: string; script: unknown }>;
 let assets: AssetRow[];
 let steps: StepRow[];
+let attempts: AttemptRow[];
+/** The consent gate the pipeline re-reads before the claim and before every paid call. */
+let profileStatus: string;
 let nextAssetId: number;
 
 function narrationRow(overrides: Partial<NarrationRow> = {}): NarrationRow {
@@ -154,6 +159,25 @@ const dbMock = {
       return { id: row.id, pathname: row.pathname, durationMs: row.durationMs, cues: row.cues, cueFormatVersion: row.cueFormatVersion };
     }),
   },
+  studentProfile: {
+    findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
+      where.id === "prof_1" ? { status: profileStatus } : null,
+    ),
+  },
+  narrationRunAttempt: {
+    findFirst: vi.fn(async ({ where }: { where: { narrationId: string } }) => {
+      const matching = attempts
+        .filter((a) => a.narrationId === where.narrationId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      return matching[0] ? { id: matching[0].id } : null;
+    }),
+    update: vi.fn(async ({ where, data }: { where: { id: string }; data: { charactersBilled: number } }) => {
+      const row = attempts.find((a) => a.id === where.id);
+      if (!row) throw new Error("not found");
+      Object.assign(row, data);
+      return row;
+    }),
+  },
   $transaction: vi.fn(async (ops: unknown[]) => Promise.all(ops)),
 };
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -164,7 +188,10 @@ vi.mock("@/lib/narration/provider", async (importOriginal) => {
   return { ...actual, synthesizeNarration: synthesizeNarrationMock };
 });
 
-const storageMock = { put: vi.fn(async (pathname: string) => ({ pathname, sizeBytes: 100 })) };
+const storageMock = {
+  put: vi.fn(async (pathname: string) => ({ pathname, sizeBytes: 100 })),
+  del: vi.fn<(pathnames: string[]) => Promise<void>>(async () => {}),
+};
 
 const { runNarrationGeneration, reapIfStaleNarration } = await import("@/lib/narration/generate");
 const { NARRATION_TIMEOUT_MS } = await import("@/lib/config");
@@ -189,6 +216,10 @@ beforeEach(() => {
   versions = { ver_1: { status: "READY", script: SCRIPT } };
   assets = [];
   steps = [];
+  attempts = [
+    { id: "attempt_1", narrationId: "narr_1", studentProfileId: "prof_1", charactersBilled: 0, createdAt: new Date() },
+  ];
+  profileStatus = "ACTIVE";
   nextAssetId = 1;
   storageMock.put.mockClear();
   synthesizeNarrationMock.mockImplementation(async ({ text }: { text: string }) => okResult(text));
@@ -403,19 +434,197 @@ describe("reapIfStaleNarration", () => {
    * to the caller as FAILED while a good READY row sits underneath it.
    */
   it("RE-READS rather than fabricating FAILED when it loses the guard race", async () => {
+    // The SNAPSHOT the caller read earlier, and the CURRENT database row, must
+    // be two different objects. They used to be the same one (`narrations =
+    // [stale]`, then `narrations[0].status = "READY"` mutating `stale` through
+    // the shared reference), which flipped the snapshot to READY as well — so
+    // `reapIfStaleNarration` returned at its very first early-exit and never
+    // reached the guarded update this test is named for. It passed while
+    // testing nothing, and left its queued `{ count: 0 }` unconsumed to poison
+    // whichever later test called `updateMany` next.
     const stale = narrationRow({ status: "GENERATING", updatedAt: new Date("2020-01-01T00:00:00.000Z") });
-    narrations = [stale];
-    // Simulate: the real run completed and wrote READY between our read and
-    // our guarded update — the update's `where: { status: 'GENERATING' }`
-    // no longer matches.
+    // The real run completed and wrote READY between our read and our guarded
+    // update, so the update's `where: { status: 'GENERATING' }` no longer matches.
+    narrations = [{ ...stale, status: "READY", stepCount: 2 }];
     dbMock.lessonNarration.updateMany.mockResolvedValueOnce({ count: 0 });
-    narrations[0].status = "READY";
-    narrations[0].stepCount = 2;
 
     const now = new Date(stale.updatedAt.getTime() + NARRATION_TIMEOUT_MS + 1);
     const result = await reapIfStaleNarration(stale, now);
 
+    // The guarded update really did run, and really did lose.
+    expect(dbMock.lessonNarration.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: stale.id, status: "GENERATING" } }),
+    );
     expect(result.status).toBe("READY");
     expect(result.stepCount).toBe(2);
+    expect(result.failureCode).toBeNull();
+  });
+});
+
+/**
+ * ─────────── the 2026-09-02 code review's findings, as regression tests ───────────
+ *
+ * Every one of these was reproduced with a throwaway probe before it was fixed.
+ * They are written to fail loudly against the pre-fix code, not to describe the
+ * post-fix code — three of the four defects had a comment directly above them
+ * claiming the opposite of what the code did, so "reads correct" is not evidence
+ * here.
+ */
+
+describe("the concurrency pool stops after a failure (uncapped spend)", () => {
+  /**
+   * The measured defect: workers looped on a shared cursor, so after
+   * `Promise.all` rejected the surviving worker drained the entire queue. A
+   * 12-step script failing on step 1 returned FAILED after 2 vendor calls and
+   * then made 10 more — paid, and invisible to the AC 21 budget because the run
+   * was already terminal.
+   */
+  it("does not keep calling the vendor after the run has already failed", async () => {
+    const longScript = {
+      title: "Twelve steps",
+      steps: Array.from({ length: 12 }, (_, i) => ({
+        id: `s${i + 1}`,
+        narration: `This is step number ${i + 1}.`,
+        durationMs: 4_000,
+        ops: [{ kind: "label", id: `l${i + 1}`, text: `step ${i + 1}`, at: { x: 0.2, y: 0.2 } }],
+      })),
+    };
+    // Its OWN row and version, not the shared `narr_1`. Several earlier tests in
+    // this file leave a `runNarrationGeneration` promise in flight past their own
+    // assertions; those stragglers write through the module-level `narrations`
+    // binding, so they can flip the shared row out of PENDING and turn this test
+    // into a SKIPPED that looks like a pool regression. Isolating the row makes
+    // the assertion below about the pool and nothing else.
+    narrations.push(narrationRow({ id: "narr_pool", versionId: "ver_pool" }));
+    versions = { ...versions, ver_pool: { status: "READY", script: longScript } };
+    attempts.push({
+      id: "attempt_pool",
+      narrationId: "narr_pool",
+      studentProfileId: "prof_1",
+      charactersBilled: 0,
+      createdAt: new Date(),
+    });
+
+    let calls = 0;
+    synthesizeNarrationMock.mockImplementation(async ({ text }: { text: string }) => {
+      calls += 1;
+      if (text.includes("number 1.")) {
+        return { ok: false as const, failureCode: "INTERNAL" as const, retryable: false };
+      }
+      return okResult(text);
+    });
+
+    const result = await runNarrationGeneration("narr_pool", storageMock as never);
+    expect(result).toEqual({ status: "FAILED", failureCode: "INTERNAL" });
+
+    // Let any straggler microtask/timer settle — the point is that NOTHING new
+    // is picked up after the failure, not merely that the count is low when the
+    // promise resolves.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // NARRATION_MAX_CONCURRENCY workers are in flight when step 1 throws, so at
+    // most that many calls can have been made. The pre-fix code reached 12.
+    expect(calls).toBeLessThanOrEqual(NARRATION_MAX_CONCURRENCY);
+    expect(assets.length).toBeLessThanOrEqual(NARRATION_MAX_CONCURRENCY);
+  });
+
+  it("records what a partially-completed run spent, on the FAILED path", async () => {
+    // Step 1 succeeds (and is billed); step 2 fails the run.
+    synthesizeNarrationMock.mockImplementation(async ({ text }: { text: string }) => {
+      if (text === SCRIPT.steps[1].narration) {
+        return { ok: false as const, failureCode: "INTERNAL" as const, retryable: false };
+      }
+      return okResult(text);
+    });
+
+    const result = await runNarrationGeneration("narr_1", storageMock as never);
+    expect(result.status).toBe("FAILED");
+
+    // Pre-fix this was `null` — the FAILED path never wrote it — so real paid
+    // spend never reached the budget at all.
+    expect(narrations[0].charactersBilled).not.toBeNull();
+    expect(narrations[0].charactersBilled).toBeGreaterThan(0);
+    // And the same number lands on the ledger row the caps actually count.
+    expect(attempts[0].charactersBilled).toBe(narrations[0].charactersBilled);
+  });
+});
+
+describe("cache hits respect cueFormatVersion", () => {
+  it("treats an asset cached under a different cue format as a MISS and re-synthesizes", async () => {
+    const { computeCacheKey } = await import("@/lib/narration/cache");
+    const { CUE_FORMAT_VERSION } = await import("@/lib/config");
+    const staleVersion = String(Number(CUE_FORMAT_VERSION) + 1);
+
+    // A hit on every field the key covers (text, voice, model) — but derived
+    // under a cue format this run does not stamp.
+    assets.push({
+      id: "asset_stale",
+      studentProfileId: "prof_1",
+      cacheKey: computeCacheKey(SCRIPT.steps[0].narration, "voice_a", "eleven_multilingual_v2"),
+      pathname: "students/prof_1/narration/stale-0000000000000000.mp3",
+      durationMs: 111,
+      cues: { v: Number(staleVersion), durationMs: 111, words: [] },
+      cueFormatVersion: staleVersion,
+    });
+
+    const result = await runNarrationGeneration("narr_1", storageMock as never);
+
+    expect(result.status).toBe("READY");
+    // All three steps went to the vendor: the stale-format one was not reused.
+    expect(synthesizeNarrationMock).toHaveBeenCalledTimes(3);
+    expect(narrations[0].cacheHits).toBe(0);
+    // And no step points at the stale asset.
+    expect(steps.map((step) => step.assetId)).not.toContain("asset_stale");
+  });
+
+  it("still hits the cache when the format matches", async () => {
+    const { computeCacheKey } = await import("@/lib/narration/cache");
+    const { CUE_FORMAT_VERSION } = await import("@/lib/config");
+
+    assets.push({
+      id: "asset_fresh",
+      studentProfileId: "prof_1",
+      cacheKey: computeCacheKey(SCRIPT.steps[0].narration, "voice_a", "eleven_multilingual_v2"),
+      pathname: "students/prof_1/narration/fresh-0000000000000000.mp3",
+      durationMs: 111,
+      cues: { v: Number(CUE_FORMAT_VERSION), durationMs: 111, words: [] },
+      cueFormatVersion: CUE_FORMAT_VERSION,
+    });
+
+    const result = await runNarrationGeneration("narr_1", storageMock as never);
+
+    expect(result.status).toBe("READY");
+    expect(synthesizeNarrationMock).toHaveBeenCalledTimes(2);
+    expect(narrations[0].cacheHits).toBe(1);
+  });
+});
+
+describe("consent is re-read while the run is in flight (AC 22 / §312.6)", () => {
+  it("refuses to start when the profile stopped being ACTIVE after the route's gate", async () => {
+    profileStatus = "WITHDRAWN";
+
+    const result = await runNarrationGeneration("narr_1", storageMock as never);
+
+    expect(result).toEqual({ status: "FAILED", failureCode: "CONSENT_INACTIVE" });
+    expect(synthesizeNarrationMock).not.toHaveBeenCalled();
+    expect(storageMock.put).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The real shape of the problem: `after()` runs for the route's whole
+   * `maxDuration` (300s), so the withdrawal usually lands MID-run, not before it.
+   */
+  it("stops calling the vendor as soon as consent is withdrawn mid-run", async () => {
+    synthesizeNarrationMock.mockImplementation(async ({ text }: { text: string }) => {
+      profileStatus = "WITHDRAWN"; // the parent withdraws during the first call
+      return okResult(text);
+    });
+
+    const result = await runNarrationGeneration("narr_1", storageMock as never);
+
+    expect(result).toEqual({ status: "FAILED", failureCode: "CONSENT_INACTIVE" });
+    // The in-flight calls finish; nothing NEW is sent. Pre-fix, all three steps
+    // were synthesized and their blobs written.
+    expect(synthesizeNarrationMock.mock.calls.length).toBeLessThanOrEqual(NARRATION_MAX_CONCURRENCY);
   });
 });
