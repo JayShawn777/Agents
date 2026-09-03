@@ -77,6 +77,30 @@ describe("which credential this file uses", () => {
     expect(headers["xi-api-key"]).toBe("admin-key");
   });
 
+  it("refuses a key ID in either credential slot, at module load, before any request", async () => {
+    // The exact mistake made twice while configuring this repo on 2026-09-02:
+    // the dashboard shows a key's ID permanently and its secret only once, so
+    // the ID is the value to hand. The vendor answers a key ID with a 400 that
+    // reads like a malformed body, at the moment a parent first creates a
+    // voice. Failing the boot instead is the whole point of the assertion.
+    const keyId = "c6bb" + "a".repeat(60);
+    for (const varName of ["ELEVENLABS_VOICE_ADMIN_KEY", "ELEVENLABS_API_KEY"]) {
+      vi.resetModules();
+      process.env = { ...ORIGINAL_ENV, ELEVENLABS_API_KEY: "narration-key" };
+      process.env[varName] = keyId;
+      await expect(import("@/lib/voice/provider")).rejects.toThrow(/looks like an ElevenLabs API key ID/);
+    }
+  });
+
+  it("does NOT fail the boot merely because the admin key is unset", async () => {
+    // Running on one key is a supported, documented configuration. An assertion
+    // that refused it would turn a deliberate trade-off into an outage.
+    vi.resetModules();
+    process.env = { ...ORIGINAL_ENV, ELEVENLABS_API_KEY: "narration-key" };
+    delete process.env.ELEVENLABS_VOICE_ADMIN_KEY;
+    await expect(import("@/lib/voice/provider")).resolves.toBeDefined();
+  });
+
   it("refuses, without calling the vendor, when no key is configured at all", async () => {
     delete process.env.ELEVENLABS_API_KEY;
 

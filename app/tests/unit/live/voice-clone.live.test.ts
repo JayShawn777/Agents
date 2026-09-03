@@ -163,6 +163,13 @@ async function call(
   return { status: res.status, ok: res.ok, json, text };
 }
 
+/**
+ * A voice id that cannot exist, used to probe `voices_write` without deleting
+ * anything: the permission check runs before the lookup, so 401/403 means the
+ * scope is absent and 400/404 means it is present.
+ */
+const NONEXISTENT_VOICE_ID = "zzzzzzzzzzzzzzzzzzzz";
+
 describe.skipIf(!READ_ENABLED)("M6 measurement — what the current key can see", () => {
   it("records whether the key can list voices at all (voices_read)", async () => {
     const res = await call("/v1/voices");
@@ -202,17 +209,24 @@ describe.skipIf(!READ_ENABLED)("M6 measurement — what the current key can see"
   });
 
   it("records whether the key can WRITE voices — the scope M6 actually needs", async () => {
-    // A deliberately malformed create: it cannot succeed, so it creates nothing,
-    // but the status distinguishes "no permission" (401/403) from "bad request"
-    // (422), which is exactly the scope question and costs nothing either way.
-    const res = await call("/v1/voices/add", { method: "POST", body: new FormData() });
-    const scoped = res.status === 401 || res.status === 403;
+    // **Use DELETE, not POST /v1/voices/add.** Corrected 2026-09-03 after the
+    // add-based probe reported a false positive on a text-to-speech-only key.
+    //
+    // `POST /v1/voices/add` validates the request body BEFORE checking scope, so
+    // it answers 422 to any key, scoped or not. The earlier probe appeared to
+    // work only because the key it was first run against genuinely had the
+    // scope — it was never actually testing what it claimed.
+    //
+    // DELETE on a voice id that cannot exist has no body to validate, so the
+    // permission check runs first and the answer is unambiguous. It deletes
+    // nothing and costs nothing.
+    const res = await call(`/v1/voices/${NONEXISTENT_VOICE_ID}`, { method: "DELETE" });
+    const denied = res.status === 401 || res.status === 403;
     record(
       "Does this key have `voices_write`, which creating a voice requires?",
-      scoped
-        ? `NO — HTTP ${res.status}. M6 cannot be measured or built until the owner widens the key scope ` +
-            `or issues a second, write-scoped key.`
-        : `PROBABLY YES — HTTP ${res.status} (a validation error, not a permission error).`,
+      denied
+        ? `NO — HTTP ${res.status}. Voice creation and deletion need ELEVENLABS_VOICE_ADMIN_KEY.`
+        : `YES — HTTP ${res.status} (the voice was merely not found, so the permission check passed).`,
       res.text.slice(0, 400),
     );
     expect(res.status).toBeGreaterThan(0);

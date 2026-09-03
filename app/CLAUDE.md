@@ -674,9 +674,21 @@ time-waster in this repo.
    - `voices_read` — **YES** (21 voices listed).
    - `user_read` — **NO.** An explicit 401, `"missing the permission user_read"`.
      Good, and it is why M6's voice-cap question cannot be answered with this key.
-   - `voices_write` — **YES.** `POST /v1/voices/add` returns 422 `Field required`
-     for a malformed body, not the 401 `missing_permissions` the same API returns
-     when a scope is absent. The key can therefore CREATE and DELETE voices.
+   - `voices_write` — **YES.** The key can CREATE and DELETE voices.
+
+   **How to probe a scope, corrected 2026-09-03 — the earlier technique was
+   wrong.** This file used to say a 422 from `POST /v1/voices/add` proves
+   `voices_write`. It does not: that endpoint validates the body BEFORE checking
+   scope, so it answers 422 to any key. The technique only ever appeared to work
+   because the key it was first run against happened to have the scope. It later
+   reported a false positive on a text-to-speech-only key, which is how it was
+   caught.
+
+   **Use `DELETE /v1/voices/<id that cannot exist>`.** No body, so the permission
+   check runs first: **401 `missing_permissions` = scope absent, 400/404 = scope
+   present** (the voice was merely not found). It deletes nothing and costs
+   nothing. Generally: probe a scope with an endpoint that takes no body, and
+   distrust any 4xx that could be body validation.
 
    **DECIDED 2026-09-02, and the owner is doing it: split the key.** The
    everyday synthesis key could delete every voice on the account, and with
@@ -714,6 +726,23 @@ time-waster in this repo.
 
    Do not restate a key's scope from this file without re-running the probe:
    `RUN_LIVE_AI=1 pnpm vitest run tests/unit/live/voice-clone.live.test.ts --project unit`
+
+   **Both keys were split and verified 2026-09-03.** The narration key is
+   text-to-speech only and is now **refused** on `DELETE /v1/voices/...` with a
+   401 — the blast radius this section was worried about is closed. The admin key
+   has voices read+write. Neither key has `user_read`, deliberately.
+
+   **A key ID is not a key.** The dashboard shows each key's ID (32-64 hex
+   characters, no prefix) permanently and its secret (`sk_...`) only once, at
+   creation — so the ID is the value that is to hand when filling in a
+   credential slot, and it went in twice during configuration. The vendor
+   answers it with a 400 reading `"API key ID used as API key"`, which looks like
+   a malformed request rather than a config mistake.
+   `lib/voice/provider.ts` now throws at module load on that shape, per
+   `lib/config.ts`'s "a bad value fails the boot" convention. It deliberately
+   does NOT require the admin key to be set, because running on one key is a
+   supported configuration; it fires only on a value that can never be a
+   credential.
 
    **Owner decision, 2026-09-01: captions are ON by default.** Recorded in the
    M5 spec's open questions with the reasoning. The decisive argument is not the

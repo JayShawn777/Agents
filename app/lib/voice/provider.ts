@@ -101,6 +101,67 @@ export type CreateVoiceResult = CreateVoiceSuccess | VoiceFailure;
 export type DeleteVoiceSuccess = { ok: true; alreadyGone: boolean };
 export type DeleteVoiceResult = DeleteVoiceSuccess | VoiceFailure;
 
+/**
+ * An ElevenLabs API key **ID** — the 32-64 hex characters the dashboard shows
+ * beside each key in its list. It is not a credential and the API rejects it
+ * with `"API key ID used as API key"`, a 400 that reads like a malformed
+ * request rather than a configuration mistake.
+ *
+ * This is worth detecting because the dashboard shows the ID permanently and
+ * the secret exactly once, at creation — so the ID is the value that is
+ * actually to hand when someone fills in a credential slot. It happened twice
+ * while configuring this repo on 2026-09-02.
+ *
+ * Deliberately narrow: it matches the shape that is NEVER a valid credential,
+ * rather than asserting that keys start with `sk_`. A vendor that changes its
+ * key prefix must not break our boot; a vendor that starts issuing hex-only
+ * secrets is a problem we would rather have loudly than silently.
+ */
+function looksLikeApiKeyId(value: string): boolean {
+  return /^[0-9a-f]{32,64}$/i.test(value.trim());
+}
+
+/**
+ * Returns a precise complaint about one credential env var, or `null` when it
+ * is fine. Pure and exported so the boot assertion and its tests share one
+ * definition of "wrong".
+ *
+ * An UNSET admin key is not a problem — the fallback below is deliberate and
+ * documented. A key ID in either slot is always a mistake.
+ */
+export function describeCredentialProblem(varName: string, value: string | undefined): string | null {
+  if (!value || value.trim() === "") return null;
+  if (looksLikeApiKeyId(value)) {
+    return (
+      `${varName} looks like an ElevenLabs API key ID, not an API key. ` +
+      `The dashboard lists key IDs (hex, no prefix) permanently and shows the secret ` +
+      `(starting "sk_") only once, on the creation screen. Create a new key and copy ` +
+      `the secret from that screen. See .env.example.`
+    );
+  }
+  return null;
+}
+
+/**
+ * Boot-time assertion, following `lib/config.ts`'s convention that "a bad value
+ * fails the boot, not the parent's request" (ADR-0008 §2).
+ *
+ * It deliberately does NOT require the admin key to be set: running on one key
+ * is a supported, documented configuration. It fires only on a value that
+ * cannot be a credential under any configuration — which is what makes a throw
+ * here safe. Without it, the mistake surfaces as a vendor 400 at the moment a
+ * parent first tries to create a voice, which is the worst possible time.
+ */
+function assertVoiceCredentialShapes(): void {
+  if (typeof window !== "undefined") return;
+  for (const varName of ["ELEVENLABS_VOICE_ADMIN_KEY", "ELEVENLABS_API_KEY"]) {
+    const problem = describeCredentialProblem(varName, process.env[varName]);
+    if (problem) throw new Error(problem);
+  }
+}
+
+assertVoiceCredentialShapes();
+
 /** See the module docstring. Exported for the config-shape test, not for callers. */
 export function resolveVoiceAdminKey(): string | undefined {
   return process.env.ELEVENLABS_VOICE_ADMIN_KEY || process.env.ELEVENLABS_API_KEY || undefined;
