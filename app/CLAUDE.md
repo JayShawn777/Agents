@@ -29,6 +29,13 @@ naming the vendor a hard precondition before the first narration request. Bumpin
 the version re-consents **every existing parent**, so the timing is a product
 call, not an engineering one. The code change is small.
 
+**Slice 12 is now runnable in two minutes:
+`docs/measurements/autoplay-check.html`.** Open it in real Chrome and real
+Safari, press the one button, and it prints PASS or FAIL. It reproduces
+`lesson-player.tsx` exactly — one `<audio>` element, played once from a real
+click, then re-pointed at a new `src` and re-played from a timer with no further
+gesture. Self-contained: three tones as data URIs, no server, no assets.
+
 **Slice 12 was NOT automated, deliberately.** This environment does not enforce
 an autoplay policy — `play()` resolves with no user gesture even with
 `--autoplay-policy=user-gesture-required` and with Playwright's own override

@@ -1,0 +1,99 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Autoplay measurement — M5 slice 12</title>
+<style>
+  body{font:15px/1.6 system-ui,-apple-system,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;color:#111;background:#fff}
+  h1{font-size:1.2rem;line-height:1.4}
+  button{font:inherit;padding:.6rem 1.1rem;border-radius:.5rem;border:1px solid #333;background:#111;color:#fff;cursor:pointer}
+  button[disabled]{opacity:.5;cursor:default}
+  #log{margin-top:1.25rem;border:1px solid #ddd;border-radius:.5rem;padding:.75rem 1rem;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,monospace;font-size:13px}
+  .ok{color:#0a6b2e;font-weight:600}.bad{color:#a4142b;font-weight:600}
+  #verdict{margin-top:1rem;font-size:1.05rem}
+  .note{color:#555;font-size:13.5px;border-left:3px solid #ddd;padding-left:.9rem}
+</style>
+
+<h1>Does one <code>&lt;audio&gt;</code> element keep user activation across <code>src</code> changes?</h1>
+
+<p>This reproduces <code>components/lessons/lesson-player.tsx</code> exactly: <strong>one</strong>
+<code>&lt;audio&gt;</code> element, played once from a real click, then re-pointed at a new
+<code>src</code> and re-played <em>from a timer</em> — with no further user gesture. That is what
+happens between narration steps when a lesson advances on <code>onEnded</code>.</p>
+
+<p class="note"><strong>Why this is not an automated test.</strong> The dev container does not enforce
+an autoplay policy — <code>play()</code> resolves with no user gesture even with
+<code>--autoplay-policy=user-gesture-required</code> and with Playwright's override stripped — so a
+playback test there passes trivially and means nothing. Chrome's public documentation does not say
+whether the policy is tracked per element or per document, and says nothing about <code>src</code>
+swaps. It has to be measured in a real browser.</p>
+
+<p><strong>How to run it:</strong> open this file in real Chrome and again in real Safari, on a normal
+machine, in a window you have not otherwise clicked around in. Do not use a headless or
+flag-modified browser. Then press the button once and listen for three rising tones.</p>
+
+<p><button id="go">Start (this is the only click)</button></p>
+<div id="verdict"></div>
+<div id="log">waiting…</div>
+<audio id="a"></audio>
+
+<script>
+// Three short tones as data: URIs — no network, no CORS, no server, no assets.
+function tone(freq, seconds) {
+  const rate = 8000, n = Math.floor(rate * seconds), buf = new Uint8Array(44 + n);
+  const dv = new DataView(buf.buffer);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) buf[o + i] = s.charCodeAt(i); };
+  str(0, "RIFF"); dv.setUint32(4, 36 + n, true); str(8, "WAVEfmt ");
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, rate, true); dv.setUint32(28, rate, true);
+  dv.setUint16(32, 1, true); dv.setUint16(34, 8, true);
+  str(36, "data"); dv.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) buf[44 + i] = 128 + Math.round(90 * Math.sin(2 * Math.PI * freq * i / rate));
+  let bin = ""; for (const b of buf) bin += String.fromCharCode(b);
+  return "data:audio/wav;base64," + btoa(bin);
+}
+
+const steps = [tone(440, 0.7), tone(554, 0.7), tone(659, 0.7)];
+const audio = document.getElementById("a");
+const log = document.getElementById("log");
+const verdict = document.getElementById("verdict");
+let lines = [], results = [];
+
+function say(s, cls) {
+  lines.push(cls ? `<span class="${cls}">${s}</span>` : s);
+  log.innerHTML = lines.join("\n");
+}
+
+async function playStep(i, viaGesture) {
+  audio.src = steps[i];                        // the src swap under test
+  const how = viaGesture ? "inside the click handler" : "from a timer, NO user gesture";
+  try {
+    await audio.play();
+    say(`step ${i + 1}: play() RESOLVED   (${how})`, "ok");
+    results.push(true);
+  } catch (e) {
+    say(`step ${i + 1}: play() REJECTED — ${e.name}: ${e.message}   (${how})`, "bad");
+    results.push(false);
+  }
+
+  if (i + 1 < steps.length) {
+    // The timer breaks the gesture chain, exactly as onEnded does in the player.
+    setTimeout(() => playStep(i + 1, false), 1100);
+    return;
+  }
+
+  const pass = results[0] && results.slice(1).every(Boolean);
+  verdict.innerHTML = pass
+    ? '<span class="ok">PASS — one &lt;audio&gt; element keeps permission across src changes. ' +
+      'The M5 player design holds and no redesign is needed.</span>'
+    : '<span class="bad">FAIL — permission is NOT retained across src changes. The player needs a ' +
+      'fallback: concatenate at generation time, or require a tap per step. This is the material redesign.</span>';
+  say("\nBrowser: " + navigator.userAgent);
+}
+
+document.getElementById("go").addEventListener("click", () => {
+  document.getElementById("go").disabled = true;
+  lines = []; results = []; verdict.textContent = "";
+  say("Listen for three rising tones. Each one should be audible.");
+  playStep(0, true);
+});
+</script>
