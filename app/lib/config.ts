@@ -279,6 +279,45 @@ export const ACCEPTED_PICKER_TYPES = [
 
 export type AcceptedPickerType = (typeof ACCEPTED_PICKER_TYPES)[number];
 
+/**
+ * M6 AC 11. What the storage provider is instructed to accept for a VOICE
+ * upload — the consent statement and the sample. Deliberately separate from
+ * `ALLOWED_UPLOAD_CONTENT_TYPES`, which is worksheet images and PDFs: a
+ * worksheet upload must never be able to send audio, and a voice grant must
+ * never be able to send an image.
+ *
+ * Browsers disagree about what `MediaRecorder` produces — Chrome and Firefox
+ * give `audio/webm`, Safari `audio/mp4` — so all of them are listed rather than
+ * forcing a conversion step into the browser.
+ *
+ * **This list must stay identical to `lib/voice/naming.ts`'s extension map**,
+ * which is the server-only half that cannot be imported here. A test asserts
+ * the two agree rather than trusting them to.
+ */
+export const ALLOWED_VOICE_CONTENT_TYPES = [
+  "audio/webm",
+  "audio/ogg",
+  "audio/mp4",
+  "audio/mpeg",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/aac",
+  "audio/flac",
+] as const;
+
+export type VoiceUploadContentType = (typeof ALLOWED_VOICE_CONTENT_TYPES)[number];
+
+/**
+ * M6 AC 11. The provider-enforced size ceiling for a voice upload.
+ *
+ * Sized from the worst realistic case rather than the typical one: a
+ * `VOICE_SAMPLE_MAX_MS` (3 minute) recording as uncompressed 44.1kHz 16-bit
+ * mono WAV is ~16MB, and Safari's `audio/mp4` is far smaller. 25MB leaves room
+ * for a stereo container without admitting a file that could only be something
+ * other than a three-minute recording.
+ */
+export const MAX_VOICE_UPLOAD_BYTES = 25 * 1024 * 1024;
+
 /** M0 AC 41 / M1 AC 32 (product assumption). `expiresAt - now` must never exceed this. */
 export const SIGNED_URL_TTL_MS = 5 * 60_000;
 

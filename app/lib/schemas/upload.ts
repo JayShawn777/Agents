@@ -29,6 +29,33 @@ export const uploadClientPayloadSchema = z
 
 export type UploadClientPayload = z.infer<typeof uploadClientPayloadSchema>;
 
+/**
+ * M6 AC 11. The voice flow's `clientPayload`, for the SAME endpoint.
+ *
+ * A voice upload names a grant and nothing else. It carries no
+ * `studentProfileId` — that is AC 3 satisfied structurally, by there being
+ * nowhere to put one — and no filename, because the pathname is server-chosen
+ * and a parent's own filename is routinely "Sarah's voice memo.m4a".
+ *
+ * Both payload shapes are `.strict()`, so the union below is unambiguous: a
+ * body carrying `studentProfileId` cannot be read as a voice upload and a body
+ * carrying `voiceGrantId` cannot be read as a worksheet one.
+ */
+export const voiceUploadClientPayloadSchema = z
+  .object({
+    voiceGrantId: z.cuid(),
+  })
+  .strict();
+
+export type VoiceUploadClientPayload = z.infer<typeof voiceUploadClientPayloadSchema>;
+
+/** What `POST /api/blob/upload` accepts in `clientPayload`, for either flow. */
+export const anyUploadClientPayloadSchema = z.union([
+  voiceUploadClientPayloadSchema,
+  uploadClientPayloadSchema,
+]);
+
+
 // ─────────────────────────── POST /api/uploads/confirm (#15) ───────────────────────────
 
 export const confirmUploadInputSchema = z

@@ -5,11 +5,17 @@ import { z } from "zod";
 import { apiErr, errorResponse } from "@/lib/errors";
 import { isSameOriginRequest } from "@/lib/api/handler";
 import { verifySession, requireStudentProfile } from "@/lib/auth/dal";
-import { uploadClientPayloadSchema } from "@/lib/schemas/upload";
+import { anyUploadClientPayloadSchema } from "@/lib/schemas/upload";
 import { buildUploadPathnamePattern } from "@/lib/uploads/pathname";
 import { recordUploadTokenGrant } from "@/lib/uploads/rate-limit";
 import { getStoragePort } from "@/lib/storage/get-storage";
-import { ALLOWED_UPLOAD_CONTENT_TYPES, MAX_UPLOAD_BYTES } from "@/lib/config";
+import { authorizeVoiceUpload } from "@/lib/voice/sample";
+import {
+  ALLOWED_UPLOAD_CONTENT_TYPES,
+  ALLOWED_VOICE_CONTENT_TYPES,
+  MAX_UPLOAD_BYTES,
+  MAX_VOICE_UPLOAD_BYTES,
+} from "@/lib/config";
 import type { ClientUploadPolicy } from "@/lib/storage/port";
 
 /**
@@ -90,6 +96,8 @@ export async function POST(req: Request): Promise<Response> {
   }
   const envelope = parsedEnvelope.data;
 
+  // M1's worksheet policy. The voice branch below builds its own — the two
+  // content-type sets are disjoint, so neither flow can send the other's bytes.
   const policy: ClientUploadPolicy = {
     access: "private",
     allowedContentTypes: [...ALLOWED_UPLOAD_CONTENT_TYPES],
@@ -121,10 +129,39 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     return errorResponse(apiErr("VALIDATION_ERROR"));
   }
-  const parsedClientPayload = uploadClientPayloadSchema.safeParse(rawClientPayload);
+  const parsedClientPayload = anyUploadClientPayloadSchema.safeParse(rawClientPayload);
   if (!parsedClientPayload.success) {
     return errorResponse(apiErr("VALIDATION_ERROR"));
   }
+
+  // ── M6: the voice branch ────────────────────────────────────────────────
+  // Same endpoint, same session and CSRF checks, a different authorization
+  // object. A voice payload names a grant and never a student profile, so the
+  // student-scoped checks below are unreachable from it — AC 3 by construction.
+  if ("voiceGrantId" in parsedClientPayload.data) {
+    const auth = await authorizeVoiceUpload({
+      userId: session.userId,
+      grantId: parsedClientPayload.data.voiceGrantId,
+      pathname: envelope.payload.pathname,
+    });
+    if (!auth.ok) {
+      // One refusal for all three causes. A caller learning WHICH of "not
+      // yours", "already used" and "wrong pathname" it hit could enumerate
+      // other accounts' grants; it already knows the only grant it legitimately
+      // holds.
+      return errorResponse(apiErr("FORBIDDEN"));
+    }
+    const voicePolicy: ClientUploadPolicy = {
+      access: "private",
+      allowedContentTypes: [...ALLOWED_VOICE_CONTENT_TYPES],
+      maximumSizeInBytes: MAX_VOICE_UPLOAD_BYTES,
+      // MUST be false: the grant's pathname is the exact key confirm calls
+      // head() on. See `ClientUploadPolicy.addRandomSuffix`.
+      addRandomSuffix: false,
+    };
+    return getStoragePort().handleClientUpload(req, envelope, voicePolicy);
+  }
+
   const { studentProfileId } = parsedClientPayload.data;
 
   // Ownership: `requireStudentProfile` is scoped by `session.userId` — a

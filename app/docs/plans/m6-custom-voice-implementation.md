@@ -220,7 +220,7 @@ structurally, by the absence of the parameter, not by a check.**
 |---|---|---|---|---|---|---|
 | 48 | `/api/voice/consent-recording` | POST | Owner + `adultAttestedAt` | `{ contentType, durationMs }` | `201 { uploadUrl, pathname, grantId }` | **403** no attestation (AC 1) · **429** over `VOICE_ATTEMPTS_PER_WINDOW` |
 | 49 | `/api/voice/consent-recording/[grantId]/confirm` | POST | Owner | `z.object({}).strict()` | `201 { consentRecordingId }` | **400** duration outside bounds · **404** grant not this user's · **409** grant spent |
-| 50 | `/api/voice/sample` | POST | Owner | `{ contentType, durationMs, consentRecordingId }` | `201 { uploadUrl, pathname, grantId }` | **400** duration outside `VOICE_SAMPLE_MIN/MAX_MS` (AC 9) · **409** no consent recording for this user at the current wording version (AC 6) |
+| 50 | `/api/voice/sample` | POST | Owner + `adultAttestedAt` | `{ contentType, extension, durationMs, consentRecordingId }` | `201 { grantId, pathname, consentRecordingId }` | **400** duration outside `VOICE_SAMPLE_MIN/MAX_MS` (AC 9) · **409** no consent recording for this user at the current wording version (AC 6) |
 | 51 | `/api/voice` | POST | Owner + `adultAttestedAt` | `{ sampleGrantId, label }` | `202 { persona }` | **403** (AC 1/3) · **409** at `MAX_CUSTOM_VOICES_PER_USER` (AC 15) · **429** (AC 15) · **409** sample grant unspent/foreign |
 | 52 | `/api/voice/[personaId]` | DELETE | Owner of that persona | — | `200 { deleted: true }` | **404** cross-account (AC 12) |
 | 53 | `/api/voice/[personaId]/revoke` | POST | Owner of that persona | `z.object({}).strict()` | `200 { persona }` | **404** cross-account |
@@ -235,6 +235,38 @@ revisit first.**
 server issues a grant with a **server-chosen pathname**, the browser PUTs bytes
 straight to the store, and a confirm endpoint validates and records. No request
 to our origin ever carries audio bytes.
+
+**CORRECTION, slice 5 (2026-09-03) — the response shape above was wrong.** This
+table originally said endpoints 48 and 50 return `{ uploadUrl, pathname,
+grantId }`, while the paragraph above said the transport is M1's, reused
+exactly. Those contradict each other: **M1 mints no upload URLs.** It uses the
+provider's client-token protocol — the browser calls `upload()`, which POSTs to
+`POST /api/blob/upload`, and that route authorizes the request and returns the
+provider's own token. `StoragePort` has no write-URL method.
+
+Resolved in favour of reuse. Adding a `signedWriteUrl` to `StoragePort` would
+have matched the words but introduced a second upload path to secure, two
+adapter implementations, and a parallel mechanism to keep in step — for a flow
+that runs a handful of times per account. The plan's actual intent ("no request
+to our origin ever carries audio bytes") holds either way.
+
+**What was built instead:** endpoint 50 returns `{ grantId, pathname }`, the
+browser passes `{ voiceGrantId }` back through `clientPayload`, and
+`POST /api/blob/upload` grew a voice branch that calls `authorizeVoiceUpload`.
+Three properties are stricter than M1's:
+
+- The requested pathname must equal the grant's **exactly**, not match a
+  pattern. There is one legal key per grant and the server already knows it.
+- `addRandomSuffix: false`, and it must be — the grant's pathname is the exact
+  key the confirm step calls `head()` on, so a suffix would make every confirm
+  report `NO_OBJECT` for an upload that actually succeeded.
+- A separate content-type allowlist and size cap, disjoint from the worksheet
+  one, so a voice grant cannot send an image and a worksheet grant cannot send
+  audio.
+
+The voice payload carries no `studentProfileId` and both payload shapes are
+`.strict()`, so a hybrid body matches neither — AC 3 survives the shared route
+by construction rather than by a check.
 
 ### 3.1 AC 4's honest limit, stated here because it belongs in the contract
 

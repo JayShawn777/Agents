@@ -10,7 +10,7 @@
  * HTML, or in any client payload (plan §3).
  */
 
-import type { UploadContentType } from "@/lib/config";
+import type { UploadContentType, VoiceUploadContentType } from "@/lib/config";
 
 /**
  * The constraints returned to the client token-generation callback
@@ -23,15 +23,26 @@ import type { UploadContentType } from "@/lib/config";
 export type ClientUploadPolicy = {
   /** Every store in this app is private (ADR-0003). No public store is ever configured. */
   access: "private";
-  allowedContentTypes: UploadContentType[];
+  /**
+   * Worksheet types for an M1 upload, voice types for an M6 one. The two sets
+   * are disjoint and a caller passes exactly one of them, so a worksheet grant
+   * cannot be used to send audio and a voice grant cannot be used to send an
+   * image.
+   */
+  allowedContentTypes: UploadContentType[] | VoiceUploadContentType[];
   maximumSizeInBytes: number;
   /**
    * `@vercel/blob` v2 refuses to overwrite an existing key unless
-   * `allowOverwrite: true`. We rely on `addRandomSuffix: true` instead so a
-   * retried upload never collides with a prior attempt (M1 AC 9). Always
-   * `true` — there is no code path that wants a fixed key.
+   * `allowOverwrite: true`. M1 relies on `addRandomSuffix: true` instead so a
+   * retried upload never collides with a prior attempt (M1 AC 9).
+   *
+   * **M6 voice uploads pass `false`, and must.** A voice grant's pathname is
+   * server-chosen, carries a uuid so it cannot collide, and is the exact key
+   * the confirm step later calls `head()` on. A random suffix would store the
+   * object under a key that no longer matches the grant, so every confirm would
+   * report `NO_OBJECT` for an upload that actually succeeded.
    */
-  addRandomSuffix: true;
+  addRandomSuffix: boolean;
   /**
    * Opaque data round-tripped to `onUploadCompleted`. Never a secret and
    * never a live credential — treat it as readable by the client that
