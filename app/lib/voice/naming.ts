@@ -23,17 +23,25 @@ import "server-only";
 /**
  * The vendor-visible voice name.
  *
- * `m6-<customVoiceId>` — our own cuid, which identifies the row and nothing
- * about the human. It is stable (so an operator can match a vendor voice to our
- * record when reconciling), meaningless to anyone without our database, and
- * contains no name, no email and no child.
+ * `m6-<id>` — one of our own cuids, which identifies a row and nothing about the
+ * human. It is stable (so an operator can match a vendor voice to our record
+ * when reconciling), meaningless to anyone without our database, and contains no
+ * name, no email and no child.
+ *
+ * **Slice 6 passes the `VoiceConsentRecording` id, not the `CustomVoice` id**,
+ * for an ordering reason worth stating: AC 14 requires that no row exist
+ * pointing at a vendor voice that was never created, so the vendor call happens
+ * BEFORE any `CustomVoice` row — at which point that row's id does not yet
+ * exist. The consent recording is already persisted by then, and its id is
+ * carried on `CustomVoice.voiceConsentRecordingId`, which is unique and indexed,
+ * so vendor-to-row reconciliation still resolves in one lookup.
  *
  * **Never pass user input to this.** It takes an id we generated, deliberately:
  * a signature that accepted a label would be one careless call away from
  * shipping "Mum" to the vendor.
  */
-export function vendorVoiceName(customVoiceId: string): string {
-  return `m6-${customVoiceId}`;
+export function vendorVoiceName(ourOwnId: string): string {
+  return `m6-${ourOwnId}`;
 }
 
 /**

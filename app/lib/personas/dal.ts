@@ -106,3 +106,57 @@ export async function findSelectablePersona(id: string, viewerUserId: string): P
 export async function findSharedPersonaBySlug(slug: string): Promise<Persona | null> {
   return db.persona.findFirst({ where: { slug, ownerUserId: null } });
 }
+
+/**
+ * M6 AC 15. How many custom voices this account currently holds.
+ *
+ * `REVOKED` is deliberately excluded by the CALLER passing the statuses it
+ * counts, rather than being decided here: the cap is a product rule about what
+ * an owner may create, and `lib/voice/create.ts` documents why a revoked voice
+ * does not block a new one. This function's job is the scoping.
+ */
+export async function countOwnedPersonas(
+  viewerUserId: string,
+  statuses: ReadonlyArray<Persona["status"]>,
+): Promise<number> {
+  // Not `personaVisibilityWhere` — that clause includes shared personas, which
+  // belong to nobody and must never count against one account's cap.
+  return db.persona.count({ where: { ownerUserId: viewerUserId, status: { in: [...statuses] } } });
+}
+
+/**
+ * M6 AC 12/14. Creates a persona OWNED by one account.
+ *
+ * Takes a transaction client because creation is atomic with the `CustomVoice`
+ * row, the consent stamp and the audit row — see `lib/voice/create.ts`. It lives
+ * here rather than there because `single-reader.test.ts` requires every persona
+ * access to, and because `ownerUserId` being non-null is the property that makes
+ * AC 12 hold: a create that forgot it would produce a cloned voice visible to
+ * every account in the system.
+ */
+export async function createOwnedPersona(
+  tx: Prisma.TransactionClient,
+  input: {
+    viewerUserId: string;
+    slug: string;
+    label: string;
+    description: string;
+    artworkId: string;
+    providerVoiceId: string;
+    status: Persona["status"];
+  },
+): Promise<Persona> {
+  return tx.persona.create({
+    data: {
+      slug: input.slug,
+      label: input.label,
+      description: input.description,
+      artworkId: input.artworkId,
+      providerVoiceId: input.providerVoiceId,
+      sortOrder: 0,
+      // The load-bearing field. Never optional, never defaulted.
+      ownerUserId: input.viewerUserId,
+      status: input.status,
+    },
+  });
+}
