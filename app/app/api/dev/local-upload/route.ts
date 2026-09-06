@@ -5,7 +5,16 @@ import { z } from "zod";
 import { apiErr, errorResponse, successResponse } from "@/lib/errors";
 import { verifySession, requireStudentProfile } from "@/lib/auth/dal";
 import { buildUploadPathnamePattern } from "@/lib/uploads/pathname";
-import { ALLOWED_UPLOAD_CONTENT_TYPES, MAX_UPLOAD_BYTES, STORAGE_DRIVER, type UploadContentType } from "@/lib/config";
+import { authorizeVoiceUpload } from "@/lib/voice/sample";
+import {
+  ALLOWED_UPLOAD_CONTENT_TYPES,
+  ALLOWED_VOICE_CONTENT_TYPES,
+  MAX_UPLOAD_BYTES,
+  MAX_VOICE_UPLOAD_BYTES,
+  STORAGE_DRIVER,
+  type UploadContentType,
+  type VoiceUploadContentType,
+} from "@/lib/config";
 import { LocalFsStorage } from "@/lib/storage/local-fs";
 
 /**
@@ -50,6 +59,17 @@ const fieldsSchema = z.object({
   pathname: z.string().min(1).max(512),
 });
 
+/**
+ * M6. The voice flow's fields for the same local-dev route. A voice upload
+ * names a grant and never a student profile — the same split as
+ * `POST /api/blob/upload`'s two `clientPayload` shapes, and the same reason:
+ * AC 3 is satisfied by there being nowhere to put a profile id.
+ */
+const voiceFieldsSchema = z.object({
+  voiceGrantId: z.cuid(),
+  pathname: z.string().min(1).max(512),
+});
+
 export async function POST(req: Request): Promise<Response> {
   // THE FENCE. Must run before anything else, unconditionally.
   if (STORAGE_DRIVER !== "local") {
@@ -69,6 +89,41 @@ export async function POST(req: Request): Promise<Response> {
   const file = form.get("file");
   if (!(file instanceof File)) {
     return errorResponse(apiErr("VALIDATION_ERROR"));
+  }
+
+  // ── M6: the voice branch ────────────────────────────────────────────────
+  // Authorized against the grant exactly as the production route is, because
+  // `pathname` and `voiceGrantId` are attacker-controlled inputs to THIS
+  // endpoint too, independent of whatever token request preceded it.
+  const rawVoiceGrantId = form.get("voiceGrantId");
+  if (rawVoiceGrantId !== null) {
+    const parsedVoice = voiceFieldsSchema.safeParse({
+      voiceGrantId: rawVoiceGrantId,
+      pathname: form.get("pathname"),
+    });
+    if (!parsedVoice.success) return errorResponse(apiErr("VALIDATION_ERROR"));
+
+    const auth = await authorizeVoiceUpload({
+      userId: session.userId,
+      grantId: parsedVoice.data.voiceGrantId,
+      pathname: parsedVoice.data.pathname,
+    });
+    if (!auth.ok) return errorResponse(apiErr("FORBIDDEN"));
+
+    if (!ALLOWED_VOICE_CONTENT_TYPES.includes(file.type as VoiceUploadContentType)) {
+      return errorResponse(apiErr("VALIDATION_ERROR"));
+    }
+    if (file.size > MAX_VOICE_UPLOAD_BYTES) {
+      return errorResponse(apiErr("VALIDATION_ERROR"));
+    }
+
+    const voiceBytes = await file.arrayBuffer();
+    const storedVoice = await new LocalFsStorage().put(auth.pathname, voiceBytes, file.type);
+    return successResponse({
+      pathname: storedVoice.pathname,
+      contentType: storedVoice.contentType,
+      sizeBytes: storedVoice.sizeBytes,
+    });
   }
 
   const parsedFields = fieldsSchema.safeParse({
