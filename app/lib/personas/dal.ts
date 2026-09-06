@@ -160,3 +160,36 @@ export async function createOwnedPersona(
     },
   });
 }
+
+/**
+ * M6 AC 19. Removes one OWNED persona. Shared personas are unreachable here by
+ * construction — the `ownerUserId` clause means a slug like `professor-love`
+ * cannot be deleted however the id arrives.
+ *
+ * Returns the number of rows removed so the caller can tell "deleted" from
+ * "was not yours", without a second query that could race.
+ */
+export async function deleteOwnedPersona(viewerUserId: string, personaId: string): Promise<number> {
+  const { count } = await db.persona.deleteMany({
+    where: { id: personaId, ownerUserId: viewerUserId },
+  });
+  return count;
+}
+
+/**
+ * M6 AC 18. Marks one OWNED persona revoked. The row stays: already-cached
+ * narration still plays (deleting it is AC 19's separate act), and the account
+ * still owns it.
+ */
+export async function revokeOwnedPersona(viewerUserId: string, personaId: string): Promise<number> {
+  const { count } = await db.persona.updateMany({
+    where: { id: personaId, ownerUserId: viewerUserId },
+    data: { status: "REVOKED" },
+  });
+  return count;
+}
+
+/** M6 AC 20. Every persona this account owns, for the account-deletion path. */
+export async function listOwnedPersonas(viewerUserId: string): Promise<Persona[]> {
+  return db.persona.findMany({ where: { ownerUserId: viewerUserId } });
+}

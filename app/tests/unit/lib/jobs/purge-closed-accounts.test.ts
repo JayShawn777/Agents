@@ -22,12 +22,15 @@ import type { StoragePort } from "@/lib/storage/port";
  * express `{ ok: true }` can never test the `STORAGE_FAILURE` arm.
  */
 
-type UserFindManyArgs = { where: { closureRequestedAt: { not: null; lte: Date } }; select: { id: true } };
+type UserFindManyArgs = {
+  where: { closureRequestedAt: { not: null; lte: Date } };
+  select: { id: true; email: true };
+};
 type StudentProfileFindManyArgs = { where: { userId: string }; select: { id: true } };
 
 const dbMock = {
   user: {
-    findMany: vi.fn<(args: UserFindManyArgs) => Promise<Array<{ id: string }>>>(async () => []),
+    findMany: vi.fn<(args: UserFindManyArgs) => Promise<Array<{ id: string; email: string }>>>(async () => []),
     delete: vi.fn(),
   },
   studentProfile: {
@@ -53,6 +56,17 @@ const deletionServiceMock = {
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/deletion/service", () => deletionServiceMock);
 
+/**
+ * M6 AC 20. Mocked at the module boundary deliberately: this job's
+ * responsibility is that vendor deletion runs BEFORE `user.delete` cascades
+ * the rows that name the voice. What that deletion does is
+ * `lib/voice/delete.ts`'s own tests and the integration cascade test.
+ */
+const deleteAllCustomVoicesForUserMock = vi.fn(async () => []);
+vi.mock("@/lib/voice/delete", () => ({
+  deleteAllCustomVoicesForUser: deleteAllCustomVoicesForUserMock,
+}));
+
 const { purgeClosedAccounts } = await import("@/lib/jobs/purge-closed-accounts");
 const { ACCOUNT_CLOSURE_RECOVERY_DAYS } = await import("@/lib/config");
 
@@ -77,7 +91,7 @@ describe("purgeClosedAccounts — selection query (M0 AC 47)", () => {
 
     expect(dbMock.user.findMany).toHaveBeenCalledWith({
       where: { closureRequestedAt: { not: null, lte: daysAgo(ACCOUNT_CLOSURE_RECOVERY_DAYS) } },
-      select: { id: true },
+      select: { id: true, email: true },
     });
   });
 
@@ -92,7 +106,7 @@ describe("purgeClosedAccounts — selection query (M0 AC 47)", () => {
     it("does not purge a user closed one second inside the recovery window", async () => {
       const requestedAt = closedAt(1000); // 29d 23h 59m 59s ago — not yet due
       dbMock.user.findMany.mockImplementation(async ({ where }: { where: { closureRequestedAt: { lte: Date } } }) =>
-        requestedAt.getTime() <= where.closureRequestedAt.lte.getTime() ? [{ id: "user_1" }] : [],
+        requestedAt.getTime() <= where.closureRequestedAt.lte.getTime() ? [{ id: "user_1", email: "user_1@example.com" }] : [],
       );
 
       const result = await purgeClosedAccounts(fakeStorage, clock);
@@ -102,7 +116,7 @@ describe("purgeClosedAccounts — selection query (M0 AC 47)", () => {
     it("purges a user closed exactly at the boundary", async () => {
       const requestedAt = closedAt(0); // exactly ACCOUNT_CLOSURE_RECOVERY_DAYS ago
       dbMock.user.findMany.mockImplementation(async ({ where }: { where: { closureRequestedAt: { lte: Date } } }) =>
-        requestedAt.getTime() <= where.closureRequestedAt.lte.getTime() ? [{ id: "user_1" }] : [],
+        requestedAt.getTime() <= where.closureRequestedAt.lte.getTime() ? [{ id: "user_1", email: "user_1@example.com" }] : [],
       );
       dbMock.studentProfile.findMany.mockResolvedValue([]);
 
@@ -114,7 +128,7 @@ describe("purgeClosedAccounts — selection query (M0 AC 47)", () => {
 
 describe("purgeClosedAccounts — destruction and account-level audit stamp", () => {
   it("calls deleteStudentData(kind: ACCOUNT_CLOSURE) once per profile, then stamps the EXISTING account-level DeletionAudit row and deletes the User row", async () => {
-    dbMock.user.findMany.mockResolvedValue([{ id: "user_1" }]);
+    dbMock.user.findMany.mockResolvedValue([{ id: "user_1", email: "user_1@example.com" }]);
     dbMock.studentProfile.findMany.mockResolvedValue([{ id: "sp_1" }, { id: "sp_2" }]);
 
     const result = await purgeClosedAccounts(fakeStorage, clock);
@@ -133,7 +147,7 @@ describe("purgeClosedAccounts — destruction and account-level audit stamp", ()
   });
 
   it("leaves the user and its audit row untouched if ANY profile destruction reports STORAGE_FAILURE", async () => {
-    dbMock.user.findMany.mockResolvedValue([{ id: "user_1" }]);
+    dbMock.user.findMany.mockResolvedValue([{ id: "user_1", email: "user_1@example.com" }]);
     dbMock.studentProfile.findMany.mockResolvedValue([{ id: "sp_1" }, { id: "sp_2" }]);
     deletionServiceMock.deleteStudentData
       .mockResolvedValueOnce({ ok: true })
@@ -147,7 +161,7 @@ describe("purgeClosedAccounts — destruction and account-level audit stamp", ()
   });
 
   it("processes a second, independent user even after the first fails", async () => {
-    dbMock.user.findMany.mockResolvedValue([{ id: "user_fail" }, { id: "user_ok" }]);
+    dbMock.user.findMany.mockResolvedValue([{ id: "user_fail", email: "fail@example.com" }, { id: "user_ok", email: "ok@example.com" }]);
     dbMock.studentProfile.findMany.mockImplementation(async ({ where }: { where: { userId: string } }) =>
       where.userId === "user_fail" ? [{ id: "sp_fail" }] : [{ id: "sp_ok" }],
     );
@@ -160,5 +174,34 @@ describe("purgeClosedAccounts — destruction and account-level audit stamp", ()
     expect(dbMock.user.delete).toHaveBeenCalledWith({ where: { id: "user_ok" } });
     expect(dbMock.user.delete).not.toHaveBeenCalledWith({ where: { id: "user_fail" } });
     expect(result).toEqual({ purged: 1 });
+  });
+});
+
+describe("M6 AC 20 — the account's custom voices reach the vendor", () => {
+  it("deletes voices BEFORE user.delete, which would otherwise take the voice id with it", async () => {
+    // The ordering IS the requirement. `User` cascades Persona and CustomVoice,
+    // so after the delete nothing in our database names the vendor's voice — a
+    // model of a real adult's voice would be stranded at a third party with no
+    // way to find it. Asserted as an order, because the end state of a correct
+    // run and a broken one are identical.
+    const order: string[] = [];
+    deleteAllCustomVoicesForUserMock.mockImplementation(async () => {
+      order.push("voices");
+      return [];
+    });
+    dbMock.user.delete.mockImplementation(async () => {
+      order.push("user.delete");
+      return {};
+    });
+    dbMock.user.findMany.mockResolvedValue([{ id: "user_1", email: "user_1@example.com" }]);
+    dbMock.studentProfile.findMany.mockResolvedValue([]);
+
+    await purgeClosedAccounts(fakeStorage, clock);
+
+    expect(order).toEqual(["voices", "user.delete"]);
+    expect(deleteAllCustomVoicesForUserMock).toHaveBeenCalledWith(fakeStorage, {
+      userId: "user_1",
+      userEmail: "user_1@example.com",
+    });
   });
 });

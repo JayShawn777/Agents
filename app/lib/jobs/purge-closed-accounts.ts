@@ -2,6 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import { deleteStudentData } from "@/lib/deletion/service";
+import { deleteAllCustomVoicesForUser } from "@/lib/voice/delete";
 import type { StoragePort } from "@/lib/storage/port";
 import type { Clock } from "@/lib/jobs/clock";
 import { ACCOUNT_CLOSURE_RECOVERY_DAYS } from "@/lib/config";
@@ -56,7 +57,9 @@ export async function purgeClosedAccounts(storage: StoragePort, clock: Clock): P
 
   const users = await db.user.findMany({
     where: { closureRequestedAt: { not: null, lte: cutoff } },
-    select: { id: true },
+    // `email` is read here, in the query that already runs, rather than by a
+    // second lookup per user: it is needed for M6 AC 20's audit pseudonym below.
+    select: { id: true, email: true },
   });
 
   let purged = 0;
@@ -81,6 +84,14 @@ export async function purgeClosedAccounts(storage: StoragePort, clock: Clock): P
     }
 
     if (!allProfilesDestroyed) continue;
+
+    // M6 AC 20 — BEFORE `user.delete` below, which cascades the Persona and
+    // CustomVoice rows and would take the `providerVoiceId` with them, leaving a
+    // model of a real adult's voice at the vendor that nothing in our system can
+    // name. A vendor failure does not hold up the purge: it writes a
+    // VENDOR_DELETE_FAILED audit row, which survives this deletion because
+    // VoiceCreationAudit has no foreign keys.
+    await deleteAllCustomVoicesForUser(storage, { userId: user.id, userEmail: user.email });
 
     await db.$transaction(async (tx) => {
       // This row was written by POST /api/account/closure at request time
