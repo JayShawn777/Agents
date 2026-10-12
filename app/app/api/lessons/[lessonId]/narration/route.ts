@@ -227,7 +227,8 @@ export const POST = withAuth({
 
 /**
  * `profile.personaId`, or `DEFAULT_PERSONA_SLUG` (AC 3/AC 4) when unset OR when
- * the chosen persona row no longer exists **or is not visible to this account**.
+ * the chosen persona row no longer exists, **is not visible to this account**, or
+ * is not `ACTIVE`.
  *
  * The visibility scope is M6 AC 12, and this is the call site where getting it
  * wrong is worst: this function decides which voice actually SPEAKS. Unscoped,
@@ -238,7 +239,11 @@ export const POST = withAuth({
  */
 async function resolvePersonaForNarration(personaId: string | null, viewerUserId: string): Promise<Persona> {
   const chosen = personaId ? await findPersonaById(personaId, viewerUserId) : null;
-  if (chosen) return chosen;
+  // M6 AC 13/18: a persona that is not ACTIVE must never be GENERATED with — a
+  // REVOKED voice has been deleted at the vendor, and a PENDING_VERIFICATION
+  // one cannot synthesise yet. Revocation nulls the profile pointers, so this
+  // is the backstop for a pointer that survived (a race, a restored row).
+  if (chosen && chosen.status === "ACTIVE") return chosen;
 
   const fallback = await findSharedPersonaBySlug(DEFAULT_PERSONA_SLUG);
   if (!fallback) {

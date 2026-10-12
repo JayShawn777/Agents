@@ -86,3 +86,17 @@ describe("AC 2 — no student-facing route reaches the voice flow", () => {
     expect(files).toContain("app/(app)/account/voice/page.tsx");
   });
 });
+
+describe("slice 9 — the voice flow has a way in", () => {
+  it("the Settings page renders the Your voice card", () => {
+    const settings = readFileSync(path.join(repoRoot, "app/(app)/settings/page.tsx"), "utf8");
+    expect(settings).toMatch(/<YourVoiceCard\b/);
+  });
+
+  it("the card is the one place that links to /account/voice", () => {
+    const linkers = sourceFiles(["app", "components"]).filter((file) =>
+      readFileSync(path.join(repoRoot, file), "utf8").includes('"/account/voice"'),
+    );
+    expect(linkers).toEqual(["components/voice/your-voice-card.tsx"]);
+  });
+});

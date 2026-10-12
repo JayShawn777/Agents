@@ -122,7 +122,7 @@ export default async function LessonPage({ params }: PageProps<"/lessons/[lesson
             looking might as well not exist).
           */}
           <div className="flex items-center justify-between gap-3">
-            <AiVoiceDisclosure personaLabel={personaLabel} />
+            <AiVoiceDisclosure personaLabel={personaLabel} isCustomVoice={persona?.ownerUserId != null} />
             <Link
               href={`/students/${lessonRow.studentProfile.id}/voice`}
               className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"

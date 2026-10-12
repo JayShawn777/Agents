@@ -121,6 +121,26 @@ describe("a cloned persona is visible only to the account that owns it", () => {
     expect(await findSelectablePersona(alicesVoice.id, alice.id)).toBeNull();
   });
 
+  /**
+   * M6 AC 13/18, against real Postgres. Before slice 9 the picker and the
+   * selection check filtered on ownership and retirement only, so a REVOKED
+   * voice (deleted at the vendor) and a PENDING_VERIFICATION one (cannot speak)
+   * were both offered and both selectable.
+   */
+  it.each(["REVOKED", "PENDING_VERIFICATION"] as const)(
+    "a %s owned persona is neither listed nor selectable, but still displayable",
+    async (status) => {
+      const alice = await makeAccount(`status-${status}`);
+      const voice = await makeOwnedPersona(alice.id, `status-${status}`);
+      await db.persona.update({ where: { id: voice.id }, data: { status } });
+
+      expect((await listPersonas(alice.id)).map((p) => p.id)).not.toContain(voice.id);
+      expect(await findSelectablePersona(voice.id, alice.id)).toBeNull();
+      // The label of an already-narrated lesson must still resolve.
+      expect(await findPersonaById(voice.id, alice.id)).not.toBeNull();
+    },
+  );
+
   it("the default persona resolves by slug and can never be an owned voice", async () => {
     const alice = await makeAccount("alice5");
     // A cloned voice deliberately squatting the default slug must not be reachable.

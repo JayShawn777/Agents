@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { CloseAccountDialog } from "@/components/settings/close-account-dialog";
+import { YourVoiceCard } from "@/components/voice/your-voice-card";
 import { auth } from "@/lib/auth/config";
 import { requireUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
@@ -70,6 +71,8 @@ export default async function SettingsPage() {
           <p>Signed in as {session?.user?.email ?? "—"}</p>
         </CardContent>
       </Card>
+
+      <YourVoiceCard userId={userId} />
 
       <Separator />
 

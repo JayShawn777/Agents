@@ -54,10 +54,13 @@ export function personaVisibilityWhere(viewerUserId: string): Prisma.PersonaWher
  * The picker's list (AC 2): shared personas plus this account's own, excluding
  * retired ones. A retired persona is not offered for a NEW selection; a profile
  * that already chose one keeps it (see `findPersonaById`).
+ *
+ * **Only `ACTIVE` personas are offered** (M6 AC 13/18). A `REVOKED` voice is
+ * unselectable by definition, and a `PENDING_VERIFICATION` one cannot speak yet.
  */
 export async function listPersonas(viewerUserId: string): Promise<Persona[]> {
   return db.persona.findMany({
-    where: { AND: [personaVisibilityWhere(viewerUserId), { retiredAt: null }] },
+    where: { AND: [personaVisibilityWhere(viewerUserId), { retiredAt: null }, { status: "ACTIVE" }] },
     orderBy: { sortOrder: "asc" },
   });
 }
@@ -89,7 +92,7 @@ export async function findPersonaById(id: string, viewerUserId: string): Promise
  */
 export async function findSelectablePersona(id: string, viewerUserId: string): Promise<Persona | null> {
   return db.persona.findFirst({
-    where: { AND: [{ id }, { retiredAt: null }, personaVisibilityWhere(viewerUserId)] },
+    where: { AND: [{ id }, { retiredAt: null }, { status: "ACTIVE" }, personaVisibilityWhere(viewerUserId)] },
   });
 }
 

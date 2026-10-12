@@ -86,9 +86,19 @@ const DEFAULT_PERSONA = {
   slug: "professor-love",
   label: "Professor Love",
   providerVoiceId: "voice_default",
+  status: "ACTIVE",
+};
+const REVOKED_PERSONA = {
+  id: "persona_revoked",
+  slug: "custom-x",
+  label: "Dad",
+  providerVoiceId: "voice_revoked",
+  status: "REVOKED",
 };
 const personasDalMock = {
-  findPersonaById: vi.fn(async (id: string) => (id === "persona_default" ? DEFAULT_PERSONA : null)),
+  findPersonaById: vi.fn(async (id: string) =>
+    id === "persona_default" ? DEFAULT_PERSONA : id === "persona_revoked" ? REVOKED_PERSONA : null,
+  ),
   findSharedPersonaBySlug: vi.fn(async (slug: string) => (slug === "professor-love" ? DEFAULT_PERSONA : null)),
 };
 vi.mock("@/lib/personas/dal", () => personasDalMock);
@@ -224,6 +234,20 @@ describe("requesting narration (endpoint 46)", () => {
     const call = dbMock.lessonNarration.upsert.mock.calls[0][0];
     expect(call.where).toEqual({ versionId: VER_1 });
     expect(call.create).toMatchObject({ status: "PENDING", lessonId: "les_1", versionId: VER_1 });
+  });
+
+  /**
+   * M6 AC 13/18. A pointer that outlived revocation (a race, a restored row)
+   * must not be GENERATED with: the voice is gone at the vendor. It falls back
+   * to the default exactly like a deleted or foreign persona.
+   */
+  it("falls back to the default persona when the chosen one is not ACTIVE", async () => {
+    dbMock.studentProfile.findUniqueOrThrow.mockResolvedValue({ personaId: "persona_revoked" } as never);
+    const res = await POST(postReq(NARR_URL), ctx());
+
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.data.narration.persona.id).toBe("persona_default");
   });
 
   /** `after()` must be registered EAGERLY, in request context — never inside a callback or an abort listener (M3's lesson). */
