@@ -6,6 +6,7 @@ import { AuthError } from "next-auth";
 
 import { auth, signIn, signOut } from "@/lib/auth/config";
 import { db } from "@/lib/db";
+import { isSignupAllowed } from "@/lib/auth/allowlist";
 import { normalizeEmail } from "@/lib/auth/normalize-email";
 import {
   MAGIC_LINK_TTL_SECONDS,
@@ -53,6 +54,12 @@ export async function signInWithEmail(input: unknown): Promise<ApiResult<{ sent:
   }
 
   const email = normalizeEmail(parsed.data.email);
+
+  // Invite-only gate (`lib/auth/allowlist.ts`). Answered EXACTLY like a real
+  // success, with no attestation row and no email, for the same reason as the
+  // rate-limit branch below: a different response would tell a stranger which
+  // addresses are on the list (AC 2).
+  if (!isSignupAllowed(email)) return apiOk({ sent: true });
 
   // Read server-side, never from the body (matches the pattern used for
   // ParentalConsent.ipAddress/userAgent elsewhere in the plan).

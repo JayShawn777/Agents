@@ -95,6 +95,8 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [m5-narration-implementation.md](plans/m5-narration-implementation.md) — M5's contract, written after the 2026-09-01 vendor measurement. Four models, two new routes, twelve slices, and the mathematics-read-aloud experiment
 - [m6-custom-voice-implementation.md](plans/m6-custom-voice-implementation.md) — M6's contract, written after the 2026-09-02 vendor measurement. Approved and BUILT (all ten slices). Schema delta, six endpoints, ten slices, and a pre-existing persona IDOR that M6 would activate
 
+- [deploy-checklist.md](deploy-checklist.md) — Accounts, secrets, migrations and first-deployment checks for putting the app in front of the owner's own children (2026-10-12)
+
 ### Retros
 - [m0-m5.md](retros/m0-m5.md) — Twenty-nine lessons across M0-M5, and what changed because of each. A running document: each milestone's retro is appended and the file is renamed.
 

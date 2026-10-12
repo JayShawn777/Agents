@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const dbMock = {
   adultAttestation: {
@@ -117,5 +117,27 @@ describe("signInWithEmail() upsert-with-cooldown (item 9)", () => {
     ).rejects.toThrow(/NEXT_REDIRECT/);
 
     expect(dbMock.adultAttestation.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("signInWithEmail() invite-only gate", () => {
+  afterEach(() => {
+    delete process.env.ALLOWED_SIGNUP_EMAILS;
+  });
+
+  it("answers an unlisted address like the existing silent-refusal branch, with no row and no email (AC 2)", async () => {
+    process.env.ALLOWED_SIGNUP_EMAILS = "dad@example.com";
+    const result = await signInWithEmail({ email: "stranger@example.com", isAdult: true });
+
+    expect(result).toEqual({ ok: true, data: { sent: true } });
+    expect(dbMock.adultAttestation.create).not.toHaveBeenCalled();
+    expect(authConfigMock.signIn).not.toHaveBeenCalled();
+  });
+
+  it("still dispatches for a listed address", async () => {
+    process.env.ALLOWED_SIGNUP_EMAILS = "dad@example.com";
+    await expect(signInWithEmail({ email: "dad@example.com", isAdult: true })).rejects.toThrow(/NEXT_REDIRECT/);
+
+    expect(authConfigMock.signIn).toHaveBeenCalledTimes(1);
   });
 });

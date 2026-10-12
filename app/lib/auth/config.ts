@@ -3,6 +3,7 @@ import type { EmailConfig } from "next-auth/providers/email";
 
 import { db } from "@/lib/db";
 import { buildPrismaAdapter } from "@/lib/auth/prisma-adapter";
+import { isSignupAllowed } from "@/lib/auth/allowlist";
 import { normalizeEmail } from "@/lib/auth/normalize-email";
 import { sendMagicLinkEmail } from "@/lib/email/send-magic-link";
 import { MAGIC_LINK_TTL_SECONDS } from "@/lib/config";
@@ -63,6 +64,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       if (!user.email) return false;
       const identifier = normalizeEmail(user.email);
+
+      // Defence in depth for the invite-only gate (`signInWithEmail` already
+      // refuses at dispatch): a link minted before the list was tightened must
+      // not redeem afterwards.
+      if (!isSignupAllowed(identifier)) return false;
 
       // Defence in depth against a replayed or forged link: every
       // redemption requires a LIVE (unexpired) attestation for this exact
