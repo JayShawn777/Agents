@@ -1,6 +1,6 @@
 # M6 implementation plan — custom voice
 
-- **Status:** Awaiting owner approval. **No implementation may start until this is approved.**
+- **Status:** Approved and built — all ten slices, 2026-09-02 to 2026-10-12. Status per slice is in `app/CLAUDE.md`. ADRs 0022/0023 written 2026-10-12 from the shipped code.
 - **Date:** 2026-09-02
 - **Spec:** [m6-custom-voice.md](../specs/m6-custom-voice.md)
 - **Gating measurement:** [m6-voice-clone-measurement.md](../research/m6-voice-clone-measurement.md) — **RUN, and it unblocked this plan**

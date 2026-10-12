@@ -12,7 +12,7 @@ app reads it, generates similar practice, tutors them through it in chat,
 explains with interactive whiteboard lessons narrated by a chosen voice, and
 adapts to that student over time.
 
-## Where the build is (2026-09-02)
+## Where the build is (2026-10-12)
 
 **M0-M4 done, reviewed and retro'd. M5 BUILT, REVIEWED and its findings FIXED —
 all twelve slices, the vendor measured before the architecture, four narrow
@@ -20,14 +20,12 @@ reviews, fifteen findings, fourteen fixed. 1208 tests, 6 live tests skipped by
 default. All gates green. The M5 retro is done
 ([docs/retros/m0-m5.md](docs/retros/m0-m5.md)).**
 
-**One M5 finding is deliberately open, and it is an owner decision: the §312.4
-direct notice does not name the TTS vendor.** `DIRECT_NOTICE_COPY.thirdParties`
-lists Anthropic, Vercel, Neon and the email provider; `DIRECT_NOTICE_VERSION` is
-still `2026-08-26.1`, from before M5; and `lib/narration/provider.ts` POSTs a
-sentence describing a specific child's homework to ElevenLabs. ADR-0015 calls
-naming the vendor a hard precondition before the first narration request. Bumping
-the version re-consents **every existing parent**, so the timing is a product
-call, not an engineering one. The code change is small.
+**The M5 notice finding is CLOSED.** `DIRECT_NOTICE_COPY.thirdParties` names
+ElevenLabs and says what it receives, and the version has since been bumped for
+M6's voice data (`2026-10-12.1`). This paragraph used to call it open and was
+still being read that way after it was fixed — check `lib/notice/copy.ts` before
+telling the owner otherwise. The standing gap is unchanged: nothing re-obtains
+consent from already-consented families on a bump (see the docstring there).
 
 **Slice 12 is now runnable in two minutes:
 `docs/measurements/autoplay-check.html`.** Open it in real Chrome and real
@@ -64,18 +62,15 @@ generate graded practice from them. The retention jobs enforce what
 | **M3** chat tutor | **done and REVIEWED** 2026-08-28 — all five endpoints (35-39), the NDJSON transport, `lib/chat/safety.ts` (AC 21), the whole UI with both entry points wired, and the chat path verified against the real API. Three review findings, all fixed. |
 | **M4** whiteboard lessons | **BUILT and REVIEWED** 2026-08-28 — nine slices: migration + CHECK, authoring status machine, six endpoints (40-45), cascades, stage + player, controls/text view/flag, and the entry point wired into practice and chat. Browser measurement RAN; four reviews found 4 blockers, 1 HIGH and 8 more, all fixed. |
 | **M5** TTS narration + personas | **BUILT and REVIEWED** 2026-09-02 — twelve slices: the ledger migration, storage/reconciler/purge, the `fetch`-based ElevenLabs client (no SDK dependency), cue derivation, the generation pipeline, endpoints 46/47, the persona picker, the audio player, AC 15's reinstated `prefers-reduced-motion`, and both entry points. ADRs 0020/0021. Four reviews found 15 findings; 14 fixed, the notice bump left to the owner. Slice 12 is an owner-run browser measurement. |
-| **M6** custom voice | **IN PROGRESS** — architecture approved (`docs/plans/m6-custom-voice-implementation.md`), slices 1-4 of 10 built and pushed. See "M6 is mid-build" below. |
+| **M6** custom voice | **BUILT, not yet reviewed** — all ten slices (2026-10-12), ADRs 0022/0023. Slices 5-8 were found already on `main` when slices 9-10 were built; see "M6 is built" below. |
 | **M7** | spec written, architecture in `docs/plans/m2-m7-implementation.md`, ADRs 0009-0015. Not built. |
 | **M8** spoken language | spec written 2026-08-27. Two BLOCKING open questions before architecture. Not built. |
 
-### M6 is mid-build — start at slice 5
+### M6 is built — review it next
 
-Slices 1-4 are committed and pushed; the tree is clean and the gates are green
-(1284 passed / 13 skipped, verified 2026-09-02). **Next is slice 5: sample
-capture, endpoint 50, plus the browser-direct upload slice 4 deliberately left
-for it** — both need the same transport and half-building it twice was the worse
-option. Follow `docs/plans/m6-custom-voice-implementation.md` rather than
-re-deriving it; it is approved.
+All ten slices exist. `main` already carried slices 1-8 when slices 9 and 10 were
+built (this file had not been updated; it said "start at slice 5" while 5-8
+were merged). Gates green at the end of slice 9: 1383 passed / 13 skipped.
 
 | Slice | What | State |
 |---|---|---|
@@ -83,12 +78,39 @@ re-deriving it; it is approved.
 | 2 | Schema: 3 models, `PersonaStatus`, `VOICE_CLONING`, retention rows | ✅ `8fbae9d` |
 | 3 | Vendor client — `fetch` create/delete, two-key support | ✅ `f8dd0b0` |
 | 4 | Consent recording — endpoints 48/49, versioned wording | ✅ `e785522` |
-| 5 | Sample capture — endpoint 50 + the browser-direct upload | next |
-| 6 | Creation — endpoint 51, caps, audit row, sample deletion | |
-| 7 | **Deletion/revocation — 4 paths must reach the vendor** | highest risk |
-| 8 | The recorder/consent/review UI | |
-| 9 | **THE ENTRY POINT** — account-page card + disclosure | the M2.5 lesson |
-| 10 | §312.4 notice + privacy copy for voice data | |
+| 5 | Sample capture — endpoint 50 + the browser-direct upload | ✅ on `main` |
+| 6 | Creation — endpoint 51, caps, audit row, sample deletion | ✅ on `main` |
+| 7 | Deletion/revocation — endpoints 52/53, vendor-reaching paths | ✅ on `main` (integration-tested) |
+| 8 | The recorder/consent/review flow UI, `/account/voice` | ✅ on `main` |
+| 9 | **THE ENTRY POINT** — "Your voice" card on Settings, custom-voice disclosure, ACTIVE-only personas | ✅ branch `claude/m6-slices-9-10` |
+| 10 | Notice + privacy copy for voice data, and the test that keeps them complete | ✅ branch `claude/m6-slices-9-10` |
+
+**What slice 9 found that nothing had caught.** The picker (`listPersonas`), the
+selection check (`findSelectablePersona`) and narration's `resolvePersonaForNarration`
+filtered on ownership and retirement but never on `status`, so a `REVOKED` voice
+(already deleted at the vendor) and a `PENDING_VERIFICATION` one stayed selectable
+and generatable. All three now require `ACTIVE`; integration tests against real
+Postgres and a narration-route test fail without it (each falsified by mutation).
+Same family as retro lessons 21/22: the slice-1 test proved ownership and nobody
+asked what the OTHER columns of the row allowed.
+
+**Decided while building, flagged for the owner (reversible):**
+- **Voice deletion is account-level.** Deleting ONE child's profile does not
+  delete the parent's voice (siblings still use it); it removes that profile's
+  narration assets. AC 20's literal "profile OR account" reading would destroy a
+  voice other children use. `deleteAllCustomVoicesForUser` is the seam.
+- **Revocation deletes at the vendor too**, because the spoken consent says the
+  voice can be deleted on withdrawal. Cached narration survives revocation and is
+  removed only by an explicit delete.
+- **The notice version was bumped** to `2026-10-12.1` for voice data. Silent for
+  existing families, like the M5 bump.
+
+**Still open before launch (none are engineering):** counsel review of
+`VOICE_CONSENT_LINES`; the vendor's contractual erasure terms (the API reporting a
+voice gone is not a DPA); the persona artwork `preset-custom-voice`; and the M6
+review, which has not been run — scope it by file list per "Dispatching a review":
+(1) routes and gates, (2) `lib/voice/*`, (3) deletion paths and jobs, (4) the UI.
+Slice 7 is the highest-risk and the best first review.
 
 **Three M6 decisions that are settled — do not reopen them without new
 information.**

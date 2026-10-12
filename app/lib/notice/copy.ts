@@ -21,6 +21,16 @@
  */
 
 /**
+ * Bumped 2026-10-12 for M6: the account holder may now record their OWN voice,
+ * which is sent to ElevenLabs to create a custom narration voice. That is a new
+ * CATEGORY of data going to an already-named processor, so the existing
+ * vendor-coverage test could not have caught it; `voice-data-coverage.test.ts`
+ * now does. The same caveat as the M5 bump below applies: an already-consented
+ * family is not re-prompted. This data is the ADULT's, collected from the adult
+ * and not from a child, so §312.5(c)(1)'s new-consent rule is not engaged by it
+ * — but the notice names it anyway because a parent choosing a narrator for their
+ * child is entitled to know what the feature sends where.
+ *
  * Bumped 2026-09-02 for M5: ElevenLabs was added to `thirdParties` below. M5 is
  * the first flow that sends a child's data to a SECOND AI vendor, and §312.4(b)
  * requires the notice to name each third party and say what it receives.
@@ -40,7 +50,7 @@
  * re-obtain consent on a version bump, so bumping it is currently silent for
  * existing families. Whoever builds that mechanism should start here.
  */
-export const DIRECT_NOTICE_VERSION = "2026-09-02.1";
+export const DIRECT_NOTICE_VERSION = "2026-10-12.1";
 
 export type DirectNoticeThirdParty = {
   name: string;
@@ -75,6 +85,7 @@ export const DIRECT_NOTICE_COPY: DirectNoticeCopy = {
     "The extracted problem text is used to generate practice and tutoring for your child for as long as the account is in use.",
     "The display name, grade level, subjects and avatar are used to personalize what your child sees.",
     "Lesson narration text is turned into speech so lessons can be read aloud in a voice your child chooses. The generated audio is stored for your child and deleted with their other data.",
+    "Optionally, the account holder (an adult) may record their own voice so lessons can be read in a recreation of it. That recording is used once to create the voice and is then deleted; the voice itself is deleted whenever you delete it, stop using it, or close the account. Your children are always told when the voice they hear is a recreation. See the retention policy linked below.",
   ],
   thirdParties: [
     {
@@ -93,7 +104,7 @@ export const DIRECT_NOTICE_COPY: DirectNoticeCopy = {
     {
       name: "ElevenLabs",
       receives:
-        "the narration text for a lesson — sentences describing your child's schoolwork — to turn into the spoken voice that reads the lesson aloud. It does not receive the uploaded images or PDFs, your child's name, or any other identifier.",
+        "the narration text for a lesson — sentences describing your child's schoolwork — to turn into the spoken voice that reads the lesson aloud. It does not receive the uploaded images or PDFs, your child's name, or any other identifier. If the account holder chooses to add their own voice, ElevenLabs also receives that one voice recording, to create the voice; it never receives the separate recording of the account holder's spoken permission.",
     },
     {
       name: "Our transactional email provider",

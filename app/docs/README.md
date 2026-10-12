@@ -84,6 +84,8 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [ADR-0015](adr/0015-per-profile-narration-cache-instead-of-a-global-content-address.md) — Narration audio is cached per student profile, not globally content-addressed (Proposed, revised 2026-09-01 against the code it describes)
 - [ADR-0020](adr/0020-elevenlabs-behind-a-persona-indirection-called-with-fetch.md) — ElevenLabs is called with `fetch`, behind a persona row that owns the voice id (Proposed)
 - [ADR-0021](adr/0021-narration-cues-are-our-own-word-timeline-derived-from-character-alignment.md) — Narration cues are our own millisecond word timeline, derived once from character alignment (Proposed)
+- [ADR-0022](adr/0022-the-consent-recording-comes-first-is-stored-separately-and-never-leaves-us.md) — The consent recording is made before the sample, stored separately, and never leaves us (Proposed)
+- [ADR-0023](adr/0023-an-account-owned-persona-is-one-nullable-column-and-one-required-where-clause.md) — An account-owned persona is one nullable column and one required WHERE clause (Proposed)
 
 ### Plans
 - [m0-m1-implementation.md](plans/m0-m1-implementation.md) — Schema, API contract, component tree, build order, and the storage spike
@@ -91,7 +93,7 @@ Keep this current. A knowledge base nobody can navigate is a folder of files.
 - [m2-5-checkpoints-implementation.md](plans/m2-5-checkpoints-implementation.md) — Checkpoints and the foreign-language column
 - [m4-lessons-implementation.md](plans/m4-lessons-implementation.md) — M4's contract, written after plan §9.2's five measurements returned. Schema, six endpoints, component tree, nine slices
 - [m5-narration-implementation.md](plans/m5-narration-implementation.md) — M5's contract, written after the 2026-09-01 vendor measurement. Four models, two new routes, twelve slices, and the mathematics-read-aloud experiment
-- [m6-custom-voice-implementation.md](plans/m6-custom-voice-implementation.md) — M6's contract, written after the 2026-09-02 vendor measurement. **AWAITING OWNER APPROVAL.** Schema delta, six endpoints, ten slices, and a pre-existing persona IDOR that M6 would activate
+- [m6-custom-voice-implementation.md](plans/m6-custom-voice-implementation.md) — M6's contract, written after the 2026-09-02 vendor measurement. Approved and BUILT (all ten slices). Schema delta, six endpoints, ten slices, and a pre-existing persona IDOR that M6 would activate
 
 ### Retros
 - [m0-m5.md](retros/m0-m5.md) — Twenty-nine lessons across M0-M5, and what changed because of each. A running document: each milestone's retro is appended and the file is renamed.

@@ -61,6 +61,12 @@ export default function PrivacyPolicyPage() {
             upload, and the problem text extracted from them.
           </li>
           <li>
+            Only if the account holder chooses to add their own voice: a short
+            recording of that adult&apos;s voice, and a separate recording of
+            them saying aloud that they agree to it. Neither is ever collected
+            from a child, and no one else can add a voice to an account.
+          </li>
+          <li>
             Records of the notices we&apos;ve shown and the consent a parent has
             given, kept as evidence that we followed this policy.
           </li>
@@ -92,7 +98,10 @@ export default function PrivacyPolicyPage() {
             <span className="font-medium text-foreground">ElevenLabs</span> —
             turns lesson narration text into the spoken voice that reads a
             lesson aloud. It receives the narration sentences only, never the
-            uploaded images or PDFs and no identifier for your child.
+            uploaded images or PDFs and no identifier for your child. If the
+            account holder adds their own voice, it also receives that one
+            voice recording to create the voice. It never receives the
+            recording of the account holder&apos;s spoken permission.
           </li>
           <li>
             <span className="font-medium text-foreground">
@@ -102,6 +111,34 @@ export default function PrivacyPolicyPage() {
             sign-in links and consent-related messages.
           </li>
         </ul>
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-lg font-medium text-foreground">
+          If you add your own voice
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          An account holder can record their own voice so a child hears lessons
+          read by a recreation of it. Only an adult account holder can do this,
+          and only after recording a spoken statement agreeing to it. The voice
+          recording is deleted as soon as the voice exists. The spoken
+          permission is kept as our evidence of that agreement for the period
+          shown in the{" "}
+          <Link
+            href="/retention"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            data retention policy
+          </Link>
+          , and is never sent to ElevenLabs or played to a child.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          You can stop using the voice, or delete it, at any time from Settings.
+          Either one removes it from ElevenLabs; deleting also removes the
+          narration already made with it. Closing your account deletes it too.
+          Children are told whenever the voice they hear is a recreation and not
+          a recording of a person.
+        </p>
       </section>
 
       <section className="flex flex-col gap-2">
